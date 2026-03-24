@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Si lo anterior te da error, vuelve a usar: */
+/* @tailwind base; @tailwind components; @tailwind utilities; */
+
+body {
+  margin: 0;
+  background-color: #f8fafc;
+  font-family: sans-serif;
+}
