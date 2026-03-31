@@ -20,4 +20,4 @@ class Product(Base):
     current_cost_total = Column(Float) # 'COSTO ACTUAL'
     is_active = Column(Boolean, default=True)
 
-    sales = relationship("Sale", back_populates="product")
+    sales_items = relationship("SaleItem", back_populates="product")
