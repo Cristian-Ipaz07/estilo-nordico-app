@@ -1,28 +1,36 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
+from datetime import datetime
 
-# Esquema base con los datos comunes
 class UserBase(BaseModel):
-    email: EmailStr
-    full_name: Optional[str] = None
+    username: str
+    full_name: str
+    role: str = "Vendedor"
+    status: str = "Activo"
+    vendedor_tipo: str = "Físico" 
+    comision_pct: float = 0.0
 
-# Esquema para CREAR un usuario (Aquí sí pedimos la contraseña)
 class UserCreate(UserBase):
     password: str
 
-# Esquema para MOSTRAR un usuario (Aquí NO incluimos la contraseña por seguridad)
-class User(UserBase):
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+    password: Optional[str] = None
+    vendedor_tipo: Optional[str] = None
+    comision_pct: Optional[float] = None
+
+class UserOut(UserBase):
     id: int
-    is_active: bool
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
-
-# Esquema para el TOKEN de acceso (Login)
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: UserOut
 
-# Esquema para los datos que van dentro del Token
 class TokenData(BaseModel):
-    email: Optional[str] = None
+    username: Optional[str] = None

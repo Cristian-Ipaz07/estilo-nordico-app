@@ -1,0 +1,18 @@
+# REGLAS SAGRADAS - ESTILO NÓRDICO ERP 2026
+
+## 🛡️ PROTECCIÓN DE DATOS (CRÍTICO)
+- PROHIBIDO el uso de `Base.metadata.drop_all()`. La base de datos `database.db` es PRODUCCIÓN.
+- Cualquier cambio en la base de datos debe ser ADITIVO (nuevas tablas o columnas opcionales).
+- Nunca ejecutes scripts de "reset", "clean" o "drop".
+
+## 🕰️ ZONA HORARIA Y FECHAS
+- Localización: Pasto, Colombia (UTC-5).
+- Todos los registros de ventas y abonos deben usar `datetime.now` con el offset -5.
+- Los selectores de fecha en el frontend deben iniciar SIEMPRE en la fecha actual de Colombia.
+
+## 🎨 ESTILO VISUAL Y UI
+- Mantener el diseño moderno: fondo oscuro, tarjetas con bordes redondeados, tipografía limpia y colores acentuados (esmeralda para ventas, naranja para separados).
+- Todos los componentes deben ser RESPONSIVOS. Si el contenido es largo (especialmente en SEPARADOS), usar `overflow-y-auto`.
+
+## 🚀 OBJETIVOS DEL PROYECTO
+- Priorizar: Ventas diarias, Control de Inventario Ponderado y Seguimiento de Abonos.

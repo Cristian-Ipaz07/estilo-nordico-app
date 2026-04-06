@@ -10,3 +10,9 @@ node_modules/
 dist/
 .eslintcache
 .DS_Store
+
+# Ignorar carpetas de respaldo
+*respaldo*
+*backup*
+copy/
+temp/

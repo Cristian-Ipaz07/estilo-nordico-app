@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'; // Añadido useEffect
-import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Package, ShoppingCart, Wallet, 
   CircleDollarSign, BarChart3, Users, Settings,
@@ -16,9 +16,13 @@ import CashFlow from './pages/CashFlow';
 import Reports from './pages/Reports';
 import UserManagement from './pages/UserManagement';
 
-const SidebarItem = ({ to, icon: Icon, label }) => {
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Login from './pages/Login';
+
+const SidebarItem = ({ to, icon: Icon, label, hidden = false }) => {
   const location = useLocation();
   const isActive = location.pathname === to;
+  if (hidden) return null;
   return (
     <Link to={to} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}>
       <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
@@ -27,10 +31,21 @@ const SidebarItem = ({ to, icon: Icon, label }) => {
   );
 };
 
+// Rutas protegidas geniales
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/" />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/layaway" />;
+  return children;
+};
+
 // Layout con Terminal Integrado
 const Layout = ({ children }) => {
   const [selectedBranch, setSelectedBranch] = useState("Sucursal Norte");
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const { user, logout } = useAuth();
+  
+  const isAdmin = user?.role === 'Admin';
 
   // Lógica de Atajo Ctrl + K para Estilo Nórdico
   useEffect(() => {
@@ -53,17 +68,19 @@ const Layout = ({ children }) => {
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Estilo Nórdico</h1>
           </div>
           <nav className="space-y-1">
-            <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
+            <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} />
             <SidebarItem to="/inventory" icon={Package} label="Inventario" />
-            <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" />
+            <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin}/>
             <SidebarItem to="/layaway" icon={Wallet} label="Separados" />
-            <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" />
-            <SidebarItem to="/reports" icon={BarChart3} label="Reportes" />
-            <SidebarItem to="/users" icon={Users} label="Usuarios" />
+            <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin}/>
+            <SidebarItem to="/reports" icon={BarChart3} label="Reportes" hidden={!isAdmin}/>
+            <SidebarItem to="/users" icon={Users} label="Usuarios" hidden={!isAdmin}/>
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-100">
-          <SidebarItem to="/settings" icon={Settings} label="Configuración" />
+             <button onClick={logout} className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 text-rose-500 hover:bg-rose-50">
+               <span className="font-bold">Cerrar Sesión</span>
+             </button>
         </div>
       </aside>
 
@@ -95,10 +112,12 @@ const Layout = ({ children }) => {
             </button>
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="text-right">
-                <p className="text-sm font-semibold text-slate-900">Admin User</p>
-                <p className="text-xs text-slate-500">Super Administrador</p>
+                <p className="text-sm font-semibold text-slate-900">{user?.full_name}</p>
+                <p className="text-xs font-bold text-slate-400 uppercase">{user?.role}</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300" />
+              <div className="w-10 h-10 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-black">
+                 {user?.full_name?.charAt(0).toUpperCase()}
+              </div>
             </div>
           </div>
         </header>
@@ -114,21 +133,32 @@ const Layout = ({ children }) => {
   );
 };
 
+const AppContent = () => {
+    const { user } = useAuth();
+    if (!user) return <Login />;
+
+    return (
+        <Layout>
+            <Routes>
+              <Route path="/" element={<ProtectedRoute allowedRoles={['Admin']}><Dashboard /></ProtectedRoute>} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/sales" element={<ProtectedRoute allowedRoles={['Admin']}><Sales /></ProtectedRoute>} />
+              <Route path="/layaway" element={<LayawayPage />} />
+              <Route path="/cash" element={<ProtectedRoute allowedRoles={['Admin']}><CashFlow /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute allowedRoles={['Admin']}><Reports /></ProtectedRoute>} />
+              <Route path="/users" element={<ProtectedRoute allowedRoles={['Admin']}><UserManagement /></ProtectedRoute>} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+        </Layout>
+    );
+};
+
 export default function App() {
   return (
     <HashRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/sales" element={<Sales />} />
-          <Route path="/layaway" element={<LayawayPage />} />
-          <Route path="/cash" element={<CashFlow />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/users" element={<UserManagement />} />
-          <Route path="*" element={<Dashboard />} />
-        </Routes>
-      </Layout>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </HashRouter>
   );
 }

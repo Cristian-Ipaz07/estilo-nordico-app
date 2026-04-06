@@ -1,51 +1,58 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import timedelta
-
 from app.db.database import get_db
-from app.models.user import User as UserModel
-from app.schemas.user import User, UserCreate, Token # Importamos los esquemas
-from app.core import security # Para encriptar y crear tokens
-from app.crud import users as crud_users # Para usar la lógica de guardado
+from app.models.user import User
+from app.schemas.user import UserOut, UserCreate, UserUpdate
+from app.core.security import get_password_hash
+from app.api.deps import get_current_user, get_current_active_admin
 
 router = APIRouter()
 
-# 1. RUTA PARA CREAR USUARIO (Con Encriptación)
-@router.post("/", response_model=User)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(UserModel).filter(UserModel.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email ya registrado")
+@router.get("/me", response_model=UserOut)
+def read_current_user(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@router.get("/", response_model=List[UserOut])
+def get_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Any active user might need to see the users to select sales
+    return db.query(User).all()
+
+@router.post("/", response_model=UserOut)
+def create_user(user_in: UserCreate, db: Session = Depends(get_db), current_admin: User = Depends(get_current_active_admin)):
+    user = db.query(User).filter(User.username == user_in.username).first()
+    if user:
+        raise HTTPException(status_code=400, detail="El nombre de usuario ya está registrado")
     
-    # Usamos la función de seguridad para encriptar antes de guardar
-    hashed_password = security.get_password_hash(user.password)
-    
-    new_user = UserModel(
-        email=user.email,
-        full_name=user.full_name,
-        hashed_password=hashed_password # <--- Ahora es segura
+    db_user = User(
+        username=user_in.username,
+        full_name=user_in.full_name,
+        role=user_in.role,
+        status=user_in.status,
+        vendedor_tipo=user_in.vendedor_tipo, # Nuevo campo
+        comision_pct=user_in.comision_pct,   # Nuevo campo
+        hashed_password=get_password_hash(user_in.password)
     )
-    db.add(new_user)
+    db.add(db_user)
     db.commit()
-    db.refresh(new_user)
-    return new_user
+    db.refresh(db_user)
+    return db_user
 
-# 2. RUTA PARA LOGIN (Obtener el acceso)
-@router.post("/login")
-def login(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
-    user = db.query(UserModel).filter(UserModel.email == form_data.username).first()
-    if not user or not security.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales incorrectas"
-        )
-    
-    access_token = security.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
-
-# 3. VER TODOS LOS USUARIOS (Tu código original)
-@router.get("/", response_model=List[User])
-def get_users(db: Session = Depends(get_db)):
-    return db.query(UserModel).all()
+@router.put("/{user_id}", response_model=UserOut)
+def update_user(user_id: int, user_in: UserUpdate, db: Session = Depends(get_db), current_admin: User = Depends(get_current_active_admin)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+    update_data = user_in.model_dump(exclude_unset=True)
+    if "password" in update_data:
+        if update_data["password"]: # Solo actualizamos si no es vacío
+            db_user.hashed_password = get_password_hash(update_data["password"])
+        del update_data["password"]
+        
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+        
+    db.commit()
+    db.refresh(db_user)
+    return db_user

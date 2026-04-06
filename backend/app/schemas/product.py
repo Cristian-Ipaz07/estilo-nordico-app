@@ -29,3 +29,24 @@ class Product(ProductBase):
 
     class Config:
         from_attributes = True
+
+
+# ── Restock con costo ponderado ──────────────────────────────────────────────
+class RestockRequest(BaseModel):
+    product_id: int
+    qty_in: int                              # Cantidad entrante
+    new_cost: float                          # Precio de compra nuevo
+    new_price_sale: Optional[float] = None  # Ajuste opcional del PVP
+
+
+class RestockResponse(BaseModel):
+    id: int
+    name: str
+    ref: str
+    stock: int
+    my_cost: float
+    price_sale: float
+    weighted_cost: float                     # Costo ponderado calculado
+
+    class Config:
+        from_attributes = True
