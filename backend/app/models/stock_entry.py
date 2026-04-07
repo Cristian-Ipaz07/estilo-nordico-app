@@ -19,4 +19,4 @@ class StockEntry(Base):
     is_cancelled = Column(Boolean, default=False)
     created_at = Column(DateTime, default=get_colombia_time)
 
-    product = relationship("Product", back_populates="entries_history")
+    product = relationship("Product", back_populates="entries")

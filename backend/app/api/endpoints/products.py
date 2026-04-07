@@ -97,7 +97,7 @@ def restock_product(data: RestockRequest, db: Session = Depends(get_db)):
         weighted_cost = data.new_cost
 
     product.stock = stock_total
-    product.entries = (product.entries or 0) + data.qty_in
+    product.entry_count = (product.entry_count or 0) + data.qty_in
     product.my_cost = round(weighted_cost, 2)
     product.current_cost_total = round(weighted_cost * stock_total, 2)
 
@@ -206,7 +206,7 @@ def create_stock_entry(data: StockEntryCreate, db: Session = Depends(get_db)):
 
     # 2. Actualizar Producto
     product.stock = stock_total
-    product.entries = (product.entries or 0) + qty_in
+    product.entry_count = (product.entry_count or 0) + qty_in
     product.my_cost = round(weighted_cost, 2)
     product.current_cost_total = round(weighted_cost * stock_total, 2)
     if data.new_price_sale:
@@ -261,7 +261,7 @@ def cancel_stock_entry(entry_id: int, db: Session = Depends(get_db)):
     
     # 1. Revertir Stock
     product.stock -= entry.quantity
-    product.entries -= entry.quantity
+    product.entry_count -= entry.quantity
     # Nota: No recalculamos costo ponderado histórico por seguridad (regla de oro del cliente)
 
     # 2. Revertir Caja si aplica

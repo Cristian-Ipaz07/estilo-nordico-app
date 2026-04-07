@@ -14,10 +14,11 @@ class Product(Base):
     my_cost = Column(Float) # 'MI COSTO'
     cost_total = Column(Float) # 'COSTO TOTAL'
     initial_stock = Column(Integer) # 'CANT INICIAL'
-    entries = Column(Integer, default=0) # 'ENTRADA'
+    entry_count = Column('entries', Integer, default=0) # 'ENTRADA'
     exits = Column(Integer, default=0) # 'SALIDA'
     stock = Column(Integer) # 'STOCK' actual
     current_cost_total = Column(Float) # 'COSTO ACTUAL'
     is_active = Column(Boolean, default=True)
 
     sales_items = relationship("SaleItem", back_populates="product")
+    entries = relationship("StockEntry", back_populates="product")
