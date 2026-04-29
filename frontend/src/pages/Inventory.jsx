@@ -1,5 +1,99 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, RefreshCw, Package, UploadCloud, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, History, ArrowRight, Truck, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Search, RefreshCw, Package, UploadCloud, AlertCircle, ChevronUp, ChevronDown, ChevronsUpDown, History, ArrowRight, Truck, CheckCircle2, RotateCcw, TrendingUp, Edit3 } from 'lucide-react';
+
+// ── Card de Valoración Real del Inventario ────────────────────────────────────
+function AssetValuationCard({ products }) {
+  const STORAGE_KEY = 'inv_ajuste_creditos_externos';
+  const [expanded, setExpanded] = useState(false);
+  const [creditosExternos, setCreditosExternos] = useState(() => {
+    try { return Number(localStorage.getItem(STORAGE_KEY) || 0); } catch { return 0; }
+  });
+  const [inputVal, setInputVal] = useState(creditosExternos || '');
+  const [saved, setSaved] = useState(false);
+
+  const valorSistema = useMemo(() =>
+    products.reduce((acc, p) => acc + ((p.my_cost || 0) * (p.stock || 0)), 0),
+    [products]
+  );
+
+  const valorTotal = valorSistema + creditosExternos;
+
+  const handleSave = () => {
+    const val = Number(inputVal) || 0;
+    setCreditosExternos(val);
+    localStorage.setItem(STORAGE_KEY, val.toString());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const fmt = (n) => Number(n).toLocaleString('es-CO');
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mt-4 shrink-0 overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl"><TrendingUp size={18} /></div>
+          <div className="text-left">
+            <p className="text-sm font-black text-slate-900">Valoración Real del Inventario</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Sistema: ${fmt(valorSistema)} · Total estimado: ${fmt(valorTotal)}</p>
+          </div>
+        </div>
+        {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-100 px-6 py-5 space-y-4 animate-in fade-in duration-200">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-slate-50 rounded-xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Valor en Sistema</p>
+              <p className="text-xl font-black text-slate-900">${fmt(valorSistema)}</p>
+              <p className="text-[10px] text-slate-400 mt-1">Costo × Stock de {products.length} productos</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+              <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Créditos / Mercancía Extra</p>
+              <p className="text-xl font-black text-amber-700">${fmt(creditosExternos)}</p>
+              <p className="text-[10px] text-amber-400 mt-1">Ingresado manualmente</p>
+            </div>
+            <div className="bg-indigo-600 rounded-xl p-4">
+              <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-1">Valor Total Estimado</p>
+              <p className="text-xl font-black text-white">${fmt(valorTotal)}</p>
+              <p className="text-[10px] text-indigo-200 mt-1">Sistema + Externos</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              Créditos Externos / Mercancía fuera del sistema
+            </label>
+            <p className="text-xs text-slate-400 mb-3">
+              Usa este campo para ajustar el valor total real del inventario (Ej: mercancía a consignación, en tránsito o registrada solo en Excel). Se guarda localmente.
+            </p>
+            <div className="flex gap-2">
+              <div className="flex items-center border-2 border-amber-200 rounded-xl px-4 py-3 bg-amber-50 focus-within:border-amber-400 transition-all flex-1">
+                <span className="text-amber-400 font-black mr-2">$</span>
+                <input
+                  type="number" min="0"
+                  value={inputVal}
+                  onChange={e => setInputVal(e.target.value)}
+                  placeholder="Ej. 2000000"
+                  className="bg-transparent outline-none w-full font-bold text-amber-700"
+                />
+              </div>
+              <button onClick={handleSave}
+                className={`px-5 rounded-xl font-black text-sm transition-all flex items-center gap-2
+                  ${saved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white hover:bg-black'}`}>
+                {saved ? <><CheckCircle2 size={16} /> Guardado</> : <><Edit3 size={16} /> Aplicar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const fmt = (num) => Number(num).toLocaleString('es-CO');
 const fmtDateTime = (iso) => {
@@ -218,6 +312,7 @@ export default function Inventory() {
                 </table>
               </div>
             </div>
+            <AssetValuationCard products={products} />
           </>
         ) : (
           <HistoryTab inventory={products} reloadInventory={fetchInventory} />

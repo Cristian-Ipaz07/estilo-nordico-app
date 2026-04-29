@@ -871,6 +871,7 @@ function ModuloCaja() {
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('SALIDA');
   const [category, setCategory] = useState('GASTO');
+  const [date, setDate] = useState(getTodayCO());
   const [movements, setMovements] = useState([]);
   const [sales, setSales] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -919,9 +920,14 @@ function ModuloCaja() {
 
   const todayFlowRaw = [];
   movements.forEach(m => {
-    if(isToday(m.created_at) || (m.payment_date && isToday(m.payment_date))) {
-      const date = m.payment_date ? m.payment_date : m.created_at;
-      todayFlowRaw.push({ id: `CSH-${m.id}`, desc: m.description, amount: m.amount, type: m.type, cat: m.category, date: date });
+    const mDate = m.payment_date ? m.payment_date : m.created_at;
+    let dStr = mDate;
+    if (typeof dStr === 'string' && !dStr.includes('Z') && !dStr.includes('+')) dStr += 'Z';
+    const mDay = new Date(dStr).toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
+    const selectedDay = new Date(date + "T12:00:00Z").toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
+
+    if(mDay === selectedDay) {
+      todayFlowRaw.push({ id: `CSH-${m.id}`, desc: m.description, amount: m.amount, type: m.type, cat: m.category, date: mDate });
     }
   });
 
@@ -966,9 +972,11 @@ function ModuloCaja() {
     if (!desc || !amount) return;
     setIsSubmitting(true);
     try {
+      const payload = { description: desc.toUpperCase(), amount: Number(amount), type, category };
+      if (date !== getTodayCO()) payload.payment_date = date;
       const res = await fetch('http://localhost:8000/cash/', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: desc.toUpperCase(), amount: Number(amount), type, category })
+        body: JSON.stringify(payload)
       });
       if(!res.ok) throw new Error('Error al registrar');
       setMsg('¡Movimiento agregado!');
@@ -984,11 +992,11 @@ function ModuloCaja() {
       {/* List */}
       <div className="w-[55%] flex flex-col bg-slate-50 rounded-[30px] border shadow-sm p-4 relative">
         <div className="flex justify-between items-center mb-3 px-2">
-            <h3 className="font-black text-slate-800 text-sm uppercase">Flujo de Hoy</h3>
+            <h3 className="font-black text-slate-800 text-sm uppercase">Flujo del {date === getTodayCO() ? 'Hoy' : date}</h3>
             {isLoading && <RefreshCw size={12} className="animate-spin text-slate-400" />}
         </div>
         <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-           {todayFlow.length === 0 && <p className="text-center text-slate-400 text-xs py-10 italic">Aún no hay movimientos hoy</p>}
+           {todayFlow.length === 0 && <p className="text-center text-slate-400 text-xs py-10 italic">Aún no hay movimientos en esta fecha</p>}
            {todayFlow.map((f, i) => (
              <div key={`${f.id}-${i}`} className="bg-white p-3 rounded-2xl border flex justify-between items-center shadow-sm">
                <div>
@@ -1036,7 +1044,7 @@ function ModuloCaja() {
                    className="w-full bg-transparent outline-none font-black text-lg text-slate-800" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
                 <select value={type} onChange={e=>setType(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none bg-white">
@@ -1050,18 +1058,26 @@ function ModuloCaja() {
                   {type === 'SALIDA' ? (
                     <>
                       <option value="GASTO">GASTO</option>
+                      <option value="SALARIO">SALARIO</option>
                       <option value="ADELANTO">ADELANTO</option>
                       <option value="DEVOLUCION">DEVOLUCION</option>
                       <option value="REINVERSION">REINVERSIÓN</option>
+                      <option value="PRESTAMO">PRÉSTAMO</option>
                       <option value="OTRO">OTRO</option>
                     </>
                   ) : (
                     <>
-                      <option value="ENTRADA">OTRA ENTRADA</option>
+                      <option value="GANANCIA">GANANCIA</option>
+                      <option value="OTRA ENTRADA">OTRA ENTRADA</option>
+                      <option value="PRESTAMO">PRÉSTAMO</option>
                       <option value="OTROS">OTROS</option>
                     </>
                   )}
                 </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha</label>
+                <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none bg-white" />
               </div>
             </div>
             <button type="submit" disabled={isSubmitting || !desc || !amount}

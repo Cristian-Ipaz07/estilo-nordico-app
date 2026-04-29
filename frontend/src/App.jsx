@@ -17,6 +17,7 @@ import Reports from './pages/Reports';
 import UserManagement from './pages/UserManagement';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { DateRangeProvider } from './context/DateRangeContext';
 import Login from './pages/Login';
 
 const SidebarItem = ({ to, icon: Icon, label, hidden = false }) => {
@@ -55,13 +56,19 @@ const Layout = ({ children }) => {
         setIsTerminalOpen(prev => !prev);
       }
     };
+    const handleOpenTerminal = () => setIsTerminalOpen(true);
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('open-terminal', handleOpenTerminal);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-terminal', handleOpenTerminal);
+    };
   }, []);
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed h-full z-10">
+      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed h-full z-10 print:hidden">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
             <div className="bg-slate-900 text-white p-2 rounded-lg"><Store size={20} /></div>
@@ -73,7 +80,7 @@ const Layout = ({ children }) => {
             <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin}/>
             <SidebarItem to="/layaway" icon={Wallet} label="Separados" />
             <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin}/>
-            <SidebarItem to="/reports" icon={BarChart3} label="Reportes" hidden={!isAdmin}/>
+            <SidebarItem to="/reports" icon={BarChart3} label="Finanzas & Corte" hidden={!isAdmin}/>
             <SidebarItem to="/users" icon={Users} label="Usuarios" hidden={!isAdmin}/>
           </nav>
         </div>
@@ -84,8 +91,8 @@ const Layout = ({ children }) => {
         </div>
       </aside>
 
-      <main className="flex-1 ml-64">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10">
+      <main className="flex-1 ml-64 print:ml-0 print:w-full">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10 print:hidden">
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -157,7 +164,9 @@ export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
-        <AppContent />
+        <DateRangeProvider>
+          <AppContent />
+        </DateRangeProvider>
       </AuthProvider>
     </HashRouter>
   );

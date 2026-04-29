@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, Search, CheckCircle2, Clock, ShoppingCart,
   Edit2, Eye, Trash2, X, ChevronDown, ChevronRight,
-  AlertTriangle, DollarSign, TrendingUp, Package, User
+  AlertTriangle, DollarSign, TrendingUp, Package, User, RefreshCw
 } from 'lucide-react';
 
 
@@ -96,6 +96,19 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
     sale_date: sale.sale_date || (sale.created_at ? sale.created_at.split('T')[0] : '')
   });
 
+  // Cargar usuarios activos para el selector de vendedor
+  const [activeUsers, setActiveUsers] = useState([]);
+  useEffect(() => {
+    fetch('http://localhost:8000/users/', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setActiveUsers(data.filter(u => u.status === 'Activo'));
+      })
+      .catch(console.error);
+  }, []);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onUpdate(formData);
@@ -135,6 +148,11 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
                   onChange={e => setFormData({...formData, seller: e.target.value})}
                 >
                   <option value="LOCAL">LOCAL</option>
+                  {/* Usuarios activos del sistema */}
+                  {activeUsers.map(u => (
+                    <option key={u.id} value={u.full_name}>{u.full_name}</option>
+                  ))}
+                  {/* Canales legacy — se conservan para compatibilidad */}
                   <option value="WHATSAPP">WHATSAPP</option>
                   <option value="SAMANIEGO">SAMANIEGO</option>
                 </select>
@@ -427,6 +445,80 @@ const Sales = () => {
   const totalPendiente = sales.reduce((a, s) => a + (s.balance_due || 0), 0);
   const totalVentas = sales.reduce((a, s) => a + (s.total_sale || 0), 0);
 
+  // ── CSV Export ────────────────────────────────────────────────────────────
+  const exportToCSV = () => {
+    const headers = [
+      "FECHA", "COMPRADOR", "REF", "CATEGORIA", "SUBCATEGORIA", "PRODUCTO", 
+      "PRECIO VEN", "MI COSTO", "CANTIDAD", "SE VENDE", "VALOR MERCA", 
+      "VENTA", "SALDO", "OBSERVACION", "GANANCIA", "COSTO DE VENT", "VENDEDOR"
+    ];
+
+    let rows = [];
+
+    // Exportar las ventas que actualmente estén filtradas en la tabla
+    filtered.forEach(sale => {
+      const d = new Date(sale.created_at);
+      const fecha = isNaN(d) ? '' : d.toLocaleDateString('es-CO'); // e.g., 28-feb
+      const comprador = sale.customer_name || 'CLIENTE FINAL';
+      const vendedor = sale.user ? sale.user.full_name : (sale.sale_channel || 'LOCAL');
+      const saldo = sale.balance_due > 0 ? sale.balance_due : 0;
+      const obs = sale.status === 'separado' ? 'SEPARADO' : 'PAGADO';
+
+      if (!sale.items || sale.items.length === 0) {
+        rows.push([
+          fecha, comprador, "", "", "", "SIN PRODUCTOS",
+          0, 0, 0, 0, 0, sale.amount_paid, saldo, obs, 0, 0, vendedor
+        ]);
+        return;
+      }
+
+      sale.items.forEach((item, idx) => {
+        const ref = item.product?.ref || '';
+        const cat = item.product?.category || '';
+        const subcat = item.product?.subcategory || '';
+        const prod = item.product?.name || '';
+        
+        const precioVen = item.original_price || 0;
+        const miCosto = item.product?.my_cost || 0;
+        const cantidad = item.quantity || 0;
+        const seVende = item.price_at_sale || 0;
+        
+        const valorMerca = seVende * cantidad; // El total que vale la mercancia
+        const costoVent = miCosto * cantidad;
+        const ganancia = valorMerca - costoVent;
+
+        // Para evitar duplicar sumas de 'Venta Total' o 'Saldo' en Excel, 
+        // lo colocamos en la primera fila de la venta
+        const ventaVal = idx === 0 ? sale.amount_paid : '';
+        const saldoVal = idx === 0 && saldo > 0 ? saldo : '';
+
+        rows.push([
+          fecha, comprador, ref, cat, subcat, prod,
+          precioVen, miCosto, cantidad, seVende, valorMerca,
+          ventaVal, saldoVal, obs, ganancia, costoVent, vendedor
+        ]);
+      });
+    });
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(row => row.map(cell => {
+        if (typeof cell === 'string') return `"${cell.replace(/"/g, '""')}"`;
+        return cell;
+      }).join(';')) // Separador punto y coma para Excel en español
+    ].join('\n');
+
+    // Añadir BOM (\uFEFF) para que Excel detecte UTF-8 correctamente (tildes, etc)
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Ventas_EstiloNordico_${new Date().toLocaleDateString('es-CO').replace(/\//g,'-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6 p-4 min-h-full">
 
@@ -467,12 +559,20 @@ const Sales = () => {
           <h2 className="text-2xl font-black text-slate-900">Historial de Ventas</h2>
           <p className="text-slate-400 text-sm mt-0.5">Estilo Nórdico · Pasto / Samaniego</p>
         </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-black transition-all"
-        >
-          <Download size={16} /> Actualizar
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+          >
+            <Download size={16} /> Exportar a Excel
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-black transition-all"
+          >
+            <RefreshCw size={16} /> Actualizar
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

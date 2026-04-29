@@ -1,16 +1,38 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.db.database import get_db
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product
-# Asegúrate de actualizar tus schemas (Pydantic) para soportar la lista de items
-from app.schemas.sale import SaleCreate, SaleResponse 
+from app.schemas.sale import SaleCreate, SaleResponse
 from typing import List, Optional
 
 router = APIRouter()
 
+@router.get("/cogs")
+def get_cogs(start: Optional[str] = None, end: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Calcula el Costo de Mercancía Vendida (COGS) real:
+    COGS = SUM(item.quantity × product.my_cost) para las ventas en el rango.
+    """
+    query = db.query(
+        func.coalesce(func.sum(SaleItem.quantity * Product.my_cost), 0)
+    ).join(
+        Product, SaleItem.product_id == Product.id
+    ).join(
+        Sale, SaleItem.sale_id == Sale.id
+    )
+    if start:
+        query = query.filter(func.date(Sale.created_at) >= start)
+    if end:
+        query = query.filter(func.date(Sale.created_at) <= end)
+
+    cogs_total = query.scalar() or 0
+    return {"cogs_total": round(cogs_total, 2)}
+
 @router.get("/", response_model=List[SaleResponse])
 def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):
+
     query = db.query(Sale)
     if status:
         query = query.filter(Sale.status == status)
