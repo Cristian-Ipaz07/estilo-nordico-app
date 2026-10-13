@@ -1,44 +1,46 @@
 # ESTADO EN VIVO: NODO ERP (ESTILO NÓRDICO)
-> Última actualización: 2026-10-12 (Cierre Nocturno) | Fase 1 ERP Completada + Flujo de Caja & Entrada de Mercancía Operativos
+> Última actualización: 2026-10-13 (Jornada Mañana) | Cuadre 100% Corte 6-8 Octubre + Integración de Abonos a Separados en Ventas
 
 ## 🎯 RESUMEN EJECUTIVO
 * **Rol**: Fuente Única de Verdad (Inventario Maestro, POS Terminal, Domicilios, Catálogo Asesores, Flujo de Caja & Arqueos, API Pública).
 * **Fase Actual**: Fase 1 — ERP como Núcleo Central (100% Completada, Probada y Blindada).
 * **Estado Base de Datos**: 254 productos/variantes en PostgreSQL (puerto 5432) con slugs únicos.
 * **Saldo Inicial de Corte (Excel)**: Calibrado exactamente en **$215.900 COP** al 5 de Octubre 23:59:59.
-* **Turno Cerrado**: 6 al 8 de Octubre (Ventas: $850.000 | Gastos: $95.000 | Guardado/Retirado: $755.000 | Base: $150.000).
-* **Turno Activo Actual**: 9 de Octubre en adelante (Ventas/Abonos: $350.000 acumulados).
+* **Turno Cerrado (6 al 8 de Octubre)**: Ventas: $850.000 | Gastos: $95.000 | Guardado/Retirado: $755.000 | Base fija: $150.000 (100% auditado y cuadrado con cuaderno físico).
+* **Turno Activo Actual (9 de Octubre en adelante)**:
+  - Venta #286 (09/10): $160.000
+  - Venta #287 (10/10): $160.000
+  - Venta #288 (10/10): $60.000
+  - Abono #44 (10/10 - Juan Ipaz a Separado #270): $30.000
+  - **Total acumulado en caja turno activo**: **$410.000 COP**.
 * **Regla de Operación**: Cero regresiones lograda y validada al 100%.
 
 ---
 
-## 🛠️ HITOS RECIENTES COMPLETADOS & VERIFICADOS (12 OCTUBRE 2026)
+## 🛠️ HITOS RECIENTES COMPLETADOS & VERIFICADOS (13 OCTUBRE 2026)
 
-### 1. Sistema de Caja y Turnos Diarios en Terminal POS (`TerminalModal.jsx`)
-- [x] **Flujo Unificado**: El módulo `DIARIO` ahora consolida en tiempo real Ventas de mostrador, Abonos de cartera de separados y Movimientos físicos (gastos/salidas).
-- [x] **Turno Continuo Acumulable**: Ya no corta estrictamente a medianoche. Permite acumular 1, 2 o más días de ventas hasta que el cajero/administrador realice el cierre físico.
-- [x] **Base de Caja Predeterminada ($150.000)**: Editable en 1 clic y persistente en `localStorage`.
-- [x] **Arqueo y Cierre de Turno**: Modal visual con desglose de ventas, gastos, ganancia neta a retirar, base que queda en caja y selector de fecha retroactiva para cortes pasados.
-- [x] **Aislamiento de Ajustes Contables**: El movimiento histórico de balance ($20.349.400) quedó 100% aislado del turno operativo del local.
-- [x] **Sub-pestaña Historial de Cierres**: Permite auditar cortes previos o anular/reabrir un turno con 1 clic si se cometió un error de fecha.
+### 1. Integración de Abonos a Separados en el Módulo de Ventas (`Sales.jsx`)
+- [x] **Cuadre 1 a 1 de Dinero en Caja vs. Pantalla de Ventas**:
+  - `Total Recaudado (Caja)` ahora consolida tanto las ventas de contado como los abonos recibidos en el período seleccionado.
+  - Se añade indicador visual en tarjeta: *"Incluye $X en abonos a separados"*.
+- [x] **Aislamiento Contable de Mercancía (`Ventas Totales`)**:
+  - `Ventas Totales` suma únicamente las prendas nuevas facturadas en el período, evitando duplicar ventas cuando un cliente paga cuotas de un separado creado en fechas previas.
+- [x] **Filas Distintivas de Abono**:
+  - Los abonos aparecen en el orden cronológico exacto en que se pagaron con distintivo morado `ABONO`, borde lateral destacado y etiqueta `Abono Separado`.
+  - Muestra monto recaudado en verde (`+$30.000`), total del separado y saldo restante del cliente.
+  - Al expandir la fila, se despliega el resumen del recaudo y la lista de prendas que el cliente tiene reservadas.
+- [x] **Pestaña de Filtro Dedicada**:
+  - Añadido selector `[💜 Abonos]` junto a `[Todos]`, `[Pagado]`, `[Separado]` y `[Domicilio]`.
+- [x] **Exportación a Excel**: Soporta transacciones mixtas exportando tanto ventas como cuotas de separados con su respectivo identificador.
 
-### 2. Gestión de Variantes & Recepción de Mercancía Nueva
-- [x] **Skill Global `inventory-sku-manager`**: Integrado para procesar notas y dictado rápido de mercancía a variantes estructuradas.
-- [x] **Carga de 22 Nuevas Variantes en Base de Datos**:
-  - **17 Variantes de Busos Mónaco Capucha (`REF 30861`)**: Creadas en stock 0 según requerimiento para consolidar con conteo físico (tallas M, L, XL, XXL en diversos estampados).
-  - **3 Variantes de Chaqueta Polar Unicolor Columbia (`REF 6041`)**: 4 unidades ingresadas (Marrón M: 2, Verde Militar L: 1, Azul Petróleo XL: 1). Costo: $38.000 | Venta: $65.000.
-  - **2 Variantes de Chaqueta Polar Bicolor Columbia (`REF 6042`)**: 2 unidades ingresadas (Café/Marfil L: 1, Gris Jaspeado/Gris Plomo XL: 1). Costo: $38.000 | Venta: $65.000.
-- [x] **Manual Operativo (SOP)**: Generado en [`PROCEDIMIENTO_ENTRADA_MERCANCIA.md`](./PROCEDIMIENTO_ENTRADA_MERCANCIA.md) para recepción, fotos en pared neutra, fondo en Canva, compresión WebP y carga en Disco D y ERP.
-
-### 3. Frontend & Estabilidad Global
-- [x] **Persistencia de Fechas**: `DateRangeContext.jsx` memoriza la fecha inicial de corte (`2026-10-06`) en `localStorage` para evitar reseteos de arrastre al recargar la app.
-- [x] **Limpieza de Caracteres**: Depuración de tildes y signos de interrogación corruptos en componentes y modales.
-- [x] **Build de Producción**: `vite build` compilando limpio con 0 errores (dist listo).
-- [x] **Servidor Uvicorn**: Activo en segundo plano sirviendo en puerto 8000.
+### 2. Cuadre Histórico y Recuperación de Ventas del 8 de Octubre
+- [x] **Restauración de 3 Ventas**: Reconstruidas las ventas #289 (Medias $20k), #290 (Buso Mónaco $55k) y #291 (Impermeable $80k) con fecha 08/10/2026.
+- [x] **Cuadre Perfecto**: Las ventas del 6 al 8 de octubre totalizan exactamente **$850.000**, coincidiendo al peso con el cuaderno físico y el Cierre ID #119.
 
 ---
 
 ## 📌 PRÓXIMOS PASOS
-1. Conexión de la Tienda Web (`Web-Estilo-Nordico`) consumiendo `/api/public/products` para catálogo en línea.
-2. Sincronización de imágenes de variantes (`images` JSON) entre disco local D y la tienda web.
-3. Notificaciones automáticas de pedidos por WhatsApp mediante Nordic Engine (n8n).
+1. Conteo físico de los 17 Busos Mónaco (`REF 30861`) para asentar stock inicial.
+2. Registro de ventas y movimientos de los días 11 y 12 de octubre (si aplican).
+3. Conexión de la Tienda Web (`Web-Estilo-Nordico`) consumiendo `/api/public/products` para catálogo en línea.
+4. Sincronización de imágenes de variantes (`images` JSON) entre disco local D y la tienda web.
