@@ -67,6 +67,12 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
     for key, value in update_data.items():
         setattr(db_product, key, value)
     
+    # Si se actualizó price_sale y es un producto padre, propagar a sus variantes
+    if "price_sale" in update_data and update_data["price_sale"] is not None:
+        db.query(ProductModel).filter(ProductModel.parent_id == product_id).update(
+            {"price_sale": update_data["price_sale"]}
+        )
+    
     if not db_product.slug:
         db_product.slug = generate_product_slug(db_product.ref, db_product.name or "", db, current_id=product_id)
 
@@ -130,6 +136,9 @@ def restock_product(data: RestockRequest, db: Session = Depends(get_db)):
 
     if data.new_price_sale is not None:
         product.price_sale = data.new_price_sale
+        db.query(ProductModel).filter(ProductModel.parent_id == product.id).update(
+            {"price_sale": data.new_price_sale}
+        )
 
     db.commit()
     db.refresh(product)
@@ -155,6 +164,10 @@ def update_product_price(product_id: int, price_sale: float = None, my_cost: flo
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     if price_sale is not None:
         product.price_sale = price_sale
+        # Propagar a variantes si es padre
+        db.query(ProductModel).filter(ProductModel.parent_id == product_id).update(
+            {"price_sale": price_sale}
+        )
     if my_cost is not None:
         product.my_cost = my_cost
     db.commit()
@@ -238,6 +251,9 @@ def create_stock_entry(data: StockEntryCreate, db: Session = Depends(get_db)):
     product.current_cost_total = round(weighted_cost * stock_total, 2)
     if data.new_price_sale:
         product.price_sale = data.new_price_sale
+        db.query(ProductModel).filter(ProductModel.parent_id == product.id).update(
+            {"price_sale": data.new_price_sale}
+        )
 
     # 3. Crear Registro de Entrada
     new_entry = StockEntryModel(
