@@ -16,6 +16,7 @@ router = APIRouter()
 def list_public_products(
     product_type: Optional[str] = Query(None, description="Filtrar por tipo: CHAQUETA, PERFUME, RELOJ, ROPA, ACCESORIO"),
     category: Optional[str] = Query(None, description="Filtrar por categoría: Hombre, Mujer, Unisex"),
+    subcategory: Optional[str] = Query(None, description="Filtrar por subcategoría: Camiseta, Buso, Pantalon, etc."),
     brand: Optional[str] = Query(None, description="Filtrar por marca: Yanbal, Avon, etc."),
     in_stock: Optional[bool] = Query(None, description="Solo productos con stock > 0"),
     search: Optional[str] = Query(None, description="Búsqueda por nombre o referencia"),
@@ -33,6 +34,8 @@ def list_public_products(
         query = query.filter(ProductModel.product_type == product_type.upper())
     if category:
         query = query.filter(ProductModel.category.ilike(f"%{category}%"))
+    if subcategory:
+        query = query.filter(ProductModel.subcategory.ilike(f"%{subcategory}%"))
     if brand:
         query = query.filter(ProductModel.brand.ilike(f"%{brand}%"))
     if in_stock is True:
