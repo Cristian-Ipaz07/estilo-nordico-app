@@ -16,3 +16,5 @@ dist/
 *backup*
 copy/
 temp/*.log
+uvicorn.log
+backend/uvicorn.log
