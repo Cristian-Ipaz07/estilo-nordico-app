@@ -3,8 +3,27 @@
 /* Si lo anterior te da error, vuelve a usar: */
 /* @tailwind base; @tailwind components; @tailwind utilities; */
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  max-width: 100vw;
   background-color: #f8fafc;
   font-family: sans-serif;
+}
+
+/* Custom scrollbars para tablas y paneles internos */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
