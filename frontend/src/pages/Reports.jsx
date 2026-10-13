@@ -731,7 +731,7 @@ export default function FinanceCorte() {
   const [loading, setLoading] = useState(true);
   const [dataVersion, setDataVersion] = useState(0); // dispara recarga tras pagar nómina
 
-  const { startDate, endDate, setStartDate, setEndDate } = useDateRange();
+  const { startDate, endDate, setStartDate, setEndDate, getTodayCO } = useDateRange();
   const { user } = useAuth();
   const token = localStorage.getItem('token');
 
@@ -787,12 +787,23 @@ export default function FinanceCorte() {
           <h2 className="text-2xl font-black text-slate-900">Finanzas & Corte</h2>
           <p className="text-slate-400 text-sm mt-0.5">Centro de Gestión Financiera · Estilo Nórdico</p>
         </div>
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-xs font-black rounded-xl hover:bg-black transition-all shadow-lg"
-        >
-          <Printer size={16} /> Cerrar Corte / Imprimir
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setStartDate(getTodayCO());
+              setEndDate('');
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 text-xs font-black rounded-xl hover:bg-indigo-100 transition-all border border-indigo-200"
+          >
+            <RefreshCw size={16} /> Nuevo Corte
+          </button>
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-5 py-2 bg-slate-900 text-white text-xs font-black rounded-xl hover:bg-black transition-all shadow-lg"
+          >
+            <Printer size={16} /> Cerrar Corte / Imprimir
+          </button>
+        </div>
       </div>
 
       {/* Selector de Rango Global */}

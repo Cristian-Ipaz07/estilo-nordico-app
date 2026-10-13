@@ -8,27 +8,33 @@ import {
   DollarSign,
   Edit2,
   Trash2,
-  X
+  X,
+  CalendarRange
 } from 'lucide-react';
+import { useDateRange, getTodayCO } from '../context/DateRangeContext';
 
 const getColDate = (d = new Date()) => new Date(new Date(d).toLocaleString("en-US", {timeZone: "America/Bogota"}));
 
 const CashFlow = () => {
   const [movements, setMovements] = useState([]);
+  const [sales, setSales] = useState([]); // Nuevo estado para inyectar las ventas
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState('mes'); // 'hoy', 'semana', 'mes', 'todo'
+  const { startDate, endDate, setStartDate, setEndDate } = useDateRange();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    fetch('http://localhost:8000/cash/', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    
+    Promise.all([
+      fetch('http://localhost:8000/cash/', { headers }).then(r => r.json()),
+      fetch('http://localhost:8000/sales/', { headers }).then(r => r.json())
+    ])
+    .then(([cashData, salesData]) => {
+      setMovements(Array.isArray(cashData) ? cashData : []);
+      setSales(Array.isArray(salesData) ? salesData : []);
+      setLoading(false);
     })
-      .then(res => res.json())
-      .then(data => {
-        setMovements(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch(console.error);
+    .catch(console.error);
   }, []);
 
   const [editingMovement, setEditingMovement] = useState(null);
@@ -53,6 +59,8 @@ const CashFlow = () => {
   };
 
   const handleDelete = async (id) => {
+    // Si es una venta virtual no se puede borrar desde aquí
+    if (String(id).startsWith('sale-')) return;
     if (!window.confirm("¿Seguro que quieres eliminar este movimiento?")) return;
     try {
       const res = await fetch(`http://localhost:8000/cash/${id}`, {
@@ -65,36 +73,90 @@ const CashFlow = () => {
     } catch (err) { console.error(err); }
   };
 
-  // Filter and sort Data
-  const filteredData = useMemo(() => {
-    let filtered = [...movements];
-    const now = getColDate();
-    
-    if (dateFilter === 'hoy') {
-      filtered = filtered.filter(m => {
-        const d = getColDate(m.payment_date || m.created_at);
-        return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  // Unificar movimientos físicos + ventas virtuales
+  const allMovements = useMemo(() => {
+    const virtualSales = [];
+    sales.forEach(s => {
+      const history = s.payment_history || [];
+      const historyTotal = history.reduce((sum, p) => sum + p.amount, 0);
+      const initialPayment = s.amount_paid - historyTotal;
+
+      if (initialPayment > 0) {
+        virtualSales.push({
+          id: `sale-${s.id}-init`,
+          description: `VENTA #${s.id} - ${s.customer_name}`,
+          amount: initialPayment,
+          type: 'ENTRADA',
+          category: 'VENTA',
+          payment_date: s.created_at,
+          created_at: s.created_at,
+          isVirtual: true
+        });
+      }
+
+      history.forEach(p => {
+        virtualSales.push({
+          id: `sale-${s.id}-pay-${p.id}`,
+          description: `ABONO VENTA #${s.id} - ${s.customer_name}`,
+          amount: p.amount,
+          type: 'ENTRADA',
+          category: 'VENTA',
+          payment_date: p.payment_date,
+          created_at: p.payment_date,
+          isVirtual: true
+        });
       });
-    } else if (dateFilter === 'semana') {
-      const firstDay = new Date(now.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)));
-      firstDay.setHours(0,0,0,0);
-      filtered = filtered.filter(m => getColDate(m.payment_date || m.created_at) >= firstDay);
-    } else if (dateFilter === 'mes') {
-      filtered = filtered.filter(m => {
-        const d = getColDate(m.payment_date || m.created_at);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      });
-    }
+    });
     
-    // Sort oldest to newest to calculate running balance correctly
-    return filtered.sort((a,b) => new Date(a.payment_date || a.created_at) - new Date(b.payment_date || b.created_at));
-  }, [movements, dateFilter]);
+    // Como ahora inyectamos las ventas automáticamente, filtramos cualquier registro MANUAL
+    // que el usuario haya hecho en el pasado usando la categoría "VENTA" para evitar duplicar el dinero.
+    const realMovements = movements.filter(m => m.category !== 'VENTA');
+    
+    return [...realMovements, ...virtualSales].sort((a,b) => new Date(a.payment_date || a.created_at) - new Date(b.payment_date || b.created_at));
+  }, [movements, sales]);
+
+  // Filtrar y calcular arrastre
+  const processedData = useMemo(() => {
+    const effectiveEnd = endDate || getTodayCO();
+    
+    let initialBalance = 0;
+    const filtered = [];
+    
+    allMovements.forEach(m => {
+      const d = (m.payment_date || m.created_at || '').split('T')[0];
+      const isEntrada = m.type === 'ENTRADA';
+      
+      if (d < startDate) {
+        // Movimientos antes del corte suman al saldo arrastrado
+        if (isEntrada) initialBalance += m.amount;
+        else initialBalance -= m.amount;
+      } else if (d <= effectiveEnd) {
+        // Movimientos dentro del corte
+        filtered.push(m);
+      }
+    });
+
+    return { initialBalance, filtered };
+  }, [allMovements, startDate, endDate]);
 
   // Calculate Running Balance & Process Rows
   const tableRows = [];
-  let currentBalance = 0;
+  let currentBalance = processedData.initialBalance;
   
-  filteredData.forEach(m => {
+  // Agregar fila virtual de saldo inicial arrastrado
+  tableRows.push({
+    id: 'saldo-inicial',
+    fechaStr: startDate.split('-').reverse().join('/'),
+    description: 'SALDO ANTERIOR (ARRASTRE)',
+    entrada: null,
+    salida: null,
+    saldo: currentBalance,
+    category: 'INICIO',
+    isVirtual: true,
+    isInitial: true
+  });
+
+  processedData.filtered.forEach(m => {
     const isEntrada = m.type === 'ENTRADA';
     if (isEntrada) currentBalance += m.amount;
     else currentBalance -= m.amount;
@@ -111,7 +173,7 @@ const CashFlow = () => {
   // Pivot Table Calculation
   const pivotData = useMemo(() => {
     const sums = {};
-    filteredData.forEach(m => {
+    processedData.filtered.forEach(m => {
       if (!sums[m.category]) sums[m.category] = { ENTRADAS: 0, SALIDAS: 0 };
       if (m.type === 'ENTRADA') sums[m.category].ENTRADAS += m.amount;
       else sums[m.category].SALIDAS += m.amount;
@@ -127,15 +189,15 @@ const CashFlow = () => {
     const totalSalidas = summary.reduce((a, b) => a + b.salidas, 0);
     
     return { summary, totalEntradas, totalSalidas };
-  }, [filteredData]);
+  }, [processedData.filtered]);
 
   if (loading) return <div className="p-8 text-slate-500 font-bold">Cargando contabilidad global...</div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       
-      {/* Header & Filters */}
-      <div className="flex justify-between items-center">
+      {/* Header & Filtro de Rango Global */}
+      <div className="flex justify-between items-start">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Flujo de Caja Global (Contabilidad)</h2>
           <p className="text-slate-500 text-sm">Consolidado de cierres de caja, arriendos, salarios y gastos macro.</p>
@@ -147,14 +209,44 @@ const CashFlow = () => {
           >
             + Registrar Movimiento
           </button>
-          <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-            {['hoy', 'semana', 'mes', 'todo'].map(f => (
-              <button key={f} onClick={() => setDateFilter(f)}
-                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${dateFilter === f ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
-                {f}
-              </button>
-            ))}
+        </div>
+      </div>
+
+      {/* Selector de rango global (sincronizado con Ventas y Finanzas) */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap gap-4 items-end shadow-sm">
+        <div className="flex items-center gap-2 mr-2">
+          <CalendarRange size={14} className="text-indigo-500" />
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Período del Corte</span>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Desde</label>
+          <div className="flex items-center gap-2">
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
           </div>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hasta (Automático = Hoy)</label>
+          <div className="flex items-center gap-2">
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
+            <button 
+              onClick={() => setEndDate(getTodayCO())}
+              className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-colors"
+            >
+              AL DÍA
+            </button>
+            <button 
+              onClick={() => setEndDate('')}
+              className="px-3 py-2 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-xl text-xs font-bold transition-colors"
+              title="Dejar abierto para que avance con el día de hoy automáticamente"
+            >
+              LIMPIAR
+            </button>
+          </div>
+        </div>
+        <div className="ml-auto text-[10px] font-bold text-slate-400 italic">
+          Sincronizado con Ventas &amp; Finanzas
         </div>
       </div>
 
@@ -228,18 +320,22 @@ const CashFlow = () => {
                       {row.category}
                     </td>
                     <td className="px-4 py-1.5 border border-slate-200 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button onClick={() => setEditingMovement({
-                          id: row.id, description: row.description, amount: row.amount, 
-                          type: row.type, category: row.category, 
-                          payment_date: row.payment_date ? row.payment_date.split('T')[0] : row.created_at.split('T')[0]
-                        })} className="text-slate-400 hover:text-indigo-600 transition-colors">
-                          <Edit2 size={14} />
-                        </button>
-                        <button onClick={() => handleDelete(row.id)} className="text-slate-400 hover:text-rose-600 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      {!row.isVirtual && (
+                        <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => setEditingMovement({
+                            id: row.id, description: row.description, amount: row.amount, 
+                            type: row.type, category: row.category, 
+                            payment_date: row.payment_date ? row.payment_date.split('T')[0] : row.created_at.split('T')[0]
+                          })} className="text-slate-400 hover:text-indigo-600 transition-colors">
+                            <Edit2 size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(row.id)} className="text-slate-400 hover:text-rose-600 transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
+                      {row.isInitial && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Base</span>}
+                      {row.isVirtual && !row.isInitial && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Venta Auto</span>}
                     </td>
                   </tr>
                 ))}

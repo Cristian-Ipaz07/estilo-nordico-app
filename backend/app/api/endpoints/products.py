@@ -7,7 +7,8 @@ from app.db.database import get_db
 from app.models.product import Product as ProductModel
 from app.models.stock_entry import StockEntry as StockEntryModel
 from app.models.cash_movement import CashMovement as CashMovementModel
-from app.schemas.product import Product, ProductCreate, RestockRequest, RestockResponse
+from app.schemas.product import Product, ProductCreate, ProductUpdate, RestockRequest, RestockResponse
+import re
 from app.schemas.stock_entry import StockEntryCreate, StockEntryResponse, CancelEntryRequest
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 import pandas as pd
@@ -21,28 +22,54 @@ router = APIRouter()
 def read_products(db: Session = Depends(get_db)):
     return db.query(ProductModel).all()
 
+# Helper slug
+def generate_product_slug(ref: str, name: str, db: Session, current_id: int = None) -> str:
+    base = f"{ref}-{name}" if name else ref
+    slug = re.sub(r'[^a-z0-9]+', '-', base.lower()).strip('-')
+    query = db.query(ProductModel).filter(ProductModel.slug == slug)
+    if current_id:
+        query = query.filter(ProductModel.id != current_id)
+    if query.first():
+        slug = f"{slug}-{int(datetime.now().timestamp())}"
+    return slug
+
 # 2. CREAR
 @router.post("/", response_model=Product)
 def create_product(product: ProductCreate, db: Session = Depends(get_db)):
-    new_product = ProductModel(**product.model_dump()) # Forma elegante de pasar todos los datos
+    existing = db.query(ProductModel).filter(ProductModel.ref == product.ref).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"La referencia '{product.ref}' ya existe en el inventario")
+
+    data = product.model_dump()
+    if not data.get("slug"):
+        data["slug"] = generate_product_slug(data["ref"], data.get("name", ""), db)
+
+    new_product = ProductModel(**data)
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
     return new_product
 
-# 3. ACTUALIZAR (Para la edición rápida tipo Excel)
+# 3. ACTUALIZAR (Edici?n completa o parcial)
 @router.put("/{product_id}", response_model=Product)
-def update_product(product_id: int, product_data: ProductCreate, db: Session = Depends(get_db)):
+def update_product(product_id: int, product_data: ProductUpdate, db: Session = Depends(get_db)):
     db_product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
-    # exclude_unset=True evita errores si mandas un json parcial
     update_data = product_data.model_dump(exclude_unset=True)
     
+    if "ref" in update_data and update_data["ref"] != db_product.ref:
+        existing = db.query(ProductModel).filter(ProductModel.ref == update_data["ref"]).first()
+        if existing and existing.id != product_id:
+            raise HTTPException(status_code=400, detail=f"La referencia '{update_data['ref']}' ya est? en uso por otro producto")
+
     for key, value in update_data.items():
         setattr(db_product, key, value)
     
+    if not db_product.slug:
+        db_product.slug = generate_product_slug(db_product.ref, db_product.name or "", db, current_id=product_id)
+
     db.commit()
     db.refresh(db_product)
     return db_product

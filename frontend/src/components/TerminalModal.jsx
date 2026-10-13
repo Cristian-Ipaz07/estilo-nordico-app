@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { EditLayawayModal } from '../pages/LayawayPage';
 import {
-  Search, ShoppingCart, Trash2, X, User, Calendar, Tag,
+  Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Package, DollarSign, Clock,
-  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Save,
+  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
   History, Truck, RotateCcw
 } from 'lucide-react';
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
 
-// Helper para fecha hoy en Colombia (YYYY-MM-DD)
+// Helper para fecha hoy en Colombia (YYYY-MM-DD) — robusto con toLocaleString
 const getTodayCO = () => {
   const d = new Date();
-  // Ajuste manual si el servidor está en UTC
-  const co = new Date(d.getTime() - (5 * 60 * 60 * 1000)); 
+  const co = new Date(d.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
   return co.toISOString().split('T')[0];
 };
 
@@ -95,6 +95,9 @@ const { user } = useAuth();
   }, []);
   const [amountPaid, setAmountPaid] = useState(0);
   const [saleDate, setSaleDate] = useState(getTodayCO());
+  const [isDelivery, setIsDelivery] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryNotes, setDeliveryNotes] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -105,7 +108,7 @@ const { user } = useAuth();
     if (!term) { setFilteredResults([]); return; }
     const kws = term.split(' ');
     setFilteredResults(inventory.filter(item => {
-      const content = `${item.ref} ${item.name || item.producto || ''} ${item.category} ${item.subcategory}`.toLowerCase();
+      const content = `${item.ref} ${item.name || item.producto || ''} ${item.category} ${item.subcategory} ${item.color || ''} ${item.size || ''}`.toLowerCase();
       return kws.every(k => content.includes(k));
     }));
   }, [search, inventory]);
@@ -151,26 +154,40 @@ const { user } = useAuth();
     if (cart.length === 0 || hasStockError || isSubmitting) return;
     setIsSubmitting(true);
     const payload = {
-      customer_name: customer, 
+      customer_name: customer,
+      total_price: totalVenta,
       sale_channel: "LOCAL",
       user_id: Number(vendedorId),
       created_by: user.id,
-      amount_paid: Number(amountPaid), sale_date: saleDate,
+      amount_paid: Number(amountPaid),
+      sale_date: saleDate,
+      status: isDelivery ? "en_domicilio" : undefined,
+      delivery_address: isDelivery ? deliveryAddress : null,
+      delivery_notes: isDelivery ? deliveryNotes : null,
       items: cart.map(i => ({
-        product_id: i.id, quantity: i.qty,
-        original_price: i.original_price, total_item: i.total_item,
+        product_id: i.id,
+        quantity: i.qty,
+        // Bug 3: precio real vendido = total de fila / cantidad (captura descuentos editados)
+        unit_price: i.qty > 0 ? Math.round(i.total_item / i.qty) : i.original_price,
       })),
     };
     try {
       const res = await fetch('http://localhost:8000/sales/', {
-        method: 'POST', 
-        headers: { 
+        method: 'POST',
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Error'); }
+      if (!res.ok) {
+        const errData = await res.json();
+        // FastAPI devuelve detail como string o array de objetos de validación
+        const msg = Array.isArray(errData.detail)
+          ? errData.detail.map(d => `${d.loc?.join('.')} → ${d.msg}`).join('\n')
+          : (errData.detail || 'Error desconocido');
+        throw new Error(msg);
+      }
       const isSep = Number(amountPaid) < totalVenta;
       setSuccessMsg(isSep ? '¡Separado registrado!' : '¡Venta finalizada!');
       setTimeout(() => setSuccessMsg(''), 3000);
@@ -178,7 +195,7 @@ const { user } = useAuth();
       reloadInventory();
       setCart([]); setCustomer('CLIENTE FINAL'); setVendedorId(user?.id || ''); setAmountPaid(0);
     } catch (e) {
-      alert(`Error: ${e.message}`);
+      alert(`Error al guardar venta:\n${e.message}`);
     } finally { setIsSubmitting(false); }
   };
 
@@ -210,7 +227,7 @@ const { user } = useAuth();
                       {p.name || p.producto} <span className="text-emerald-500">[{p.ref}]</span>
                     </p>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {p.category} • {p.subcategory} | Stock: {p.stock}
+                      {p.category} • {p.subcategory} {p.color ? `• ${p.color}` : ''} {p.size ? `• ${p.size}` : ''} | Stock: {p.stock}
                     </p>
                   </div>
                   <p className="font-black text-sm text-slate-900">${fmt(p.price_sale || p.p_venta || 0)}</p>
@@ -323,7 +340,7 @@ const { user } = useAuth();
             </div>
             <button disabled={cart.length === 0 || hasStockError || isSubmitting} onClick={handleFinalizar}
               className="flex-1 bg-slate-900 text-white rounded-[22px] font-black text-sm hover:bg-black transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tighter">
-              {isSubmitting ? 'Guardando...' : amountPaid < totalVenta ? 'Registrar Separado' : 'Finalizar Venta'}
+              {isSubmitting ? 'Guardando...' : isDelivery ? '🛵 Apartar Domicilio' : amountPaid < totalVenta ? 'Registrar Separado' : 'Finalizar Venta'}
             </button>
           </div>
         </div>
@@ -341,6 +358,7 @@ function ModuloSeparados() {
   const [msg, setMsg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [abonoDate, setAbonoDate] = useState(getTodayCO());
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
 
 
@@ -349,7 +367,9 @@ function ModuloSeparados() {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
-      .then(d => setSeparados(Array.isArray(d) ? d.filter(s => s.balance_due > 0) : []))
+      .then(d => {
+        setSeparados(Array.isArray(d) ? d.filter(s => s.balance_due > 0 || s.status === 'en_domicilio') : []);
+      })
       .catch(console.error);
   }, []);
 
@@ -461,8 +481,20 @@ function ModuloSeparados() {
         ) : (
           <div className="flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-2 pb-2">
             <div className="bg-slate-50 rounded-2xl p-4 border shrink-0">
-              <p className="text-xs font-black text-slate-800 uppercase">{selected.customer_name}</p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">Separado #{selected.id}</p>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="text-xs font-black text-slate-800 uppercase">{selected.customer_name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Separado #{selected.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
+                  title="Editar datos, fecha o abonos"
+                >
+                  <Edit3 size={11} /> Editar Separado
+                </button>
+              </div>
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500 font-bold">Total venta</span>
@@ -575,7 +607,7 @@ function ModuloStock({ inventory, reloadInventory }) {
 
   // Creación express
   const [showCreate, setShowCreate] = useState(false);
-  const [newProd, setNewProd] = useStickyState({ ref: '', name: '', category: '', subcategory: '', stock: '', my_cost: '', price_sale: '' }, 'en_terminal_express_prod');
+  const [newProd, setNewProd] = useStickyState({ ref: '', name: '', category: '', subcategory: '', brand: '', origin: '', color: '', size: '', stock: '', my_cost: '', price_sale: '' }, 'en_terminal_express_prod');
   const [refError, setRefError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
@@ -656,7 +688,7 @@ function ModuloStock({ inventory, reloadInventory }) {
       window.dispatchEvent(new CustomEvent('refresh-inventory'));
       setStockMsg(`¡Producto ${data.name} creado!`);
       setShowCreate(false);
-      setNewProd({ ref: '', name: '', category: '', subcategory: '', stock: '', my_cost: '', price_sale: '' });
+      setNewProd({ ref: '', name: '', category: '', subcategory: '', brand: '', origin: '', color: '', size: '', stock: '', my_cost: '', price_sale: '' });
       selectProduct(data);
     } catch (e) { alert(e.message); }
     finally { setIsCreating(false); }
@@ -752,6 +784,14 @@ function ModuloStock({ inventory, reloadInventory }) {
                 value={newProd.category} onChange={e => setNewProd({...newProd, category: e.target.value})} />
               <input placeholder="Subcategoría" className="p-3 rounded-2xl bg-white border font-bold text-sm"
                 value={newProd.subcategory} onChange={e => setNewProd({...newProd, subcategory: e.target.value})} />
+              <input placeholder="Marca" className="p-3 rounded-2xl bg-white border font-bold text-sm"
+                value={newProd.brand} onChange={e => setNewProd({...newProd, brand: e.target.value})} />
+              <input placeholder="Origen (Ej: Propio/Amiga)" className="p-3 rounded-2xl bg-white border font-bold text-sm"
+                value={newProd.origin} onChange={e => setNewProd({...newProd, origin: e.target.value})} />
+              <input placeholder="Color" className="p-3 rounded-2xl bg-white border font-bold text-sm"
+                value={newProd.color} onChange={e => setNewProd({...newProd, color: e.target.value})} />
+              <input placeholder="Talla" className="p-3 rounded-2xl bg-white border font-bold text-sm"
+                value={newProd.size} onChange={e => setNewProd({...newProd, size: e.target.value})} />
               <input placeholder="Stock Inicial" type="number" className="p-3 rounded-2xl bg-white border font-bold text-sm"
                 value={newProd.stock} onChange={e => setNewProd({...newProd, stock: e.target.value})} />
               <input placeholder="Costo Unitario" type="number" className="p-3 rounded-2xl bg-white border font-bold text-sm"
@@ -865,13 +905,26 @@ function ModuloStock({ inventory, reloadInventory }) {
   );
 }
 
-// ─── MÓDULO CAJA ──────────────────────────────────────────────────────────────
+// ─── MÓDULO CAJA ──────────────────────────────────────────────
 function ModuloCaja() {
+  const [subTab, setSubTab] = useState('turno'); // 'turno' | 'historial'
+  const [baseCaja, setBaseCaja] = useStickyState(150000, 'base_caja_terminal');
+  const [isEditingBase, setIsEditingBase] = useState(false);
+  const [tempBase, setTempBase] = useState(baseCaja);
+
+  // Formulario manual
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('SALIDA');
   const [category, setCategory] = useState('GASTO');
-  const [date, setDate] = useState(getTodayCO());
+  const [manualDate, setManualDate] = useState(getTodayCO());
+
+  // Modal Cierre de caja
+  const [cierreModalOpen, setCierreModalOpen] = useState(false);
+  const [cierreDate, setCierreDate] = useState(getTodayCO());
+  const [cierreBaseSiguiente, setCierreBaseSiguiente] = useState(baseCaja);
+
+  // Estados de datos
   const [movements, setMovements] = useState([]);
   const [sales, setSales] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -881,8 +934,8 @@ function ModuloCaja() {
   const loadData = useCallback(() => {
     setIsLoading(true);
     Promise.all([
-      fetch('http://localhost:8000/sales/', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }).then(r => r.json()),
-      fetch('http://localhost:8000/cash/', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }).then(r => r.json())
+      fetch('http://localhost:8000/sales/', { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json()),
+      fetch('http://localhost:8000/cash/', { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json())
     ]).then(([sData, cData]) => {
       setSales(Array.isArray(sData) ? sData : []);
       setMovements(Array.isArray(cData) ? cData : []);
@@ -893,199 +946,610 @@ function ModuloCaja() {
   useEffect(() => {
     loadData();
     window.addEventListener('refresh-sales', loadData);
-    return () => window.removeEventListener('refresh-sales', loadData);
+    window.addEventListener('refresh-cash', loadData);
+    return () => {
+      window.removeEventListener('refresh-sales', loadData);
+      window.removeEventListener('refresh-cash', loadData);
+    };
   }, [loadData]);
 
-  const isToday = (dateField) => {
-    if (!dateField) return false;
-    // Si la fecha viene de la DB sin 'Z', el navegador la asume local. 
-    // Forzamos 'Z' para que sepa que es UTC y la convierta correctamente a Bogotá.
-    let dStr = dateField;
-    if (typeof dStr === 'string' && !dStr.includes('Z') && !dStr.includes('+')) {
-      dStr += 'Z';
+  // 1. Unificar todos los flujos de dinero (ventas, abonos, salidas/entradas físicas)
+  const unifiedFlow = useMemo(() => {
+    const list = [];
+
+    // Ventas y sus abonos
+    sales.forEach(s => {
+      const history = s.payment_history || [];
+      const historyTotal = history.reduce((sum, p) => sum + p.amount, 0);
+      const initialPayment = (s.amount_paid || 0) - historyTotal;
+
+      if (initialPayment > 0) {
+        list.push({
+          id: "sale-" + s.id + "-init",
+          desc: "VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
+          amount: initialPayment,
+          type: 'ENTRADA',
+          cat: 'VENTA',
+          date: s.created_at,
+          isSale: true
+        });
+      }
+
+      history.forEach(p => {
+        list.push({
+          id: "sale-" + s.id + "-pay-" + p.id,
+          desc: "ABONO VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
+          amount: p.amount,
+          type: 'ENTRADA',
+          cat: 'ABONO',
+          date: p.payment_date,
+          isSale: true
+        });
+      });
+    });
+
+    // Movimientos físicos de caja (excluyendo 'VENTA' y cualquier movimiento de ajuste contable)
+    movements.forEach(m => {
+      const mCat = (m.category || '').toUpperCase();
+      const mDesc = (m.description || '').toUpperCase();
+      
+      // Filtrar ventas duplicadas y ajustes de saldo histórico
+      if (mCat === 'VENTA' || mCat === 'AJUSTE_CORTE' || mCat.includes('AJUSTE') || mDesc.includes('AJUSTE CORTE')) {
+        return;
+      }
+
+      const mDate = m.payment_date || m.created_at;
+      list.push({
+        id: "csh-" + m.id,
+        desc: m.description,
+        amount: m.amount,
+        type: m.type,
+        cat: m.category,
+        date: mDate,
+        rawId: m.id
+      });
+    });
+
+    return list.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [sales, movements]);
+
+  // 2. Cierres de caja registrados
+  const closures = useMemo(() => {
+    return unifiedFlow
+      .filter(f => f.cat === 'CIERRE CAJA')
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [unifiedFlow]);
+
+  // Último cierre de caja ocurrido en el ciclo actual (desde el 06 de octubre de 2026)
+  const lastActiveClosure = useMemo(() => {
+    return closures.find(c => {
+      const dStr = (c.date || '').split('T')[0];
+      return dStr >= '2026-10-06';
+    });
+  }, [closures]);
+
+  const shiftStartDate = useMemo(() => {
+    if (lastActiveClosure) return new Date(lastActiveClosure.date);
+    return new Date('2026-10-06T00:00:00');
+  }, [lastActiveClosure]);
+
+  // 3. Movimientos del turno activo actual (solo ciclo 06/10/2026 en adelante y posteriores al último cierre)
+  const activeShiftFlow = useMemo(() => {
+    return unifiedFlow
+      .filter(f => {
+        if (f.cat === 'CIERRE CAJA') return false;
+        const dStr = (f.date || '').split('T')[0];
+        if (dStr < '2026-10-06') return false;
+        if (lastActiveClosure && new Date(f.date) <= new Date(lastActiveClosure.date)) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [unifiedFlow, lastActiveClosure]);
+
+  // Cálculos del turno activo
+  const shiftTotalIn = useMemo(() => {
+    return activeShiftFlow.filter(e => e.type === 'ENTRADA').reduce((sum, e) => sum + e.amount, 0);
+  }, [activeShiftFlow]);
+
+  const shiftTotalOut = useMemo(() => {
+    return activeShiftFlow.filter(e => e.type === 'SALIDA').reduce((sum, e) => sum + e.amount, 0);
+  }, [activeShiftFlow]);
+
+  const shiftNetVentas = shiftTotalIn - shiftTotalOut; // Ganancia neta del periodo
+  const totalEnCajon = (Number(baseCaja) || 0) + shiftNetVentas; // Efectivo total esperado en caja
+
+  // Abrir modal de cierre
+  const handleOpenCierreModal = () => {
+    if (activeShiftFlow.length > 0) {
+      const latestDateStr = activeShiftFlow[0].date;
+      if (latestDateStr) {
+        setCierreDate(String(latestDateStr).split('T')[0].split(' ')[0]);
+      } else {
+        setCierreDate(getTodayCO());
+      }
+    } else {
+      setCierreDate(getTodayCO());
     }
-    
-    const d = new Date(dStr);
-    const co = d.toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
-    const now = new Date().toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
-    
-    return co === now;
+    setCierreBaseSiguiente(baseCaja);
+    setCierreModalOpen(true);
   };
 
-  const toDate = (dateField) => {
-    let dStr = dateField;
-    if (typeof dStr === 'string' && !dStr.includes('Z') && !dStr.includes('+')) dStr += 'Z';
-    return new Date(dStr);
-  };
-
-  const todayFlowRaw = [];
-  movements.forEach(m => {
-    const mDate = m.payment_date ? m.payment_date : m.created_at;
-    let dStr = mDate;
-    if (typeof dStr === 'string' && !dStr.includes('Z') && !dStr.includes('+')) dStr += 'Z';
-    const mDay = new Date(dStr).toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
-    const selectedDay = new Date(date + "T12:00:00Z").toLocaleString("en-US", {timeZone: "America/Bogota", year: 'numeric', month: 'numeric', day: 'numeric'});
-
-    if(mDay === selectedDay) {
-      todayFlowRaw.push({ id: `CSH-${m.id}`, desc: m.description, amount: m.amount, type: m.type, cat: m.category, date: mDate });
-    }
-  });
-
-  // Identificar el último cierre del día para "limpiar" la pantalla
-  const lastTodayClosure = [...todayFlowRaw]
-    .filter(f => f.cat === 'CIERRE CAJA')
-    .sort((a,b) => toDate(b.date) - toDate(a.date))[0];
-
-  // Mostramos movimientos posteriores al cierre, o todos si no hay cierre
-  // Usamos >= y excluimos por ID para no perder movimientos del mismo segundo
-  const todayFlow = lastTodayClosure 
-    ? todayFlowRaw.filter(f => toDate(f.date) >= toDate(lastTodayClosure.date) && f.id !== lastTodayClosure.id)
-    : todayFlowRaw;
-
-  todayFlow.sort((a,b) => toDate(b.date) - toDate(a.date));
-
-  const totalIn = todayFlow.filter(e => e.type === 'ENTRADA').reduce((a,b) => a + b.amount, 0);
-  const totalOut = todayFlow.filter(e => e.type === 'SALIDA').reduce((a,b) => a + b.amount, 0);
-  const netCaja = totalIn - totalOut;
-
-  const handleCierre = async () => {
-    if (!window.confirm(`¿Seguro que quieres cerrar caja con este saldo neto? $${fmt(netCaja)}`)) return;
+  // Confirmar Cierre de Caja
+  const handleConfirmCierre = async () => {
     setIsSubmitting(true);
     try {
+      const closureDateTime = cierreDate + "T23:59:59";
+      const descText = "CIERRE DE CAJA (Ventas: $" + fmt(shiftTotalIn) + " - Gastos: $" + fmt(shiftTotalOut) + " = Guardado: $" + fmt(shiftNetVentas) + " | Base: $" + fmt(cierreBaseSiguiente) + ")";
       const res = await fetch('http://localhost:8000/cash/', {
-        method: 'POST', headers: { 
+        method: 'POST',
+        headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': "Bearer " + localStorage.getItem('token')
         },
-        body: JSON.stringify({ description: `CIERRE DE CAJA ($${fmt(netCaja)})`, amount: 0, type: 'ENTRADA', category: 'CIERRE CAJA' })
+        body: JSON.stringify({
+          description: descText,
+          amount: 0,
+          type: 'ENTRADA',
+          category: 'CIERRE CAJA',
+          payment_date: closureDateTime
+        })
       });
-      if(!res.ok) throw new Error('Error al cerrar');
-      setMsg('Caja cerrada con éxito. Flujo reiniciado.');
+      if (!res.ok) throw new Error('Error al registrar el cierre de caja');
+
+      if (Number(cierreBaseSiguiente) !== Number(baseCaja)) {
+        setBaseCaja(Number(cierreBaseSiguiente));
+      }
+
+      setCierreModalOpen(false);
+      setMsg('¡Caja cerrada con éxito! Turno archivado y reiniciado.');
       loadData();
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
       setTimeout(() => setMsg(''), 4000);
-    } catch(e) { alert(e.message); }
-    finally { setIsSubmitting(false); }
+    } catch(e) {
+      alert("Error: " + e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSubmit = async (e) => {
+  // Eliminar un cierre (deshacer cierre)
+  const handleDeleteClosure = async (closureItem) => {
+    if (!window.confirm("¿Seguro que deseas eliminar este cierre del " + fmtDateTime(closureItem.date) + "? El turno volverá a abrirse.")) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("http://localhost:8000/cash/" + closureItem.rawId, {
+        method: 'DELETE',
+        headers: { 'Authorization': "Bearer " + localStorage.getItem('token') }
+      });
+      if (!res.ok) throw new Error('Error al eliminar cierre');
+      setMsg('Cierre eliminado. Turno reabierto.');
+      loadData();
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+      setTimeout(() => setMsg(''), 3000);
+    } catch(e) {
+      alert(e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Registrar movimiento manual
+  const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!desc || !amount) return;
     setIsSubmitting(true);
     try {
-      const payload = { description: desc.toUpperCase(), amount: Number(amount), type, category };
-      if (date !== getTodayCO()) payload.payment_date = date;
+      const payload = {
+        description: desc.toUpperCase(),
+        amount: Number(amount),
+        type,
+        category
+      };
+      if (manualDate) payload.payment_date = manualDate + "T12:00:00";
       const res = await fetch('http://localhost:8000/cash/', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': "Bearer " + localStorage.getItem('token')
+        },
         body: JSON.stringify(payload)
       });
-      if(!res.ok) throw new Error('Error al registrar');
-      setMsg('¡Movimiento agregado!');
-      setDesc(''); setAmount('');
+      if (!res.ok) throw new Error('Error al registrar movimiento');
+      setMsg('¡Movimiento agregado al turno!');
+      setDesc('');
+      setAmount('');
       loadData();
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
       setTimeout(() => setMsg(''), 3000);
-    } catch(e) { alert(e.message); }
-    finally { setIsSubmitting(false); }
+    } catch(e) {
+      alert(e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="flex h-full gap-4 p-6 overflow-hidden">
-      {/* List */}
-      <div className="w-[55%] flex flex-col bg-slate-50 rounded-[30px] border shadow-sm p-4 relative">
+    <div className="flex h-full gap-4 p-6 overflow-hidden relative">
+      {/* MODAL DE CIERRE DE CAJA */}
+      {cierreModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">Arqueo de Turno</span>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Cerrar Caja</h3>
+              </div>
+              <button 
+                onClick={() => setCierreModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Tarjetas de Resumen */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="bg-emerald-50/70 border border-emerald-100 p-3 rounded-2xl">
+                <p className="text-[9px] font-black text-emerald-600 uppercase">Ventas / Entradas</p>
+                <p className="text-base font-black text-emerald-700">+${fmt(shiftTotalIn)}</p>
+              </div>
+              <div className="bg-rose-50/70 border border-rose-100 p-3 rounded-2xl">
+                <p className="text-[9px] font-black text-rose-600 uppercase">Gastos / Salidas</p>
+                <p className="text-base font-black text-rose-700">-${fmt(shiftTotalOut)}</p>
+              </div>
+              <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-2xl col-span-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-[9px] font-black text-indigo-600 uppercase">Dinero Neto a Guardar / Retirar</p>
+                    <p className="text-xl font-black text-indigo-900">${fmt(shiftNetVentas)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase">Efectivo Total en Cajón</p>
+                    <p className="text-sm font-black text-slate-700">${fmt(totalEnCajon)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Inputs de Cierre */}
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-500 mb-1 block">
+                  Fecha de Corte del Cierre
+                </label>
+                <input 
+                  type="date" 
+                  value={cierreDate} 
+                  onChange={e => setCierreDate(e.target.value)} 
+                  className="w-full border-2 border-slate-200 rounded-2xl px-4 py-2.5 font-bold text-xs outline-none focus:border-indigo-500 bg-slate-50"
+                />
+                <p className="text-[9px] text-slate-400 mt-1">
+                  * Todos los movimientos hasta esta fecha quedarán cerrados y archivados.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-500 mb-1 block">
+                  Base que queda en caja para el siguiente turno
+                </label>
+                <div className="flex items-center border-2 border-slate-200 rounded-2xl px-4 py-2.5 bg-slate-50">
+                  <span className="font-black text-slate-400 mr-2">$</span>
+                  <input 
+                    type="number" 
+                    value={cierreBaseSiguiente} 
+                    onChange={e => setCierreBaseSiguiente(e.target.value)} 
+                    className="w-full bg-transparent outline-none font-black text-sm text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button 
+                type="button" 
+                onClick={() => setCierreModalOpen(false)}
+                className="flex-1 py-3 px-4 rounded-2xl font-black text-xs uppercase text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button" 
+                onClick={handleConfirmCierre}
+                disabled={isSubmitting}
+                className="flex-1 py-3 px-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase hover:bg-black transition-all shadow-lg disabled:opacity-40"
+              >
+                {isSubmitting ? 'Cerrando...' : 'Confirmar Cierre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL IZQUIERDO: LISTA Y ESTADÍSTICAS (58%) */}
+      <div className="w-[58%] flex flex-col bg-slate-50 rounded-[30px] border shadow-sm p-4 relative overflow-hidden">
+        {/* SUBTABS */}
         <div className="flex justify-between items-center mb-3 px-2">
-            <h3 className="font-black text-slate-800 text-sm uppercase">Flujo del {date === getTodayCO() ? 'Hoy' : date}</h3>
-            {isLoading && <RefreshCw size={12} className="animate-spin text-slate-400" />}
+          <div className="flex items-center gap-2 bg-white p-1 rounded-2xl border shadow-xs">
+            <button
+              onClick={() => setSubTab('turno')}
+              className={"px-3 py-1.5 rounded-xl font-black text-[11px] uppercase transition-all flex items-center gap-1.5 " + (
+                subTab === 'turno' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              )}
+            >
+              <Clock size={13} />
+              Turno Activo
+              <span className={"text-[9px] px-1.5 py-0.5 rounded-full font-black " + (subTab === 'turno' ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500')}>
+                {activeShiftFlow.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setSubTab('historial')}
+              className={"px-3 py-1.5 rounded-xl font-black text-[11px] uppercase transition-all flex items-center gap-1.5 " + (
+                subTab === 'historial' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              )}
+            >
+              <History size={13} />
+              Cierres Anteriores
+              <span className={"text-[9px] px-1.5 py-0.5 rounded-full font-black " + (subTab === 'historial' ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500')}>
+                {closures.length}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isLoading && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+            <span className="text-[9px] font-black uppercase text-slate-400 bg-white px-2.5 py-1 rounded-xl border">
+              Desde {fmtDateTime(shiftStartDate).split(',')[0]}
+            </span>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-           {todayFlow.length === 0 && <p className="text-center text-slate-400 text-xs py-10 italic">Aún no hay movimientos en esta fecha</p>}
-           {todayFlow.map((f, i) => (
-             <div key={`${f.id}-${i}`} className="bg-white p-3 rounded-2xl border flex justify-between items-center shadow-sm">
-               <div>
-                 <p className="font-black text-xs text-slate-800 uppercase">{f.desc}</p>
-                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{fmtDateTime(f.date)} · {f.cat}</p>
-               </div>
-               <span className={`font-black text-sm ${f.type === 'ENTRADA' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                 {f.type === 'ENTRADA' ? '+' : '-'}${fmt(f.amount)}
-               </span>
-             </div>
-           ))}
+
+        {/* METRICS RESUMEN DEL TURNO ACTIVO */}
+        {subTab === 'turno' && (
+          <div className="grid grid-cols-4 gap-2 mb-3 px-2">
+            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
+              <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight">Base Caja</span>
+              <span className="text-xs font-black text-slate-800">${fmt(baseCaja)}</span>
+            </div>
+            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
+              <span className="text-[8px] font-black uppercase text-emerald-500 block leading-tight">Ventas (+)</span>
+              <span className="text-xs font-black text-emerald-600">+${fmt(shiftTotalIn)}</span>
+            </div>
+            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
+              <span className="text-[8px] font-black uppercase text-rose-500 block leading-tight">Gastos (-)</span>
+              <span className="text-xs font-black text-rose-600">-${fmt(shiftTotalOut)}</span>
+            </div>
+            <div className="bg-white border border-indigo-100 rounded-2xl p-2.5 shadow-xs bg-indigo-50/30">
+              <span className="text-[8px] font-black uppercase text-indigo-600 block leading-tight">Neto Retirar</span>
+              <span className="text-xs font-black text-indigo-700">${fmt(shiftNetVentas)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* LISTA SCROLL */}
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+          {subTab === 'turno' ? (
+            activeShiftFlow.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16 gap-2">
+                <CheckCircle2 size={32} className="text-emerald-400" />
+                <p className="text-xs font-bold uppercase tracking-wider">Caja al día y limpia</p>
+                <p className="text-[10px] text-slate-400">No hay movimientos pendientes por cerrar en este turno.</p>
+              </div>
+            ) : (
+              activeShiftFlow.map((f, i) => (
+                <div key={"shift-" + f.id + "-" + i} className="bg-white p-3 rounded-2xl border flex justify-between items-center shadow-xs hover:border-slate-300 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={"p-2 rounded-xl flex items-center justify-center " + (f.type === 'ENTRADA' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600')}>
+                      {f.type === 'ENTRADA' ? <ArrowDownRight size={15} /> : <ArrowUpRight size={15} />}
+                    </div>
+                    <div>
+                      <p className="font-black text-xs text-slate-800 uppercase leading-snug">{f.desc}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                        {fmtDateTime(f.date)} · <span className="text-slate-600">{f.cat}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <span className={"font-black text-sm " + (f.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600')}>
+                    {f.type === 'ENTRADA' ? '+' : '-'}${fmt(f.amount)}
+                  </span>
+                </div>
+              ))
+            )
+          ) : (
+            closures.length === 0 ? (
+              <p className="text-center text-slate-400 text-xs py-16 italic">No hay cierres de caja registrados en el historial.</p>
+            ) : (
+              closures.map((c, i) => (
+                <div key={"closure-" + c.id + "-" + i} className="bg-white p-3.5 rounded-2xl border flex justify-between items-center shadow-xs">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-slate-900 text-white rounded-lg text-[9px] font-black uppercase">
+                        Cierre
+                      </span>
+                      <p className="font-black text-xs text-slate-800">{fmtDateTime(c.date)}</p>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-500 mt-1">{c.desc}</p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteClosure(c)}
+                    title="Eliminar cierre y reabrir turno"
+                    className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))
+            )
+          )}
         </div>
-        <div className="border-t pt-4 mt-2 px-2 flex justify-between items-end">
-           <div>
-             <p className="text-[10px] uppercase font-black text-slate-400">Neto Actual Caja</p>
-             <p className="text-2xl font-black text-slate-800">${fmt(netCaja)}</p>
-           </div>
-           <button onClick={handleCierre} disabled={isSubmitting || netCaja <= 0}
-             className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-black transition-all shadow-lg disabled:opacity-30">
-             Cerrar Caja
-           </button>
-        </div>
+
+        {/* BOTTOM ACTION BAR (SOLO EN PESTAÑA TURNO) */}
+        {subTab === 'turno' && (
+          <div className="border-t pt-3 mt-2 px-2 flex justify-between items-center">
+            <div>
+              <p className="text-[9px] uppercase font-black text-slate-400">Total Efectivo en Cajón</p>
+              <p className="text-xl font-black text-slate-900">
+                ${fmt(totalEnCajon)}
+                <span className="text-[10px] font-bold text-slate-400 ml-1.5 font-normal">
+                  (Base ${fmt(baseCaja)} + Neto ${fmt(shiftNetVentas)})
+                </span>
+              </p>
+            </div>
+            <button 
+              onClick={handleOpenCierreModal} 
+              disabled={isSubmitting || activeShiftFlow.length === 0}
+              className="bg-slate-900 text-white px-5 py-2.5 rounded-2xl font-black text-xs uppercase hover:bg-black transition-all shadow-lg flex items-center gap-2 disabled:opacity-30 cursor-pointer"
+            >
+              <Lock size={14} /> Cerrar Caja (Corte)
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Form */}
-      <div className="w-[45%] flex flex-col pt-2">
-         <div className="flex justify-between items-center mb-4">
-             <h3 className="font-black text-slate-800 text-lg uppercase">Registro Manual</h3>
-             <button type="button" onClick={() => { setDesc('BASE DE CAJA'); setAmount(''); setType('ENTRADA'); setCategory('OTROS'); }}
-               className="px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-xs font-black shadow-sm hover:bg-emerald-100 transition-colors">
-               + Base Inicial
-             </button>
-         </div>
-         <form onSubmit={handleSubmit} className="bg-white border rounded-[30px] p-6 shadow-sm space-y-4">
-            <div>
-              <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Descripción</label>
-              <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ej. Taxis, Cafés, Adelantos..."
-                 className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 font-bold text-sm outline-none focus:border-indigo-400 uppercase" />
+      {/* PANEL DERECHO: REGISTRO MANUAL & BASE DE CAJA (42%) */}
+      <div className="w-[42%] flex flex-col pt-1 space-y-3">
+        {/* CONFIGURACIÓN DE BASE DE CAJA */}
+        <div className="bg-white border rounded-[25px] p-4 shadow-xs flex justify-between items-center">
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Base Fija Predeterminada</span>
+            {isEditingBase ? (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="font-black text-slate-400 text-xs">$</span>
+                <input
+                  type="number"
+                  value={tempBase}
+                  onChange={e => setTempBase(e.target.value)}
+                  className="w-24 border rounded-lg px-2 py-1 font-black text-xs outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={() => { setBaseCaja(Number(tempBase) || 0); setIsEditingBase(false); }}
+                  className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                >
+                  Guardar
+                </button>
+                <button
+                  onClick={() => { setTempBase(baseCaja); setIsEditingBase(false); }}
+                  className="text-slate-400 hover:text-slate-600 text-[10px] font-bold uppercase cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <p className="text-lg font-black text-slate-800">${fmt(baseCaja)}</p>
+            )}
+          </div>
+          {!isEditingBase && (
+            <button
+              onClick={() => { setTempBase(baseCaja); setIsEditingBase(true); }}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase transition-colors cursor-pointer"
+            >
+              Editar Base
+            </button>
+          )}
+        </div>
+
+        {/* FORMULARIO MANUAL DE MOVIMIENTOS */}
+        <form onSubmit={handleManualSubmit} className="bg-white border rounded-[28px] p-5 shadow-xs space-y-3 flex-1 flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-black text-slate-800 text-sm uppercase">Registrar Gasto o Entrada</h3>
+              <button 
+                type="button" 
+                onClick={() => { setDesc('BASE INICIAL EFECTIVO'); setAmount(''); setType('ENTRADA'); setCategory('OTROS'); }}
+                className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[10px] font-black shadow-xs hover:bg-emerald-100 transition-colors cursor-pointer"
+              >
+                + Base Inicial
+              </button>
             </div>
-            <div>
-              <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Monto</label>
-              <div className="flex items-center border-2 border-slate-100 rounded-2xl px-4 py-3 bg-slate-50">
-                <span className="font-black text-slate-400 mr-2">$</span>
-                <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0"
-                   className="w-full bg-transparent outline-none font-black text-lg text-slate-800" />
+
+            <div className="space-y-2.5">
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Descripción</label>
+                <input 
+                  value={desc} 
+                  onChange={e => setDesc(e.target.value)} 
+                  placeholder="Ej. Envío, Almuerzo, Taxis, Insumos..."
+                  className="w-full border-2 border-slate-100 rounded-xl px-3.5 py-2 font-bold text-xs outline-none focus:border-indigo-400 uppercase bg-slate-50/50" 
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Monto</label>
+                <div className="flex items-center border-2 border-slate-100 rounded-xl px-3.5 py-2 bg-slate-50/50">
+                  <span className="font-black text-slate-400 mr-2">$</span>
+                  <input 
+                    type="number" 
+                    value={amount} 
+                    onChange={e => setAmount(e.target.value)} 
+                    placeholder="0"
+                    className="w-full bg-transparent outline-none font-black text-base text-slate-800" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
+                  <select 
+                    value={type} 
+                    onChange={e => setType(e.target.value)} 
+                    className="w-full border-2 border-slate-100 rounded-xl px-2.5 py-2 font-bold text-[11px] outline-none bg-white"
+                  >
+                    <option value="SALIDA">SALIDA</option>
+                    <option value="ENTRADA">ENTRADA</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Categoría</label>
+                  <select 
+                    value={category} 
+                    onChange={e => setCategory(e.target.value)} 
+                    className="w-full border-2 border-slate-100 rounded-xl px-2.5 py-2 font-bold text-[11px] outline-none bg-white"
+                  >
+                    {type === 'SALIDA' ? (
+                      <>
+                        <option value="GASTO">GASTO</option>
+                        <option value="REINVERSION">REINVERSIÓN</option>
+                        <option value="SALARIO">SALARIO</option>
+                        <option value="ADELANTO">ADELANTO</option>
+                        <option value="DEVOLUCION">DEVOLUCIÓN</option>
+                        <option value="PRESTAMO">PRÉSTAMO</option>
+                        <option value="OTRO">OTRO</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="GANANCIA">GANANCIA</option>
+                        <option value="OTRA ENTRADA">OTRA ENTRADA</option>
+                        <option value="PRESTAMO">PRÉSTAMO</option>
+                        <option value="OTROS">OTROS</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Fecha</label>
+                  <input 
+                    type="date" 
+                    value={manualDate} 
+                    onChange={e => setManualDate(e.target.value)} 
+                    className="w-full border-2 border-slate-100 rounded-xl px-2 py-2 font-bold text-[10px] outline-none bg-white" 
+                  />
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
-                <select value={type} onChange={e=>setType(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none bg-white">
-                  <option value="SALIDA">SALIDA</option>
-                  <option value="ENTRADA">ENTRADA</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Categoría</label>
-                <select value={category} onChange={e=>setCategory(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none bg-white">
-                  {type === 'SALIDA' ? (
-                    <>
-                      <option value="GASTO">GASTO</option>
-                      <option value="SALARIO">SALARIO</option>
-                      <option value="ADELANTO">ADELANTO</option>
-                      <option value="DEVOLUCION">DEVOLUCION</option>
-                      <option value="REINVERSION">REINVERSIÓN</option>
-                      <option value="PRESTAMO">PRÉSTAMO</option>
-                      <option value="OTRO">OTRO</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="GANANCIA">GANANCIA</option>
-                      <option value="OTRA ENTRADA">OTRA ENTRADA</option>
-                      <option value="PRESTAMO">PRÉSTAMO</option>
-                      <option value="OTROS">OTROS</option>
-                    </>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha</label>
-                <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none bg-white" />
-              </div>
-            </div>
-            <button type="submit" disabled={isSubmitting || !desc || !amount}
-              className="w-full bg-indigo-600 text-white rounded-2xl py-4 font-black uppercase text-xs hover:bg-indigo-700 shadow-lg disabled:opacity-30 transition-all mt-4">
+          </div>
+
+          <div className="pt-2">
+            <button 
+              type="submit" 
+              disabled={isSubmitting || !desc || !amount}
+              className="w-full bg-indigo-600 text-white rounded-xl py-3 font-black uppercase text-xs hover:bg-indigo-700 shadow-md disabled:opacity-30 transition-all cursor-pointer"
+            >
               {isSubmitting ? 'Registrando...' : 'Agregar Al Flujo'}
             </button>
             {msg && <p className="text-center font-black text-[10px] uppercase text-emerald-600 mt-2">{msg}</p>}
-         </form>
+          </div>
+        </form>
       </div>
     </div>
   );

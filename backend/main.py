@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.db.database import engine, Base, SessionLocal
-from app.api.endpoints import users, products, sales, cash, auth, corte
+from app.api.endpoints import users, products, sales, cash, auth, corte, public, webhooks
 from app.models.user import User
 from app.models.product import Product
 from app.models.sale import Sale, SaleItem
@@ -34,12 +34,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Estilo Nórdico API", lifespan=lifespan)
 
+# ── Routers internos (requieren auth) ────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["Autenticación"])
 app.include_router(users.router, prefix="/users", tags=["Usuarios"])
 app.include_router(products.router, prefix="/products", tags=["Productos"])
 app.include_router(sales.router, prefix="/sales", tags=["Ventas"])
 app.include_router(cash.router, prefix="/cash", tags=["Caja"])
 app.include_router(corte.router, prefix="/corte", tags=["Finanzas & Corte"])
+
+# ── Routers nuevos (Fase 1 — Unificación) ────────────────────────────────────
+app.include_router(public.router, prefix="/api/public", tags=["API Pública (Web)"])
+app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,4 +56,4 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "Backend conectado"}
+    return {"status": "ok", "message": "Backend conectado — Estilo Nórdico ERP v2.0"}

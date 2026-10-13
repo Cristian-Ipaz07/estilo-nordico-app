@@ -2,14 +2,46 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, Search, CheckCircle2, Clock, ShoppingCart,
   Edit2, Eye, Trash2, X, ChevronDown, ChevronRight,
-  AlertTriangle, DollarSign, TrendingUp, Package, User, RefreshCw
+  AlertTriangle, DollarSign, TrendingUp, Package, User, RefreshCw,
+  CalendarRange
 } from 'lucide-react';
+import { useDateRange } from '../context/DateRangeContext';
 
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => (n ?? 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
 
+// Bug 1 fix: convierte ISO a fecha legible SIN desfase de timezone.
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  const safe = iso.includes('T') ? iso : iso + 'T12:00:00';
+  return new Date(safe).toLocaleString('es-CO', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  });
+};
+
+// Extrae YYYY-MM-DD de un ISO string sin desfase de timezone
+const isoToDateStr = (iso) => {
+  if (!iso) return '';
+  return iso.split('T')[0];
+};
+
 const StatusBadge = ({ status, balance }) => {
+  if (status === 'en_domicilio') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
+        <Clock size={11} /> 🛵 En Domicilio
+      </span>
+    );
+  }
+  if (status === 'cancelado') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-600">
+        <X size={11} /> Cancelado
+      </span>
+    );
+  }
   const paid = status === 'pagado' || balance <= 0;
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -91,9 +123,10 @@ const PaymentModal = ({ sale, onPay, onClose }) => {
 const EditSaleModal = ({ sale, onUpdate, onClose }) => {
   const [formData, setFormData] = useState({
     customer_name: sale.customer_name || '',
-    seller: sale.seller || 'LOCAL',
+    seller: sale.sale_channel || 'LOCAL',
     amount_paid: sale.amount_paid || 0,
-    sale_date: sale.sale_date || (sale.created_at ? sale.created_at.split('T')[0] : '')
+    // Bug fix: extraer solo YYYY-MM-DD sin desfase de timezone
+    sale_date: isoToDateStr(sale.created_at)
   });
 
   // Cargar usuarios activos para el selector de vendedor
@@ -201,7 +234,7 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
 
 
 // ── Fila expandible con items ─────────────────────────────────────────────────
-const SaleRow = ({ sale, onDelete, onPay, onEdit }) => {
+const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDelivery }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -215,7 +248,8 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit }) => {
             {expanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-300" />}
             <div>
               <p className="text-sm font-bold text-slate-900">#{sale.id}</p>
-              <p className="text-[10px] text-slate-400">{new Date(sale.created_at).toLocaleString('es-CO')}</p>
+              {/* Bug 1 fix: usar fmtDate para evitar desfase de timezone */}
+              <p className="text-[10px] text-slate-400">{fmtDate(sale.created_at)}</p>
             </div>
           </div>
         </td>
@@ -239,6 +273,24 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit }) => {
           <StatusBadge status={sale.status} balance={sale.balance_due} />
         </td>
         <td className="px-6 py-4 text-right space-x-1" onClick={e => e.stopPropagation()}>
+          {sale.status === 'en_domicilio' && (
+            <>
+              <button
+                title="Confirmar Entrega y Cobro"
+                onClick={() => onConfirmDelivery(sale)}
+                className="p-2 hover:bg-emerald-50 border border-transparent hover:border-emerald-300 rounded-lg text-emerald-600 font-bold transition-all"
+              >
+                <CheckCircle2 size={15} />
+              </button>
+              <button
+                title="Cancelar Domicilio y Devolver Stock"
+                onClick={() => onCancelDelivery(sale)}
+                className="p-2 hover:bg-rose-50 border border-transparent hover:border-rose-300 rounded-lg text-rose-500 transition-all"
+              >
+                <X size={15} />
+              </button>
+            </>
+          )}
           <button
               title="Corregir venta"
               onClick={() => onEdit(sale)}
@@ -270,6 +322,23 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit }) => {
       {expanded && (
         <tr className="bg-slate-50/60">
           <td colSpan={8} className="px-10 py-3">
+            {(sale.delivery_address || sale.delivery_notes) && (
+              <div className="mb-4 p-3.5 bg-purple-50/80 border border-purple-200 rounded-2xl flex items-center justify-between text-xs font-semibold text-purple-900">
+                <div>
+                  <span className="font-bold uppercase tracking-wider block text-[10px] text-purple-600 mb-0.5">🛵 Datos de Domicilio & Entrega</span>
+                  {sale.delivery_address && <p>📍 Dirección: <span className="font-bold text-slate-800">{sale.delivery_address}</span></p>}
+                  {sale.delivery_notes && <p className="text-purple-700 italic">📝 Nota: {sale.delivery_notes}</p>}
+                </div>
+                {sale.status === 'en_domicilio' && (
+                  <button
+                    onClick={() => onConfirmDelivery(sale)}
+                    className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-all shadow-sm"
+                  >
+                    Confirmar Cobro
+                  </button>
+                )}
+              </div>
+            )}
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
               Detalle de productos
             </div>
@@ -410,7 +479,10 @@ const Sales = () => {
   const handleUpdate = async (sale, updatedData) => {
     const res = await fetch(`http://localhost:8000/sales/${sale.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
       body: JSON.stringify(updatedData)
     });
     if (res.ok) {
@@ -418,32 +490,74 @@ const Sales = () => {
       fetchSales();
       showToast(`Venta #${sale.id} actualizada correctamente`);
     } else {
-      alert("Error al actualizar la venta");
+      const err = await res.json().catch(() => ({}));
+      alert(`Error al actualizar: ${err.detail || 'Error del servidor'}`);
     }
+  };
+
+  const handleConfirmDelivery = async (sale) => {
+    if (!window.confirm(`?Confirmar cobro y entrega del domicilio #${sale.id}? Se asentar? el pago en caja.`)) return;
+    try {
+      const res = await fetch(`http://localhost:8000/sales/${sale.id}/confirm-delivery`, { method: 'POST' });
+      if (res.ok) {
+        fetchSales();
+        showToast(`Domicilio #${sale.id} confirmado y cobrado`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.detail || 'Error del servidor'}`);
+      }
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleCancelDelivery = async (sale) => {
+    if (!window.confirm(`¿Cancelar domicilio #${sale.id}? Las prendas se devolverán automáticamente al stock disponible.`)) return;
+    try {
+      const res = await fetch(`http://localhost:8000/sales/${sale.id}/cancel-delivery`, { method: 'POST' });
+      if (res.ok) {
+        fetchSales();
+        showToast(`Domicilio #${sale.id} cancelado y prendas devueltas a stock`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.detail || 'Error del servidor'}`);
+      }
+    } catch (e) { alert(e.message); }
   };
 
 
   // ── Filtrado ──────────────────────────────────────────────────────────────
+  const { startDate, endDate, setStartDate, setEndDate, isInRange } = useDateRange();
+
   const filtered = sales.filter(s => {
     const matchStatus =
       filterStatus === 'todos' ? true :
-      filterStatus === 'pagado' ? s.balance_due <= 0 :
-      s.balance_due > 0;
+      filterStatus === 'pagado' ? (s.status === 'pagado' || (s.balance_due <= 0 && s.status !== 'en_domicilio')) :
+      filterStatus === 'en_domicilio' ? s.status === 'en_domicilio' :
+      (s.status === 'separado' || s.balance_due > 0);
 
     const q = search.toLowerCase();
+    const matchItems = s.items?.some(it =>
+      it.product?.name?.toLowerCase().includes(q) ||
+      it.product?.ref?.toLowerCase().includes(q) ||
+      it.product?.category?.toLowerCase().includes(q) ||
+      it.product?.subcategory?.toLowerCase().includes(q)
+    );
     const matchSearch = !q ||
       s.customer_name?.toLowerCase().includes(q) ||
       String(s.id).includes(q) ||
       s.user?.full_name?.toLowerCase().includes(q) ||
-      s.sale_channel?.toLowerCase().includes(q);
+      s.sale_channel?.toLowerCase().includes(q) ||
+      s.delivery_address?.toLowerCase().includes(q) ||
+      matchItems;
 
-    return matchStatus && matchSearch;
+    const matchRange = isInRange(isoToDateStr(s.created_at));
+
+    return matchStatus && matchSearch && matchRange;
   });
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const totalRecaudado = sales.reduce((a, s) => a + (s.amount_paid || 0), 0);
-  const totalPendiente = sales.reduce((a, s) => a + (s.balance_due || 0), 0);
-  const totalVentas = sales.reduce((a, s) => a + (s.total_sale || 0), 0);
+  const totalRecaudado = filtered.reduce((a, s) => a + (s.amount_paid || 0), 0);
+  const totalPendiente = filtered.reduce((a, s) => a + (s.balance_due || 0), 0);
+  const totalVentas = filtered.reduce((a, s) => a + (s.total_sale || 0), 0);
 
   // ── CSV Export ────────────────────────────────────────────────────────────
   const exportToCSV = () => {
@@ -575,6 +689,27 @@ const Sales = () => {
         </div>
       </div>
 
+      {/* Selector de Rango Global (mismo contexto que Finanzas & Corte) */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap gap-4 items-end shadow-sm">
+        <div className="flex items-center gap-2 mr-2">
+          <CalendarRange size={14} className="text-indigo-500" />
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Período del Corte</span>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Desde</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hasta (vacío = hoy)</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
+        </div>
+        <div className="ml-auto text-[10px] font-bold text-slate-400 italic">
+          Sincronizado con Finanzas &amp; Caja
+        </div>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-6 rounded-2xl text-white shadow-xl col-span-1">
@@ -609,7 +744,7 @@ const Sales = () => {
         {/* Barra de filtros */}
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
           <div className="flex gap-2">
-            {['todos','pagado','separado'].map(f => (
+            {['todos','pagado','separado','en_domicilio'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilterStatus(f)}
@@ -619,7 +754,7 @@ const Sales = () => {
                     : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-400'
                 }`}
               >
-                {f}
+                {f === 'en_domicilio' ? '🛵 Domicilio' : f}
               </button>
             ))}
           </div>
@@ -627,7 +762,7 @@ const Sales = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
               type="text"
-              placeholder="Buscar cliente, ID..."
+              placeholder="Buscar cliente, ID, REF, prenda..."
               className="pl-8 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-900 w-60"
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -661,6 +796,8 @@ const Sales = () => {
                   onDelete={setDeleteTarget}
                   onPay={setPayTarget}
                   onEdit={setEditTarget}
+                  onConfirmDelivery={handleConfirmDelivery}
+                  onCancelDelivery={handleCancelDelivery}
                 />
               ))}
 

@@ -1,0 +1,14 @@
+{
+  "name": "estilo-nordico-desktop",
+  "version": "1.0.0",
+  "description": "Desktop wrapper for Estilo Nordico App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^29.1.0"
+  }
+}

@@ -94,13 +94,26 @@ const Layout = ({ children }) => {
       <main className="flex-1 ml-64 print:ml-0 print:w-full">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10 print:hidden">
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input type="text" placeholder="Buscar SKU, cliente..." className="pl-10 pr-4 py-2 bg-slate-100 border-none rounded-full text-sm focus:ring-2 focus:ring-slate-900 w-64 transition-all" />
+            <div className="relative cursor-pointer" onClick={() => setIsTerminalOpen(true)}>
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                readOnly
+                placeholder="Buscador Rápido (Ctrl + K)..." 
+                className="pl-10 pr-4 py-2 bg-slate-100 hover:bg-slate-200/80 cursor-pointer border-none rounded-full text-xs font-bold text-slate-700 w-64 transition-all outline-none" 
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
+                Ctrl+K
+              </span>
             </div>
-            <button className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Store size={16} /> {selectedBranch} <ChevronDown size={14} />
-            </button>
+            <select
+              value={selectedBranch}
+              onChange={e => setSelectedBranch(e.target.value)}
+              className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+            >
+              <option value="Sede Principal (Pasto)">🏢 Sede Principal (Pasto)</option>
+              <option value="Sucursal Samaniego">🏬 Sucursal Samaniego</option>
+            </select>
           </div>
 
           <div className="flex items-center gap-4">

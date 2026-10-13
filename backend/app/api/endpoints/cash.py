@@ -56,7 +56,9 @@ def create_movement(movement: CashMovementCreate, db: Session = Depends(get_db))
     )
     if movement.payment_date:
         try:
-            db_movement.payment_date = datetime.fromisoformat(movement.payment_date)
+            p_date = datetime.fromisoformat(movement.payment_date)
+            db_movement.payment_date = p_date
+            db_movement.created_at = p_date
         except Exception:
             pass
 

@@ -1,4 +1,4 @@
-# ESTADO DEL DESARROLLO - ESTILO NÓRDICO (Finales Abril 2026)
+![alt text](image.png)# ESTADO DEL DESARROLLO - ESTILO NÓRDICO (Finales Abril 2026)
 
 ## ✅ Módulo de Contabilidad y Flujo de Caja (Actualizado)
 - **Registro Histórico y Retroactivo:** Se implementó el uso de `payment_date` en todo el flujo de caja, reemplazando `created_at`. Esto permite registrar movimientos pasados (ej. cierres de marzo hechos en abril) para que impacten en el periodo correspondiente.

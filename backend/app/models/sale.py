@@ -16,6 +16,8 @@ class Sale(Base):
     balance_due = Column(Float, default=0.0)
     status = Column(String, default="pagado") # pagado, separado, cancelado
     sale_channel = Column(String, default="LOCAL") # para 'Vendedor' en el front
+    delivery_address = Column(String, nullable=True)
+    delivery_notes = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=get_colombia_time)
 

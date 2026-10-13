@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -66,6 +67,7 @@ const StatCard = ({ title, value, change, trend, icon: Icon, color }) => (
 );
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [timeFilter, setTimeFilter] = useState('Hoy');
   const [loading, setLoading] = useState(true);
@@ -149,10 +151,16 @@ const Dashboard = () => {
           <p className="text-slate-500">Bienvenido de nuevo, así van las ventas en tiempo real.</p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
-            Descargar Reporte
+          <button 
+            onClick={() => navigate('/reports')}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Ver Reportes & Corte
           </button>
-          <button className="px-4 py-2 bg-emerald-500 text-slate-900 rounded-lg text-sm font-semibold hover:bg-emerald-400 transition-colors flex items-center gap-2">
+          <button 
+            onClick={() => window.dispatchEvent(new CustomEvent('open-terminal'))}
+            className="px-4 py-2 bg-emerald-500 text-slate-900 rounded-xl text-sm font-bold hover:bg-emerald-400 transition-colors flex items-center gap-2 shadow-sm"
+          >
             <ArrowUpRight size={16} />
             Nueva Venta POS
           </button>

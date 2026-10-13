@@ -36,6 +36,12 @@ class PaymentHistoryInSale(BaseModel):
         from_attributes = True
 
 
+class PaymentUpdate(BaseModel):
+    amount: Optional[float] = None
+    payment_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # ── Item de venta ─────────────────────────────────────────────────────────────
 class SaleItemBase(BaseModel):
     product_id: int
@@ -68,10 +74,27 @@ class SaleBase(BaseModel):
     total_price: float  # nombre que usa el frontend al CREAR
     amount_paid: float = 0.0
     status: str = "pagado"
+    sale_channel: Optional[str] = "LOCAL"
+    delivery_address: Optional[str] = None
+    delivery_notes: Optional[str] = None
 
 
 class SaleCreate(SaleBase):
     items: List[SaleItemCreate]
+    # Fecha retroactiva opcional (YYYY-MM-DD). Si se omite, se usa la hora actual de Colombia.
+    sale_date: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+# ── Actualización parcial de venta (PUT) ──────────────────────────────────────
+class SaleUpdate(BaseModel):
+    customer_name: Optional[str] = None
+    seller: Optional[str] = None      # nombre de vendedor (se guarda en sale_channel)
+    amount_paid: Optional[float] = None
+    sale_date: Optional[str] = None   # YYYY-MM-DD para corregir la fecha
+    status: Optional[str] = None
+    delivery_address: Optional[str] = None
+    delivery_notes: Optional[str] = None
 
 
 class SaleResponse(BaseModel):
@@ -83,6 +106,8 @@ class SaleResponse(BaseModel):
     balance_due: float
     status: str
     sale_channel: Optional[str] = "LOCAL"
+    delivery_address: Optional[str] = None
+    delivery_notes: Optional[str] = None
     created_at: datetime
     items: List[SaleItemResponse]
     user: Optional[UserInSale] = None
