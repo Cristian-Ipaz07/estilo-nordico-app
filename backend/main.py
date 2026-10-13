@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.db.database import engine, Base, SessionLocal
@@ -33,6 +35,9 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Estilo Nórdico API", lifespan=lifespan)
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # ── Routers internos (requieren auth) ────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["Autenticación"])

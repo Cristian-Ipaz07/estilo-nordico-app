@@ -15,4 +15,4 @@ dist/
 *respaldo*
 *backup*
 copy/
-temp/
+temp/*.log
