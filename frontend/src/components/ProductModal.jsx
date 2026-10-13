@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { X, Globe, Image as ImageIcon, RefreshCw, Check } from 'lucide-react';
 
@@ -92,8 +93,8 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
     setSaving(true);
     try {
       const url = isEdit 
-        ? `http://localhost:8000/products/${product.id}` 
-        : 'http://localhost:8000/products/';
+        ? `${API_URL}/products/${product.id}` 
+        : `${API_URL}/products/`;
       const method = isEdit ? 'PUT' : 'POST';
 
       const payload = {

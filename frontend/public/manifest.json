@@ -1,0 +1,18 @@
+{
+  "name": "Estilo Nórdico - POS & Catálogo",
+  "short_name": "Estilo Nórdico",
+  "description": "Sistema de Ventas, Inventario y Catálogo Asesores de Estilo Nórdico",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

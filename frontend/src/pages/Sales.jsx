@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Download, Search, CheckCircle2, Clock, ShoppingCart,
@@ -136,7 +137,7 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
 
   const [activeUsers, setActiveUsers] = useState([]);
   useEffect(() => {
-    fetch('http://localhost:8000/users/', {
+    fetch(`${API_URL}/users/`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
@@ -500,7 +501,7 @@ const Sales = () => {
 
   const fetchSales = useCallback(() => {
     setLoading(true);
-    fetch('http://localhost:8000/sales/')
+    fetch(`${API_URL}/sales/`)
       .then(res => res.json())
       .then(data => { setSales(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -518,7 +519,7 @@ const Sales = () => {
 
   // ── Eliminar ──────────────────────────────────────────────────────────────
   const handleDelete = async (sale) => {
-    await fetch(`http://localhost:8000/sales/${sale.id}`, { method: 'DELETE' });
+    await fetch(`${API_URL}/sales/${sale.id}`, { method: 'DELETE' });
     setDeleteTarget(null);
     fetchSales();
     showToast(`Venta #${sale.id} eliminada y stock restituido`);
@@ -527,7 +528,7 @@ const Sales = () => {
   // ── Abonar ────────────────────────────────────────────────────────────────
   const handlePayment = async (sale, amount) => {
     const res = await fetch(
-      `http://localhost:8000/sales/${sale.id}/payment?amount=${amount}`,
+      `${API_URL}/sales/${sale.id}/payment?amount=${amount}`,
       { method: 'PATCH' }
     );
     if (res.ok) {
@@ -539,7 +540,7 @@ const Sales = () => {
 
   // ── Editar (Actualización parcial) ─────────────────────────────────────────
   const handleUpdate = async (sale, updatedData) => {
-    const res = await fetch(`http://localhost:8000/sales/${sale.id}`, {
+    const res = await fetch(`${API_URL}/sales/${sale.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -560,7 +561,7 @@ const Sales = () => {
   const handleConfirmDelivery = async (sale) => {
     if (!window.confirm(`¿Confirmar cobro y entrega del domicilio #${sale.id}? Se asentará el pago en caja.`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/sales/${sale.id}/confirm-delivery`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/sales/${sale.id}/confirm-delivery`, { method: 'POST' });
       if (res.ok) {
         fetchSales();
         showToast(`Domicilio #${sale.id} confirmado y cobrado`);
@@ -574,7 +575,7 @@ const Sales = () => {
   const handleCancelDelivery = async (sale) => {
     if (!window.confirm(`¿Cancelar domicilio #${sale.id}? Las prendas se devolverán automáticamente al stock disponible.`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/sales/${sale.id}/cancel-delivery`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/sales/${sale.id}/cancel-delivery`, { method: 'POST' });
       if (res.ok) {
         fetchSales();
         showToast(`Domicilio #${sale.id} cancelado y prendas devueltas a stock`);

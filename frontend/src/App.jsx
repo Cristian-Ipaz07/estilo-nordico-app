@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Wallet, 
   CircleDollarSign, BarChart3, Users, Settings,
   Bell, Search, ChevronDown, Store, Terminal,
-  PanelLeftClose, PanelLeftOpen, LogOut
+  PanelLeftClose, PanelLeftOpen, LogOut, Menu, X
 } from 'lucide-react';
 
 // Importación de componentes y páginas
@@ -21,7 +21,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DateRangeProvider } from './context/DateRangeContext';
 import Login from './pages/Login';
 
-const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = false }) => {
+const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = false, onNavigate }) => {
   const location = useLocation();
   const isActive = location.pathname === to;
   if (hidden) return null;
@@ -29,6 +29,7 @@ const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = fals
   return (
     <Link 
       to={to} 
+      onClick={onNavigate}
       title={isCollapsed ? label : undefined}
       className={`flex items-center rounded-xl transition-all duration-200 group relative ${
         isCollapsed 
@@ -46,9 +47,9 @@ const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = fals
         <span className="font-semibold text-sm truncate">{label}</span>
       )}
 
-      {/* Tooltip flotante en modo colapsado */}
+      {/* Tooltip flotante en modo colapsado para Desktop */}
       {isCollapsed && (
-        <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+        <div className="hidden md:block absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
           {label}
         </div>
       )}
@@ -64,10 +65,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return children;
 };
 
-// Layout con Sidebar Colapsable y Terminal Integrado
+// Layout con Sidebar Colapsable, Drawer Móvil y Terminal Integrado
 const Layout = ({ children }) => {
   const [selectedBranch, setSelectedBranch] = useState("Sede Principal (Pasto)");
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -111,30 +113,49 @@ const Layout = ({ children }) => {
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
-      {/* Sidebar Navegación Lateral */}
+    <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden relative">
+      {/* Overlay Backdrop para móviles */}
+      {isMobileMenuOpen && (
+        <div 
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 md:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* Sidebar Navegación Lateral (Drawer en móviles, Colapsable en Desktop) */}
       <aside 
-        className={`${
-          isSidebarCollapsed ? 'w-20' : 'w-64'
-        } bg-white border-r border-slate-200 flex flex-col fixed h-full z-20 print:hidden transition-all duration-300 ease-in-out shadow-xs`}
+        className={`
+          fixed h-full z-40 bg-white border-r border-slate-200 flex flex-col print:hidden transition-all duration-300 ease-in-out shadow-xl md:shadow-xs
+          ${isMobileMenuOpen ? 'translate-x-0 w-72' : '-translate-x-full md:translate-x-0'}
+          ${isSidebarCollapsed ? 'md:w-20' : 'md:w-64'}
+        `}
       >
         {/* Cabecera del Sidebar */}
-        <div className={`p-4 border-b border-slate-100 flex items-center ${isSidebarCollapsed ? 'flex-col gap-3 justify-center' : 'justify-between'}`}>
+        <div className={`p-4 border-b border-slate-100 flex items-center justify-between ${isSidebarCollapsed ? 'md:flex-col md:gap-3 md:justify-center' : ''}`}>
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="bg-slate-900 text-white p-2 rounded-xl shrink-0 shadow-sm" title="Estilo Nórdico">
               <Store size={20} />
             </div>
-            {!isSidebarCollapsed && (
+            {(!isSidebarCollapsed || isMobileMenuOpen) && (
               <div className="truncate">
                 <h1 className="text-base font-black tracking-tight text-slate-900 truncate">Estilo Nórdico</h1>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sistema POS</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sistema POS & Web</span>
               </div>
             )}
           </div>
 
+          {/* Botón cerrar drawer en móviles */}
+          <button 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg md:hidden cursor-pointer"
+          >
+            <X size={20} />
+          </button>
+
+          {/* Botón colapsar en Desktop */}
           <button 
             onClick={toggleSidebar}
-            className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+            className="hidden md:block p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             title={isSidebarCollapsed ? "Expandir menú (Ctrl + B)" : "Contraer menú (Ctrl + B)"}
           >
             {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
@@ -144,13 +165,13 @@ const Layout = ({ children }) => {
         {/* Links de Navegación */}
         <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
           <nav className="space-y-1.5">
-            <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/inventory" icon={Package} label="Inventario" isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/layaway" icon={Wallet} label="Separados" isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/reports" icon={BarChart3} label="Finanzas & Corte" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} />
-            <SidebarItem to="/users" icon={Users} label="Usuarios" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} />
+            <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/inventory" icon={Package} label="Inventario" isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/layaway" icon={Wallet} label="Separados" isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/reports" icon={BarChart3} label="Finanzas & Corte" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/users" icon={Users} label="Usuarios" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
           </nav>
         </div>
 
@@ -160,13 +181,13 @@ const Layout = ({ children }) => {
             onClick={logout} 
             title={isSidebarCollapsed ? "Cerrar Sesión" : undefined}
             className={`w-full flex items-center rounded-xl transition-all duration-200 text-rose-500 hover:bg-rose-50 group relative cursor-pointer ${
-              isSidebarCollapsed ? 'justify-center p-3' : 'px-3.5 py-2.5 gap-3'
+              isSidebarCollapsed ? 'md:justify-center p-3' : 'px-3.5 py-2.5 gap-3'
             }`}
           >
             <LogOut size={20} className="shrink-0" />
-            {!isSidebarCollapsed && <span className="font-bold text-sm">Cerrar Sesión</span>}
+            {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="font-bold text-sm">Cerrar Sesión</span>}
             {isSidebarCollapsed && (
-              <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+              <div className="hidden md:block absolute left-full ml-3 px-2.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
                 Cerrar Sesión
               </div>
             )}
@@ -174,54 +195,71 @@ const Layout = ({ children }) => {
         </div>
       </aside>
 
-      {/* Contenido Principal */}
-      <main className={`flex-1 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'} transition-all duration-300 ease-in-out min-w-0 overflow-x-hidden flex flex-col min-h-screen print:ml-0 print:w-full`}>
-        {/* Barra Superior */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 md:px-8 sticky top-0 z-10 print:hidden shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="relative cursor-pointer" onClick={() => setIsTerminalOpen(true)}>
+      {/* Contenido Principal Adaptable */}
+      <main className={`
+        flex-1 transition-all duration-300 ease-in-out min-w-0 overflow-x-hidden flex flex-col min-h-screen print:ml-0 print:w-full
+        ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} ml-0
+      `}>
+        {/* Barra Superior Responsive */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 sticky top-0 z-20 print:hidden shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Botón Hamburger en móviles */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 -ml-2 text-slate-700 hover:bg-slate-100 rounded-xl md:hidden cursor-pointer"
+              title="Abrir menú"
+            >
+              <Menu size={22} />
+            </button>
+
+            {/* Buscador Rápido Ctrl + K */}
+            <div className="relative cursor-pointer hidden sm:block" onClick={() => setIsTerminalOpen(true)}>
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text" 
                 readOnly
                 placeholder="Buscador Rápido (Ctrl + K)..." 
-                className="pl-10 pr-4 py-2 bg-slate-100 hover:bg-slate-200/80 cursor-pointer border-none rounded-full text-xs font-bold text-slate-700 w-56 md:w-64 transition-all outline-none" 
+                className="pl-10 pr-4 py-2 bg-slate-100 hover:bg-slate-200/80 cursor-pointer border-none rounded-full text-xs font-bold text-slate-700 w-48 md:w-64 transition-all outline-none" 
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
+              <span className="hidden md:inline-block absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
                 Ctrl+K
               </span>
             </div>
+
+            {/* Selector de Sucursal */}
             <select
               value={selectedBranch}
               onChange={e => setSelectedBranch(e.target.value)}
-              className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 outline-none cursor-pointer hover:bg-slate-100 transition-colors hidden sm:block"
+              className="hidden lg:block text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
             >
               <option value="Sede Principal (Pasto)">🏢 Sede Principal (Pasto)</option>
               <option value="Sucursal Samaniego">🏬 Sucursal Samaniego</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Botón del Terminal */}
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Botón del Terminal POS (Ctrl+K) */}
             <button 
               onClick={() => setIsTerminalOpen(true)}
-              className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-900 transition-colors"
+              className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1.5"
               title="Terminal POS (Ctrl+K)"
             >
-              <Terminal size={20} />
+              <Terminal size={19} />
+              <span className="text-xs font-black hidden sm:inline text-indigo-600">POS</span>
             </button>
             
-            <button className="text-slate-500 hover:text-slate-900 relative p-2">
-              <Bell size={20} />
-              <span className="absolute 1 top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+            <button className="text-slate-500 hover:text-slate-900 relative p-2 rounded-xl hover:bg-slate-100 transition-colors">
+              <Bell size={19} />
+              <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border border-white"></span>
             </button>
 
-            <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
-              <div className="text-right hidden md:block">
-                <p className="text-sm font-semibold text-slate-900">{user?.full_name}</p>
-                <p className="text-xs font-bold text-slate-400 uppercase">{user?.role}</p>
+            {/* Perfil del Usuario */}
+            <div className="flex items-center gap-2.5 pl-2 md:pl-3 border-l border-slate-200">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs md:text-sm font-bold text-slate-900 truncate max-w-[130px]">{user?.full_name}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase">{user?.role} {user?.vendedor_tipo ? `(${user.vendedor_tipo})` : ''}</p>
               </div>
-              <div className="w-9 h-9 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-black text-sm">
+              <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-black text-xs md:text-sm shadow-2xs">
                  {user?.full_name?.charAt(0).toUpperCase()}
               </div>
             </div>
@@ -229,7 +267,7 @@ const Layout = ({ children }) => {
         </header>
 
         {/* Vista activa */}
-        <div className="p-6 md:p-8 flex-1 flex flex-col min-w-0">
+        <div className="p-4 md:p-8 flex-1 flex flex-col min-w-0">
           {children}
         </div>
       </main>

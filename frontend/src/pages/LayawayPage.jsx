@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Wallet, Calendar, Plus, ArrowRight, UserPlus, AlertCircle,
@@ -65,7 +66,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
 
   // Cargar usuarios activos del sistema para el selector de vendedor
   useEffect(() => {
-    fetch('http://localhost:8000/users/', {
+    fetch(`${API_URL}/users/`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
@@ -103,7 +104,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
     try {
       // Si el usuario tenía un abono en edición, guardarlo primero
       if (editingPayId) {
-        await fetch(`http://localhost:8000/sales/${item.id}/payments/${editingPayId}`, {
+        await fetch(`${API_URL}/sales/${item.id}/payments/${editingPayId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -116,7 +117,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
         });
       }
 
-      const res = await fetch(`http://localhost:8000/sales/${item.id}`, {
+      const res = await fetch(`${API_URL}/sales/${item.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -151,7 +152,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
   const handleDeletePayment = async (payId, payAmount) => {
     if (!window.confirm(`¿Eliminar este abono de $${fmt(payAmount)}? Se descontará del abono acumulado y se recalculará el saldo de este separado.`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/sales/${item.id}/payments/${payId}`, {
+      const res = await fetch(`${API_URL}/sales/${item.id}/payments/${payId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -175,7 +176,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
 
   const handleSaveEditPay = async (payId) => {
     try {
-      const res = await fetch(`http://localhost:8000/sales/${item.id}/payments/${payId}`, {
+      const res = await fetch(`${API_URL}/sales/${item.id}/payments/${payId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -210,7 +211,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
     }
 
     try {
-      const res = await fetch(`http://localhost:8000/sales/${item.id}/payments/${payId}/transfer?target_sale_id=${targetId}`, {
+      const res = await fetch(`${API_URL}/sales/${item.id}/payments/${payId}/transfer?target_sale_id=${targetId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -231,8 +232,8 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
     if (!window.confirm(`¿Seguro que deseas cancelar el separado #${item.id}? Las prendas se devolverán automáticamente al inventario.`)) return;
     try {
       const endpoint = item.status === 'en_domicilio' 
-        ? `http://localhost:8000/sales/${item.id}/cancel-delivery`
-        : `http://localhost:8000/sales/${item.id}`;
+        ? `${API_URL}/sales/${item.id}/cancel-delivery`
+        : `${API_URL}/sales/${item.id}`;
       const method = item.status === 'en_domicilio' ? 'POST' : 'DELETE';
       const res = await fetch(endpoint, {
         method,
@@ -701,7 +702,7 @@ export default function LayawayPage() {
   const handleQuickDeletePay = async (abono) => {
     if (!window.confirm(`¿Eliminar este abono de $${fmt(abono.amount)} de ${abono.customer_name} (Venta #${abono.sale_id})? Su saldo volverá a subir automáticamente.`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/sales/${abono.sale_id}/payments/${abono.payment_id}`, {
+      const res = await fetch(`${API_URL}/sales/${abono.sale_id}/payments/${abono.payment_id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });

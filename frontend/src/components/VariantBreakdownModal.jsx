@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useMemo } from 'react';
 import { X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag } from 'lucide-react';
 
@@ -65,7 +66,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         is_published: false
       };
 
-      const res = await fetch('http://localhost:8000/products/', {
+      const res = await fetch(`${API_URL}/products/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,7 +95,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const val = Number(newStock);
     if (isNaN(val) || val < 0) return;
     try {
-      const res = await fetch(`http://localhost:8000/products/${variantId}`, {
+      const res = await fetch(`${API_URL}/products/${variantId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -114,7 +115,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const handleDeleteVariant = async (variantId, sku) => {
     if (!window.confirm(`¿Seguro que deseas eliminar la variante ${sku}?`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/products/${variantId}`, {
+      const res = await fetch(`${API_URL}/products/${variantId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BarChart3, Users, DollarSign, Wallet, TrendingUp, TrendingDown,
@@ -74,7 +75,7 @@ const TabBalance = ({ sales, cashFlow, startDate, endDate, token }) => {
 
   // Fetch COGS desde el backend cada vez que cambia el rango
   useEffect(() => {
-    fetch(`http://localhost:8000/sales/cogs?start=${startDate}&end=${endDate}`, {
+    fetch(`${API_URL}/sales/cogs?start=${startDate}&end=${endDate}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(r => r.json())
@@ -318,7 +319,7 @@ const TabNomina = ({ startDate, endDate, token, onPaymentMade }) => {
     setLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/corte/payroll?start=${startDate}&end=${endDate}`,
+        `${API_URL}/corte/payroll?start=${startDate}&end=${endDate}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.ok) setPayroll(await res.json());
@@ -340,7 +341,7 @@ const TabNomina = ({ startDate, endDate, token, onPaymentMade }) => {
   const handleSave = async (rec) => {
     setSaving(p => ({ ...p, [rec.id]: true }));
     try {
-      await fetch(`http://localhost:8000/corte/payroll/${rec.id}`, {
+      await fetch(`${API_URL}/corte/payroll/${rec.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ horas: rec.horas, valor_hora: rec.valor_hora })
@@ -354,7 +355,7 @@ const TabNomina = ({ startDate, endDate, token, onPaymentMade }) => {
     if (!window.confirm(`¿Confirmar pago de $${fmt(rec.total_salario)} a ${rec.user?.full_name}? Esto se registrará en Caja.`)) return;
     setSaving(p => ({ ...p, [rec.id]: 'paying' }));
     try {
-      const res = await fetch(`http://localhost:8000/corte/payroll/${rec.id}/pagar`, {
+      const res = await fetch(`${API_URL}/corte/payroll/${rec.id}/pagar`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -403,7 +404,7 @@ const TabNomina = ({ startDate, endDate, token, onPaymentMade }) => {
               onClick={async () => {
                 try {
                   const res = await fetch(
-                    `http://localhost:8000/corte/payroll/sync?start=${startDate}&end=${endDate}`,
+                    `${API_URL}/corte/payroll/sync?start=${startDate}&end=${endDate}`,
                     { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
                   );
                   if (res.ok) {
@@ -525,7 +526,7 @@ const TabDistribucion = ({ sales, cashFlow, startDate, endDate, token }) => {
 
   // Cargar config guardada para este período
   useEffect(() => {
-    fetch(`http://localhost:8000/corte/config?start=${startDate}&end=${endDate}`,
+    fetch(`${API_URL}/corte/config?start=${startDate}&end=${endDate}`,
       { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -584,7 +585,7 @@ const TabDistribucion = ({ sales, cashFlow, startDate, endDate, token }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('http://localhost:8000/corte/config', {
+      const res = await fetch(`${API_URL}/corte/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ periodo_start: startDate, periodo_end: endDate, ...config })
@@ -740,8 +741,8 @@ export default function FinanceCorte() {
       setLoading(true);
       try {
         const [sRes, cRes] = await Promise.all([
-          fetch('http://localhost:8000/sales/', { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('http://localhost:8000/cash/', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_URL}/sales/`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_URL}/cash/`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         const [sData, cData] = await Promise.all([
           sRes.ok ? sRes.json() : [],

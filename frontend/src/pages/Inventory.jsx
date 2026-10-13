@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Search, RefreshCw, Package, UploadCloud, AlertCircle, ChevronUp, ChevronDown, 
@@ -137,7 +138,7 @@ export default function Inventory() {
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/products/');
+      const response = await fetch(`${API_URL}/products/`);
       const data = await response.json();
       setProducts(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -201,7 +202,7 @@ export default function Inventory() {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/products/upload-excel', {
+      const response = await fetch(`${API_URL}/products/upload-excel`, {
         method: 'POST',
         body: formData,
       });
@@ -322,7 +323,7 @@ export default function Inventory() {
     if (isNaN(val) || val < 0) return;
     setSavingStockId(p.id);
     try {
-      const res = await fetch(`http://localhost:8000/products/${p.id}`, {
+      const res = await fetch(`${API_URL}/products/${p.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -352,7 +353,7 @@ export default function Inventory() {
     
     if (!window.confirm(msg)) return;
     try {
-      const res = await fetch(`http://localhost:8000/products/${p.id}`, {
+      const res = await fetch(`${API_URL}/products/${p.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -393,7 +394,7 @@ export default function Inventory() {
   const handleTogglePublish = async (p, e) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`http://localhost:8000/products/${p.id}`, {
+      const res = await fetch(`${API_URL}/products/${p.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -917,7 +918,7 @@ function HistoryTab({ inventory, reloadInventory }) {
   const loadHistory = useCallback(async (productId = null) => {
     setIsLoadingHistory(true);
     try {
-      let url = `http://localhost:8000/products/entries?filter_type=${filterType}`;
+      let url = `${API_URL}/products/entries?filter_type=${filterType}`;
       if (productId) url += `&product_id=${productId}`;
       if (filterType === 'range' && dateRange.start && dateRange.end) {
         url += `&start_date=${dateRange.start}&end_date=${dateRange.end}`;
@@ -948,7 +949,7 @@ function HistoryTab({ inventory, reloadInventory }) {
     if (!selected || !qtyIn || !newCost) return;
     setIsStocking(true);
     try {
-      const res = await fetch('http://localhost:8000/products/entries', {
+      const res = await fetch(`${API_URL}/products/entries`, {
         method: 'POST', 
         headers: { 
           'Content-Type': 'application/json',
@@ -983,7 +984,7 @@ function HistoryTab({ inventory, reloadInventory }) {
   const handleCancelEntry = async (entryId) => {
     if (!window.confirm('¿Seguro que deseas anular esta entrada? Se restará el stock y se revertirá el pago en caja si aplica.')) return;
     try {
-      const res = await fetch(`http://localhost:8000/products/entries/${entryId}/cancel`, {
+      const res = await fetch(`${API_URL}/products/entries/${entryId}/cancel`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });

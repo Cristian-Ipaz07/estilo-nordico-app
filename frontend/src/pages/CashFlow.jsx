@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -26,8 +27,8 @@ const CashFlow = () => {
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     
     Promise.all([
-      fetch('http://localhost:8000/cash/', { headers }).then(r => r.json()),
-      fetch('http://localhost:8000/sales/', { headers }).then(r => r.json())
+      fetch(`${API_URL}/cash/`, { headers }).then(r => r.json()),
+      fetch(`${API_URL}/sales/`, { headers }).then(r => r.json())
     ])
     .then(([cashData, salesData]) => {
       setMovements(Array.isArray(cashData) ? cashData : []);
@@ -42,7 +43,7 @@ const CashFlow = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`http://localhost:8000/cash/${editingMovement.id}`, {
+      const res = await fetch(`${API_URL}/cash/${editingMovement.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -63,7 +64,7 @@ const CashFlow = () => {
     if (String(id).startsWith('sale-')) return;
     if (!window.confirm("¿Seguro que quieres eliminar este movimiento?")) return;
     try {
-      const res = await fetch(`http://localhost:8000/cash/${id}`, {
+      const res = await fetch(`${API_URL}/cash/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });

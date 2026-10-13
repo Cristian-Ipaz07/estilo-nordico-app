@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_URL } from '../config/api';
 
 const AuthContext = createContext(null);
 
@@ -10,7 +11,7 @@ export const AuthProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     if (token) {
       // Validate token with backend
-      fetch('http://localhost:8000/users/me', {
+      fetch(`${API_URL}/users/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => {
@@ -37,7 +38,7 @@ export const AuthProvider = ({ children }) => {
     formData.append('username', username);
     formData.append('password', password);
 
-    const res = await fetch('http://localhost:8000/auth/login', {
+    const res = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formData

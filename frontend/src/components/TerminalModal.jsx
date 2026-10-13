@@ -1,3 +1,4 @@
+import { API_URL } from '../config/api';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { EditLayawayModal } from '../pages/LayawayPage';
@@ -47,7 +48,7 @@ function useInventory(isOpen) {
 
   const load = useCallback(() => {
     setRefreshing(true);
-    fetch('http://localhost:8000/products/', {
+    fetch(`${API_URL}/products/`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
@@ -82,7 +83,7 @@ const { user } = useAuth();
   }, [user]);
 
   useEffect(() => {
-    fetch('http://localhost:8000/users/', {
+    fetch(`${API_URL}/users/`, {
        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
     .then(r => r.json())
@@ -172,7 +173,7 @@ const { user } = useAuth();
       })),
     };
     try {
-      const res = await fetch('http://localhost:8000/sales/', {
+      const res = await fetch(`${API_URL}/sales/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -363,7 +364,7 @@ function ModuloSeparados() {
 
 
   const loadSeparados = useCallback(() => {
-    fetch('http://localhost:8000/sales/', {
+    fetch(`${API_URL}/sales/`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
@@ -394,7 +395,7 @@ function ModuloSeparados() {
       const isToday = abonoDate === getTodayCO();
       const dateParam = isToday ? '' : `&payment_date=${abonoDate}`;
       
-      const res = await fetch(`http://localhost:8000/sales/${selected.id}/payment?amount=${Number(abonoAmount)}${dateParam}`, {
+      const res = await fetch(`${API_URL}/sales/${selected.id}/payment?amount=${Number(abonoAmount)}${dateParam}`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -405,7 +406,7 @@ function ModuloSeparados() {
       loadSeparados();
       window.dispatchEvent(new CustomEvent('refresh-sales'));
       // No cerramos selección, actualizamos para ver el historial
-      fetch(`http://localhost:8000/sales/${selected.id}`, {
+      fetch(`${API_URL}/sales/${selected.id}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       })
         .then(r => r.json())
@@ -421,7 +422,7 @@ function ModuloSeparados() {
   const handleCancelar = async () => {
     if (!selected) return;
     if (!window.confirm(`¿Cancelar separado #${selected.id}? Se restituirá el stock.`)) return;
-    await fetch(`http://localhost:8000/sales/${selected.id}`, { 
+    await fetch(`${API_URL}/sales/${selected.id}`, { 
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     });
@@ -648,7 +649,7 @@ function ModuloStock({ inventory, reloadInventory }) {
       const params = new URLSearchParams();
       if (editPrice !== '') params.append('price_sale', editPrice);
       if (editCost !== '') params.append('my_cost', editCost);
-      const res = await fetch(`http://localhost:8000/products/${selected.id}/price?${params}`, { 
+      const res = await fetch(`${API_URL}/products/${selected.id}/price?${params}`, { 
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -669,7 +670,7 @@ function ModuloStock({ inventory, reloadInventory }) {
     }
     setIsCreating(true);
     try {
-      const res = await fetch('http://localhost:8000/products/', {
+      const res = await fetch(`${API_URL}/products/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -698,7 +699,7 @@ function ModuloStock({ inventory, reloadInventory }) {
     if (!selected || !qtyIn || !newCost) return;
     setIsStocking(true);
     try {
-      const res = await fetch('http://localhost:8000/products/entries', {
+      const res = await fetch(`${API_URL}/products/entries`, {
         method: 'POST', 
         headers: { 
           'Content-Type': 'application/json',
@@ -934,8 +935,8 @@ function ModuloCaja() {
   const loadData = useCallback(() => {
     setIsLoading(true);
     Promise.all([
-      fetch('http://localhost:8000/sales/', { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch('http://localhost:8000/cash/', { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json())
+      fetch(`${API_URL}/sales/`, { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json()),
+      fetch(`${API_URL}/cash/`, { headers: { 'Authorization': "Bearer " + localStorage.getItem('token') } }).then(r => r.json())
     ]).then(([sData, cData]) => {
       setSales(Array.isArray(sData) ? sData : []);
       setMovements(Array.isArray(cData) ? cData : []);
@@ -1080,7 +1081,7 @@ function ModuloCaja() {
     try {
       const closureDateTime = cierreDate + "T23:59:59";
       const descText = "CIERRE DE CAJA (Ventas: $" + fmt(shiftTotalIn) + " - Gastos: $" + fmt(shiftTotalOut) + " = Guardado: $" + fmt(shiftNetVentas) + " | Base: $" + fmt(cierreBaseSiguiente) + ")";
-      const res = await fetch('http://localhost:8000/cash/', {
+      const res = await fetch(`${API_URL}/cash/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1117,7 +1118,7 @@ function ModuloCaja() {
     if (!window.confirm("¿Seguro que deseas eliminar este cierre del " + fmtDateTime(closureItem.date) + "? El turno volverá a abrirse.")) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch("http://localhost:8000/cash/" + closureItem.rawId, {
+      const res = await fetch(`${API_URL}/cash/` + closureItem.rawId, {
         method: 'DELETE',
         headers: { 'Authorization': "Bearer " + localStorage.getItem('token') }
       });
@@ -1146,7 +1147,7 @@ function ModuloCaja() {
         category
       };
       if (manualDate) payload.payment_date = manualDate + "T12:00:00";
-      const res = await fetch('http://localhost:8000/cash/', {
+      const res = await fetch(`${API_URL}/cash/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
