@@ -1,13 +1,15 @@
-import { API_URL } from '../config/api';
 import React, { useState, useMemo } from 'react';
-import { X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag } from 'lucide-react';
+import { X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag, ShieldCheck } from 'lucide-react';
+import { API_URL } from '../config/api';
 
-const COMMON_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '30', '32', '34', '36'];
+const COMMON_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '30', '32', '34', '36'];
 const COMMON_COLORS = ['NEGRO', 'AZUL', 'AZUL OSCURO', 'BLANCO', 'BEIGE', 'VERDE', 'VERDE MILITAR', 'ROJO', 'VINOTINTO', 'GRIS', 'CAMEL'];
+const QUICK_BRANDS = ['THE NORTH FACE', 'COLUMBIA', 'MONCLER', 'DIESEL', 'ARMANI', 'ESTILO NÓRDICO'];
 
 export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen, onClose, onRefresh }) {
   if (!isOpen || !baseProduct) return null;
 
+  const [brand, setBrand] = useState(baseProduct.brand || '');
   const [color, setColor] = useState('');
   const [size, setSize] = useState('M');
   const [quantity, setQuantity] = useState(1);
@@ -30,15 +32,22 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     e.preventDefault();
     const cleanColor = color.trim().toUpperCase().replace(/\s+/g, '-');
     const cleanSize = size.trim().toUpperCase();
+    const cleanBrand = brand ? brand.trim().toUpperCase() : '';
 
     if (!cleanColor) {
       alert('Por favor ingresa un color.');
       return;
     }
 
-    // SKU estándar: [REF]-[COLOR]-[TALLA]
-    const sku = `${baseProduct.ref}-${cleanColor}-${cleanSize}`;
-    const variantName = `${baseProduct.name.trim()} ${cleanColor} ${cleanSize}`;
+    // SKU estándar: [REF]-[MARCA?]-[COLOR]-[TALLA]
+    const brandSlug = cleanBrand ? cleanBrand.replace(/\s+/g, '-') : '';
+    const sku = brandSlug 
+      ? `${baseProduct.ref}-${brandSlug}-${cleanColor}-${cleanSize}`
+      : `${baseProduct.ref}-${cleanColor}-${cleanSize}`;
+
+    const variantName = cleanBrand 
+      ? `${baseProduct.name.trim()} ${cleanBrand} ${color.trim().toUpperCase()} ${cleanSize}`
+      : `${baseProduct.name.trim()} ${color.trim().toUpperCase()} ${cleanSize}`;
 
     // Validar si ya existe
     const exists = allProducts.find(p => p.ref.toUpperCase() === sku);
@@ -54,9 +63,9 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         name: variantName,
         category: baseProduct.category || 'Hombre',
         subcategory: baseProduct.subcategory || '',
-        brand: baseProduct.brand || 'Estilo Nórdico',
+        brand: cleanBrand || baseProduct.brand || 'Estilo Nórdico',
         origin: baseProduct.origin || 'Propio',
-        color: cleanColor,
+        color: color.trim().toUpperCase(),
         size: cleanSize,
         parent_id: baseProduct.id,
         price_sale: baseProduct.price_sale || 0,
@@ -146,7 +155,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                 <span className="font-mono text-xs font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg">
                   REF: {baseProduct.ref}
                 </span>
-                <span className="text-xs font-bold text-slate-400 uppercase">{baseProduct.category}</span>
+                <span className="text-xs font-bold text-slate-400 uppercase">{baseProduct.category} · {baseProduct.subcategory}</span>
               </div>
               <h3 className="font-black text-slate-800 text-base">{baseProduct.name}</h3>
             </div>
@@ -163,6 +172,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             <span className="font-black text-indigo-700 font-mono text-sm bg-white px-2.5 py-0.5 rounded-md border border-indigo-200 shadow-2xs">
               {totalAssignedStock} un.
             </span>
+            <span className="text-[10px] text-slate-400 ml-1">(Stock base original: {baseProduct.stock || 0} un.)</span>
           </div>
           <div>
             <span className="font-bold text-slate-600 bg-white/80 px-2 py-0.5 rounded border border-indigo-100">
@@ -177,6 +187,52 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             <Plus size={14} className="text-indigo-600" /> Crear Nueva Variante / Talla
           </p>
 
+          {/* Fila 1: Marca opcional con botones rápidos */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                Marca (Opcional - ej: THE NORTH FACE / COLUMBIA)
+              </label>
+              {brand && (
+                <button 
+                  type="button" 
+                  onClick={() => setBrand('')} 
+                  className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                >
+                  Limpiar marca
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                list="quick-brands"
+                placeholder="Ej: THE NORTH FACE, COLUMBIA"
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
+              />
+              <datalist id="quick-brands">
+                {QUICK_BRANDS.map(b => <option key={b} value={b} />)}
+              </datalist>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Rápidas:</span>
+              {['THE NORTH FACE', 'COLUMBIA'].map(b => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => setBrand(b)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                    brand.toUpperCase() === b ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-12 gap-3 items-end">
             {/* Color */}
             <div className="col-span-5">
@@ -186,7 +242,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               <input
                 type="text"
                 list="common-colors"
-                placeholder="Ej: NEGRO, AZUL"
+                placeholder="Ej: NEGRO, AZUL, ROJO"
                 value={color}
                 onChange={e => setColor(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
@@ -205,7 +261,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               <input
                 type="text"
                 list="common-sizes"
-                placeholder="Ej: M, L, 32"
+                placeholder="Ej: M, L, XL, XXXL"
                 value={size}
                 onChange={e => setSize(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
@@ -234,6 +290,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                   type="submit"
                   disabled={submitting}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shrink-0 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                  title="Agregar Variante"
                 >
                   {submitting ? <RefreshCw className="animate-spin" size={14} /> : <Plus size={14} />}
                 </button>
@@ -241,16 +298,29 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             </div>
           </div>
 
-          {/* Botones de selección rápida de tallas comunes */}
+          {/* Botones de selección rápida de tallas comunes (incluyendo XXXL) */}
           <div className="flex items-center gap-1.5 flex-wrap pt-1">
             <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Tallas Rápidas:</span>
-            {COMMON_SIZES.map(s => (
+            {['M', 'L', 'XL', 'XXL', 'XXXL'].map(s => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setSize(s)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
                   size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+            <span className="text-slate-300 text-xs">|</span>
+            {['S', '30', '32', '34', '36'].map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSize(s)}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                  size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
                 }`}
               >
                 {s}
@@ -269,18 +339,25 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             <div className="text-center py-8 text-slate-400 text-xs">
               <AlertCircle size={24} className="mx-auto mb-2 opacity-40 text-slate-400" />
               Esta referencia no tiene variantes desglosadas aún.<br />
-              Agrega los colores y tallas arriba para desglosarla.
+              Agrega los colores, marcas y tallas arriba para desglosarla.
             </div>
           ) : (
             <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
               {existingVariants.map(v => (
                 <div key={v.id} className="p-3 bg-white hover:bg-slate-50 flex items-center justify-between gap-4 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 font-mono font-bold text-xs flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 font-mono font-black text-xs flex items-center justify-center border border-slate-200">
                       {v.size || '-'}
                     </div>
                     <div>
-                      <p className="text-xs font-black text-slate-800 font-mono">{v.ref}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-black text-slate-800 font-mono">{v.ref}</p>
+                        {v.brand && v.brand !== 'Estilo Nórdico' && (
+                          <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                            {v.brand}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 font-medium">
                         Color: <span className="font-bold text-slate-600">{v.color || 'N/A'}</span> · Talla: <span className="font-bold text-slate-600">{v.size || 'N/A'}</span>
                       </p>
