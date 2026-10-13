@@ -1,14 +1,15 @@
-import { API_URL } from '../config/api';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Search, RefreshCw, Package, UploadCloud, AlertCircle, ChevronUp, ChevronDown, 
   ChevronsUpDown, History, ArrowRight, Truck, CheckCircle2, RotateCcw, TrendingUp, 
-  Edit3, Plus, Globe, Sparkles, Layers, Trash2, Check, Filter, BarChart3, X, SlidersHorizontal
+  Edit3, Plus, Globe, Sparkles, Layers, Trash2, Check, Filter, BarChart3, X, SlidersHorizontal,
+  ArrowDownAZ, ArrowUpAZ, ArrowDown10, ArrowUp01, FileSpreadsheet
 } from 'lucide-react';
 import ProductModal from '../components/ProductModal';
 import AdvisorCatalog from '../components/AdvisorCatalog';
 import VariantBreakdownModal from '../components/VariantBreakdownModal';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config/api';
 
 function AssetValuationCard({ products, variantStats }) {
   const STORAGE_KEY = 'inv_ajuste_creditos_externos';
@@ -123,12 +124,16 @@ export default function Inventory() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+  
+  // Ordenamiento por defecto: Orden Excel (Hombre primero, luego Mujer, subcategorías A-Z, productos A-Z)
+  const [sortConfig, setSortConfig] = useState({ key: 'excel', direction: 'asc' });
+  const [genderFilter, setGenderFilter] = useState('TODOS');
+  const [subcategoryFilter, setSubcategoryFilter] = useState('TODAS');
+  
   const [activeTab, setActiveTab] = useState('stock'); // 'stock', 'catalog', 'history'
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [genderFilter, setGenderFilter] = useState('TODOS');
   const [editingStockId, setEditingStockId] = useState(null);
   const [inlineStockVal, setInlineStockVal] = useState('');
   const [savingStockId, setSavingStockId] = useState(null);
@@ -193,6 +198,18 @@ export default function Inventory() {
     return { baseProducts: base, variantsByParent: varMap, variantStats: vStats };
   }, [products]);
 
+  // Lista de subcategorías disponibles con conteo para el selector estilo Excel
+  const availableSubcategories = useMemo(() => {
+    const map = {};
+    baseProducts.forEach(p => {
+      const sub = (p.subcategory || '').trim().toUpperCase();
+      if (sub) {
+        map[sub] = (map[sub] || 0) + 1;
+      }
+    });
+    return Object.keys(map).sort().map(name => ({ name, count: map[name] }));
+  }, [baseProducts]);
+
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -223,18 +240,32 @@ export default function Inventory() {
     }
   };
 
+  // Manejo de ordenamiento estilo Excel:
+  // Clic 1: Ascendente (A-Z / Menor a Mayor)
+  // Clic 2: Descendente (Z-A / Mayor a Menor)
+  // Clic 3: Restablecer al orden original Excel
   const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        if (prev.direction === 'asc') {
+          return { key, direction: 'desc' };
+        } else {
+          // Vuelve al orden Excel original
+          return { key: 'excel', direction: 'asc' };
+        }
+      }
+      // Nueva columna seleccionada
+      // Para métricas numéricas (stock, precio, costo) es más útil empezar de mayor a menor
+      const defaultDir = ['stock', 'price_sale', 'my_cost'].includes(key) ? 'desc' : 'asc';
+      return { key, direction: defaultDir };
+    });
   };
 
   // Filtrado y Ordenamiento sobre las REFERENCIAS BASE
   const filteredAndSortedProducts = useMemo(() => {
     let result = [...baseProducts];
 
+    // 1. Filtro por Género
     if (genderFilter !== 'TODOS') {
       if (genderFilter === 'OTROS') {
         result = result.filter(p => !['HOMBRE', 'MUJER'].includes((p.category || '').toUpperCase()));
@@ -243,7 +274,12 @@ export default function Inventory() {
       }
     }
 
-    // Buscador inteligente: busca en la referencia base Y en los atributos de sus variantes
+    // 2. Filtro por Subcategoría (Estilo Excel)
+    if (subcategoryFilter !== 'TODAS') {
+      result = result.filter(p => (p.subcategory || '').trim().toUpperCase() === subcategoryFilter);
+    }
+
+    // 3. Buscador inteligente global
     if (searchTerm && searchTerm.trim()) {
       const kws = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
       result = result.filter(item => {
@@ -257,21 +293,90 @@ export default function Inventory() {
       });
     }
 
-    if (sortConfig.key) {
+    // 4. Ordenamiento
+    if (sortConfig.key === 'excel') {
+      // ORDEN ORIGINAL EXCEL:
+      // 1. Categoría: HOMBRE primero, luego MUJER, luego OTROS
+      // 2. Subcategoría: A-Z
+      // 3. Producto / Nombre: A-Z
+      // 4. REF: Numérico A-Z
+      const catPriority = (cat) => {
+        const c = (cat || '').toUpperCase().trim();
+        if (c === 'HOMBRE') return 1;
+        if (c === 'MUJER') return 2;
+        return 3;
+      };
+
+      result.sort((a, b) => {
+        const prioA = catPriority(a.category);
+        const prioB = catPriority(b.category);
+        if (prioA !== prioB) {
+          return sortConfig.direction === 'asc' ? prioA - prioB : prioB - prioA;
+        }
+
+        const subA = (a.subcategory || '').trim().toUpperCase();
+        const subB = (b.subcategory || '').trim().toUpperCase();
+        const subCmp = subA.localeCompare(subB, 'es', { sensitivity: 'base' });
+        if (subCmp !== 0) {
+          return sortConfig.direction === 'asc' ? subCmp : -subCmp;
+        }
+
+        const nameA = (a.name || '').trim().toUpperCase();
+        const nameB = (b.name || '').trim().toUpperCase();
+        const nameCmp = nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+        if (nameCmp !== 0) {
+          return sortConfig.direction === 'asc' ? nameCmp : -nameCmp;
+        }
+
+        return String(a.ref || '').localeCompare(String(b.ref || ''), 'es', { numeric: true });
+      });
+    } else if (sortConfig.key) {
       result.sort((a, b) => {
         let aVal = a[sortConfig.key] ?? "";
         let bVal = b[sortConfig.key] ?? "";
 
-        // Si se ordena por stock, ordenar por stock total real (incluyendo variantes)
+        // Ordenar por stock total real (sumando variantes)
         if (sortConfig.key === 'stock') {
           aVal = variantStats[a.id]?.totalStock ?? (a.stock || 0);
           bVal = variantStats[b.id]?.totalStock ?? (b.stock || 0);
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
         }
 
+        // Ordenar por precio o costo numérico
+        if (sortConfig.key === 'my_cost' || sortConfig.key === 'price_sale') {
+          aVal = Number(aVal) || 0;
+          bVal = Number(bVal) || 0;
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+
+        // Ordenar por categoría (Hombre vs Mujer)
+        if (sortConfig.key === 'category') {
+          const catPriority = (cat) => {
+            const c = (cat || '').toUpperCase().trim();
+            if (c === 'HOMBRE') return 1;
+            if (c === 'MUJER') return 2;
+            return 3;
+          };
+          const prioA = catPriority(aVal);
+          const prioB = catPriority(bVal);
+          if (prioA !== prioB) {
+            return sortConfig.direction === 'asc' ? prioA - prioB : prioB - prioA;
+          }
+          return (a.name || '').localeCompare(b.name || '', 'es');
+        }
+
+        // Ordenar por REF alfanumérico
+        if (sortConfig.key === 'ref') {
+          return sortConfig.direction === 'asc'
+            ? String(aVal).localeCompare(String(bVal), 'es', { numeric: true })
+            : String(bVal).localeCompare(String(aVal), 'es', { numeric: true });
+        }
+
+        // Ordenar por texto (Nombre, Subcategoría, etc.)
         if (typeof aVal === 'string') {
           return sortConfig.direction === 'asc'
-            ? aVal.localeCompare(bVal)
-            : bVal.localeCompare(aVal);
+            ? aVal.localeCompare(bVal, 'es', { sensitivity: 'base' })
+            : bVal.localeCompare(aVal, 'es', { sensitivity: 'base' });
         }
 
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -281,7 +386,7 @@ export default function Inventory() {
     }
 
     return result;
-  }, [baseProducts, searchTerm, sortConfig, genderFilter, variantStats]);
+  }, [baseProducts, searchTerm, sortConfig, genderFilter, subcategoryFilter, variantStats]);
 
   // Estadísticas exactas sin duplicar stock
   const stats = useMemo(() => {
@@ -358,7 +463,6 @@ export default function Inventory() {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) {
-        // Eliminar base y variantes asociadas del estado
         setProducts(prev => prev.filter(item => item.id !== p.id && item.parent_id !== p.id));
       } else {
         alert("No se pudo eliminar el producto");
@@ -374,11 +478,22 @@ export default function Inventory() {
     setIsVariantModalOpen(true);
   };
 
-  const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey) return <ChevronsUpDown size={14} className="opacity-30 group-hover:opacity-100" />;
-    return sortConfig.direction === 'asc' 
-      ? <ChevronUp size={14} className="text-slate-900" /> 
-      : <ChevronDown size={14} className="text-slate-900" />;
+  // Icono dinámico según el tipo de columna y dirección de orden
+  const SortIcon = ({ columnKey, isNumeric = false }) => {
+    const isActive = sortConfig.key === columnKey;
+    if (!isActive) {
+      return <ChevronsUpDown size={13} className="opacity-30 group-hover:opacity-100 transition-opacity" />;
+    }
+
+    if (isNumeric) {
+      return sortConfig.direction === 'asc' 
+        ? <ArrowUp01 size={13} className="text-indigo-600 font-black" />
+        : <ArrowDown10 size={13} className="text-indigo-600 font-black" />;
+    }
+
+    return sortConfig.direction === 'asc'
+      ? <ArrowDownAZ size={13} className="text-indigo-600 font-black" />
+      : <ArrowUpAZ size={13} className="text-indigo-600 font-black" />;
   };
 
   const openCreateModal = () => {
@@ -409,6 +524,23 @@ export default function Inventory() {
       console.error(err);
     }
   };
+
+  // Nombre legible del orden actual
+  const sortLabel = useMemo(() => {
+    if (sortConfig.key === 'excel') return 'Orden Excel (Hombre → Subcat A-Z → Producto A-Z)';
+    const names = {
+      name: 'Producto (A-Z)',
+      subcategory: 'Subcategoría (A-Z)',
+      category: 'Categoría',
+      ref: 'Referencia',
+      stock: 'Stock',
+      price_sale: 'Precio Venta',
+      my_cost: 'Costo Unitario',
+    };
+    const col = names[sortConfig.key] || sortConfig.key;
+    const dir = sortConfig.direction === 'asc' ? 'Menor a Mayor / A→Z' : 'Mayor a Menor / Z→A';
+    return `${col} (${dir})`;
+  }, [sortConfig]);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 flex-1 flex flex-col min-w-0">
@@ -526,23 +658,23 @@ export default function Inventory() {
 
               {/* Tarjeta Total */}
               <div
-                onClick={() => setGenderFilter('TODOS')}
+                onClick={() => { setGenderFilter('TODOS'); setSubcategoryFilter('TODAS'); }}
                 className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                  genderFilter === 'TODOS' && !searchTerm
+                  genderFilter === 'TODOS' && subcategoryFilter === 'TODAS' && !searchTerm
                     ? 'bg-slate-900 text-white border-slate-900 shadow-md'
                     : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`text-[10px] font-black uppercase tracking-wider ${genderFilter === 'TODOS' && !searchTerm ? 'text-slate-300' : 'text-slate-500'}`}>
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${genderFilter === 'TODOS' && subcategoryFilter === 'TODAS' && !searchTerm ? 'text-slate-300' : 'text-slate-500'}`}>
                     📦 Total ({stats.total.count} refs)
                   </span>
-                  <span className={`text-xs font-mono font-black ${genderFilter === 'TODOS' && !searchTerm ? 'text-emerald-400' : 'text-slate-900'}`}>
+                  <span className={`text-xs font-mono font-black ${genderFilter === 'TODOS' && subcategoryFilter === 'TODAS' && !searchTerm ? 'text-emerald-400' : 'text-slate-900'}`}>
                     {stats.total.units} un.
                   </span>
                 </div>
                 <p className="text-sm font-black font-mono leading-tight">${fmt(stats.total.saleVal)}</p>
-                <p className={`text-[9px] font-medium mt-0.5 ${genderFilter === 'TODOS' && !searchTerm ? 'text-slate-300' : 'text-slate-400'}`}>
+                <p className={`text-[9px] font-medium mt-0.5 ${genderFilter === 'TODOS' && subcategoryFilter === 'TODAS' && !searchTerm ? 'text-slate-300' : 'text-slate-400'}`}>
                   Costo: ${fmt(stats.total.costVal)}
                 </p>
               </div>
@@ -564,70 +696,138 @@ export default function Inventory() {
               </div>
             </div>
 
-            {/* 2. Barra de Búsqueda Global & Filtros */}
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm shrink-0 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                  type="text"
-                  placeholder="Buscar REF (ej. 1536), Modelo, Color, Marca (Diesel, Moncler, Columbia)..."
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 outline-none transition-all font-bold text-slate-800"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+            {/* 2. Barra de Búsqueda y Filtros Estilo Excel */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm shrink-0 mb-4 flex flex-col gap-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                {/* Buscador de Texto */}
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Buscar REF (ej. 1536), Modelo, Color, Marca (Diesel, Moncler)..."
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-slate-900 outline-none transition-all font-bold text-slate-800"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {/* Filtro Dropdown de Subcategoría (Estilo Excel) */}
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <select
+                      value={subcategoryFilter}
+                      onChange={(e) => setSubcategoryFilter(e.target.value)}
+                      className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none hover:bg-slate-100 transition-colors cursor-pointer pr-8"
+                    >
+                      <option value="TODAS">📂 Subcategoría: Todas ({availableSubcategories.length})</option>
+                      {availableSubcategories.map(s => (
+                        <option key={s.name} value={s.name}>
+                          {s.name} ({s.count} refs)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Botón Restaurar Orden Original Excel */}
+                  <button
+                    onClick={() => setSortConfig({ key: 'excel', direction: 'asc' })}
+                    className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
+                      sortConfig.key === 'excel'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}
+                    title="Restablecer el orden exacto de Excel: Hombre primero, luego Mujer, Subcategoría A-Z y Producto A-Z"
+                  >
+                    <FileSpreadsheet size={14} className={sortConfig.key === 'excel' ? 'text-emerald-700' : 'text-slate-400'} />
+                    <span>Orden Excel</span>
+                    {sortConfig.key === 'excel' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse ml-0.5"></span>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Píldoras de Filtro Rápido */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 custom-scrollbar">
-                {[
-                  { id: 'TODOS', label: `Todos (${stats.total.count})` },
-                  { id: 'HOMBRE', label: `Hombre (${stats.hombre.count})` },
-                  { id: 'MUJER', label: `Mujer (${stats.mujer.count})` },
-                  { id: 'OTROS', label: 'Otros / Unisex' },
-                ].map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => setGenderFilter(f.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer ${
-                      genderFilter === f.id
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+              {/* Fila Inferior: Píldoras de Género y Estado del Orden */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                {/* Píldoras de Género */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 custom-scrollbar">
+                  {[
+                    { id: 'TODOS', label: `Todos (${stats.total.count})` },
+                    { id: 'HOMBRE', label: `Hombre (${stats.hombre.count})` },
+                    { id: 'MUJER', label: `Mujer (${stats.mujer.count})` },
+                    { id: 'OTROS', label: 'Otros / Unisex' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setGenderFilter(f.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer ${
+                        genderFilter === f.id
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                  
+                  {subcategoryFilter !== 'TODAS' && (
+                    <button
+                      onClick={() => setSubcategoryFilter('TODAS')}
+                      className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-amber-100 cursor-pointer"
+                    >
+                      <span>Subcat: {subcategoryFilter}</span>
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Indicador de Criterio de Orden Activo */}
+                <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                  <span className="text-slate-500 font-semibold">Orden:</span>
+                  <span className="text-indigo-600 font-black">{sortLabel}</span>
+                </div>
               </div>
             </div>
 
-            {/* 3. Tabla de Referencias con Contención de Desplazamiento */}
+            {/* 3. Tabla de Referencias Estilo Excel */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
               <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left relative min-w-[880px]">
+                <table className="w-full text-left relative min-w-[950px]">
                   <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10 shadow-xs">
                     <tr>
                       {[
-                        { label: 'REF', key: 'ref' }, 
-                        { label: 'Producto', key: 'name' }, 
-                        { label: 'Tipo / Cat', key: 'category' },
-                        { label: 'Variantes / Tallas', key: 'color' }, 
-                        { label: 'Costo Unit.', key: 'my_cost' }, 
-                        { label: 'P. Venta', key: 'price_sale' },
-                        { label: 'Web', key: 'is_published' },
-                        { label: 'Stock Total', key: 'stock' },
-                        { label: 'Acciones', key: 'actions' }
-                      ].map((col) => (
-                        <th 
-                          key={col.key} 
-                          onClick={() => col.key !== 'actions' && handleSort(col.key)}
-                          className={`px-4 py-3.5 text-xs font-black text-slate-400 uppercase transition-colors group ${col.key !== 'actions' ? 'cursor-pointer hover:bg-slate-100' : ''}`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {col.label} 
-                            {col.key !== 'actions' && <SortIcon columnKey={col.key} />}
-                          </div>
-                        </th>
-                      ))}
+                        { label: 'REF', key: 'ref', isNumeric: false }, 
+                        { label: 'Categoría', key: 'category', isNumeric: false },
+                        { label: 'Subcategoría', key: 'subcategory', isNumeric: false },
+                        { label: 'Producto', key: 'name', isNumeric: false }, 
+                        { label: 'Variantes / Tallas', key: 'color', isNumeric: false }, 
+                        { label: 'Costo Unit.', key: 'my_cost', isNumeric: true }, 
+                        { label: 'P. Venta', key: 'price_sale', isNumeric: true }, 
+                        { label: 'Stock Total', key: 'stock', isNumeric: true },
+                        { label: 'Web', key: 'is_published', isNumeric: false },
+                        { label: 'Acciones', key: 'actions', isNumeric: false }
+                      ].map((col) => {
+                        const isCurrent = sortConfig.key === col.key;
+                        const isAction = col.key === 'actions';
+
+                        return (
+                          <th 
+                            key={col.key} 
+                            onClick={() => !isAction && handleSort(col.key)}
+                            className={`px-4 py-3.5 text-xs font-black uppercase transition-colors group select-none ${
+                              isAction 
+                                ? 'text-slate-400' 
+                                : `cursor-pointer hover:bg-slate-100 ${isCurrent ? 'bg-indigo-50/70 text-indigo-900 font-black' : 'text-slate-400'}`
+                            }`}
+                            title={!isAction ? "Clic: Ordenar A-Z / Z-A (o mayor/menor)" : undefined}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>{col.label}</span>
+                              {!isAction && <SortIcon columnKey={col.key} isNumeric={col.isNumeric} />}
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -648,20 +848,29 @@ export default function Inventory() {
                               {p.ref}
                             </td>
 
-                            {/* Nombre del Producto */}
+                            {/* Categoría (Hombre / Mujer) */}
+                            <td className="px-4 py-3.5 text-xs">
+                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                (p.category || '').toUpperCase() === 'HOMBRE' 
+                                  ? 'bg-blue-100 text-blue-700' 
+                                  : (p.category || '').toUpperCase() === 'MUJER'
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {p.category || 'UNISEX'}
+                              </span>
+                            </td>
+
+                            {/* Subcategoría (Bermuda, Buso, Camiseta...) */}
+                            <td className="px-4 py-3.5 text-xs font-bold text-slate-700 uppercase whitespace-nowrap">
+                              {p.subcategory || '-'}
+                            </td>
+
+                            {/* Nombre del Producto Base */}
                             <td className="px-4 py-3.5">
                               <span className="font-bold text-sm text-slate-900 group-hover:text-indigo-600 transition-colors block">
                                 {p.name}
                               </span>
-                              {p.subcategory && (
-                                <p className="text-[10px] text-slate-400 font-semibold uppercase">{p.subcategory}</p>
-                              )}
-                            </td>
-
-                            {/* Tipo / Categoría */}
-                            <td className="px-4 py-3.5 text-xs">
-                              <span className="font-bold text-slate-700 block">{p.product_type || 'ROPA'}</span>
-                              <span className="text-[10px] text-slate-400 uppercase font-semibold">{p.category}</span>
                             </td>
 
                             {/* Columna de Variantes / Tallas */}
@@ -698,33 +907,20 @@ export default function Inventory() {
                             </td>
 
                             {/* Costo Unitario */}
-                            <td className="px-4 py-3.5 text-xs font-semibold text-slate-400">
+                            <td className="px-4 py-3.5 text-xs font-semibold text-slate-400 whitespace-nowrap">
                               ${fmt(p.my_cost)}
                             </td>
 
                             {/* Precio de Venta */}
-                            <td className="px-4 py-3.5 text-sm font-black text-emerald-600">
+                            <td className="px-4 py-3.5 text-sm font-black text-emerald-600 whitespace-nowrap">
                               ${fmt(p.price_sale)}
                               {p.compare_price && p.compare_price > p.price_sale && (
                                 <span className="block text-[10px] text-slate-400 line-through font-normal">${fmt(p.compare_price)}</span>
                               )}
                             </td>
 
-                            {/* Estado Web */}
-                            <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={(e) => handleTogglePublish(p, e)}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                                  p.is_published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                }`}
-                                title={p.is_published ? 'Publicado en tienda web. Clic para ocultar.' : 'Oculto de tienda web. Clic para publicar.'}
-                              >
-                                <Globe size={11} /> {p.is_published ? 'Online' : 'Oculto'}
-                              </button>
-                            </td>
-
                             {/* Stock Total */}
-                            <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+                            <td className="px-4 py-3.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                               {hasVars ? (
                                 <div
                                   onClick={(e) => openVariantModal(p, e)}
@@ -794,8 +990,21 @@ export default function Inventory() {
                               )}
                             </td>
 
+                            {/* Estado Web */}
+                            <td className="px-4 py-3.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={(e) => handleTogglePublish(p, e)}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                  p.is_published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                }`}
+                                title={p.is_published ? 'Publicado en tienda web. Clic para ocultar.' : 'Oculto de tienda web. Clic para publicar.'}
+                              >
+                                <Globe size={11} /> {p.is_published ? 'Online' : 'Oculto'}
+                              </button>
+                            </td>
+
                             {/* Acciones */}
-                            <td className="px-4 py-3.5 text-right" onClick={e => e.stopPropagation()}>
+                            <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
                                 {/* Botón Variantes */}
                                 <button
@@ -833,7 +1042,7 @@ export default function Inventory() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="9" className="px-6 py-10 text-center text-slate-400">
+                        <td colSpan="10" className="px-6 py-10 text-center text-slate-400">
                           <Package className="mx-auto mb-2 opacity-20" size={40} />
                           No se encontraron referencias base que coincidan con la búsqueda.
                         </td>
