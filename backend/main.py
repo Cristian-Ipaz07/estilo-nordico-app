@@ -1,8 +1,12 @@
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-import os
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from app.db.database import engine, Base, SessionLocal
 from app.api.endpoints import users, products, sales, cash, auth, corte, public, webhooks
 from app.models.user import User
@@ -22,11 +26,12 @@ async def lifespan(app: FastAPI):
     try:
         admin_user = db.query(User).filter(User.username == "admin").first()
         if not admin_user:
+            default_pwd = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin123")
             db_user = User(
                 username="admin", 
                 full_name="Super Administrador", 
                 role="Admin", 
-                hashed_password=security.get_password_hash("admin123")
+                hashed_password=security.get_password_hash(default_pwd)
             )
             db.add(db_user)
             db.commit()
@@ -38,8 +43,7 @@ app = FastAPI(title="Estilo Nórdico API", lifespan=lifespan)
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
-# ── Routers internos (requieren auth) ────────────────────────────────────────
+# ── Routers internos ────────────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["Autenticación"])
 app.include_router(users.router, prefix="/users", tags=["Usuarios"])
 app.include_router(products.router, prefix="/products", tags=["Productos"])
@@ -47,13 +51,17 @@ app.include_router(sales.router, prefix="/sales", tags=["Ventas"])
 app.include_router(cash.router, prefix="/cash", tags=["Caja"])
 app.include_router(corte.router, prefix="/corte", tags=["Finanzas & Corte"])
 
-# ── Routers nuevos (Fase 1 — Unificación) ────────────────────────────────────
+# ── Routers públicos (Tienda Web) ───────────────────────────────────────────
 app.include_router(public.router, prefix="/api/public", tags=["API Pública (Web)"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 
+# ── Configuración Dinámica de CORS ──────────────────────────────────────────
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if allowed_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
