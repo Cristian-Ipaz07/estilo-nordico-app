@@ -108,3 +108,47 @@ def check_stock(product_id: int, db: Session = Depends(get_db)):
         "stock": product.stock,
         "available": (product.stock or 0) > 0
     }
+
+
+@router.get("/navigation")
+def get_public_navigation(db: Session = Depends(get_db)):
+    """Retorna los departamentos y subcategorías que tienen productos ACTIVOS, PUBLICADOS y CON STOCK > 0."""
+    from sqlalchemy import func
+    
+    results = db.query(
+        ProductModel.category,
+        ProductModel.subcategory,
+        func.count(ProductModel.id).label("product_count"),
+        func.sum(ProductModel.stock).label("total_stock")
+    ).filter(
+        ProductModel.is_published == True,
+        ProductModel.is_active == True,
+        ProductModel.stock > 0
+    ).group_by(
+        ProductModel.category,
+        ProductModel.subcategory
+    ).all()
+
+    departments_map = {}
+    for r in results:
+        dept = (r[0] or "HOMBRE").strip().upper()
+        subcat = (r[1] or "").strip().upper()
+        if not subcat:
+            continue
+            
+        if dept not in departments_map:
+            departments_map[dept] = []
+            
+        departments_map[dept].append({
+            "name": subcat.capitalize(),
+            "code": subcat,
+            "product_count": r[2],
+            "total_stock": int(r[3] or 0)
+        })
+
+    active_subcategories = list(set((r[1] or "").strip().upper() for r in results if r[1]))
+
+    return {
+        "departments": departments_map,
+        "active_subcategories": active_subcategories
+    }
