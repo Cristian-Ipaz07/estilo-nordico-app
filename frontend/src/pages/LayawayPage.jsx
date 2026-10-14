@@ -610,7 +610,10 @@ export default function LayawayPage() {
     getSales().then(res => {
       setSales(Array.isArray(res.data) ? res.data : []);
       setLoading(false);
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      setLoading(false);
+    });
   };
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from app.db.database import get_db
 from app.models.corte_payroll import CortePayroll, CorteConfig
@@ -23,7 +23,7 @@ def get_payroll(
 ):
     """Lista los registros de nómina de un período. Si no existe el período, 
     lo inicializa con todos los usuarios activos y valor_hora=5000."""
-    query = db.query(CortePayroll)
+    query = db.query(CortePayroll).options(joinedload(CortePayroll.user))
     if start:
         query = query.filter(CortePayroll.periodo_start == start)
     if end:

@@ -74,9 +74,12 @@ const Dashboard = () => {
 
   useEffect(() => {
     getSales().then(res => {
-      setSales(res.data);
+      setSales(Array.isArray(res.data) ? res.data : []);
       setLoading(false);
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      setLoading(false);
+    });
   }, []);
 
   // Filter sales based on selected time using created_at

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from app.db.database import get_db
 from app.models.sale import Sale, SaleItem
@@ -52,7 +52,11 @@ def get_cogs(start: Optional[str] = None, end: Optional[str] = None, db: Session
 # ── GET / — listar ventas (más recientes primero) ────────────────────────────
 @router.get("/", response_model=List[SaleResponse])
 def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):
-    query = db.query(Sale)
+    query = db.query(Sale).options(
+        selectinload(Sale.items).selectinload(SaleItem.product),
+        selectinload(Sale.payment_history),
+        selectinload(Sale.user)
+    )
     if status:
         query = query.filter(Sale.status == status)
     # Bug 4 fix: ventas más recientes primero
