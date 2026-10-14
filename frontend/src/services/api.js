@@ -1,7 +1,16 @@
 import axios from 'axios';
+import { API_URL } from '../config/api';
 
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000', 
+  baseURL: API_URL, 
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 // Productos
@@ -18,9 +27,9 @@ export const createSale = (saleData) => api.post('/sales/', saleData);
 export const login = (formData) => api.post('/users/login', formData, {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
 });
-//boton de abono
+
+// Boton de abono
 export const addPayment = (saleId, amount) => 
     api.patch(`/sales/${saleId}/payment?amount=${amount}`);
 
 export default api;
-
