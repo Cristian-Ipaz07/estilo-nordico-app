@@ -12,6 +12,8 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 # Si por alguna razón la URL no viene, evitamos que rompa
 if not SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = "postgresql://admin:password123@db:5432/estilo_nordico"
+elif SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
