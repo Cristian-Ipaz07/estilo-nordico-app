@@ -8,6 +8,7 @@ import {
 import ProductModal from '../components/ProductModal';
 import AdvisorCatalog from '../components/AdvisorCatalog';
 import VariantBreakdownModal from '../components/VariantBreakdownModal';
+import BatchStockEntryModal from '../components/BatchStockEntryModal';
 import { useAuth } from '../context/AuthContext';
 import { API_URL, WEB_STORE_URL } from '../config/api';
 
@@ -142,6 +143,8 @@ export default function Inventory() {
   const [savingStockId, setSavingStockId] = useState(null);
   const [variantModalProduct, setVariantModalProduct] = useState(null);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [isBatchEntryOpen, setIsBatchEntryOpen] = useState(false);
+  const [batchPreselectedRef, setBatchPreselectedRef] = useState('');
 
   const fetchInventory = async () => {
     setLoading(true);
@@ -603,6 +606,14 @@ export default function Inventory() {
 
         {/* Acciones Rápidas */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setBatchPreselectedRef(''); setIsBatchEntryOpen(true); }}
+            className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+            title="Ingreso rápido de múltiples prendas y tallas por lote con cálculo automático de costo puesto en tienda"
+          >
+            <Layers size={15} /> + Entrada en Bloque
+          </button>
+
           <button
             onClick={openCreateModal}
             className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-sm cursor-pointer"
@@ -1198,6 +1209,7 @@ export default function Inventory() {
           <HistoryTab 
             inventory={products} 
             reloadInventory={fetchInventory} 
+            onOpenBatchEntry={(r) => { setBatchPreselectedRef(r || ''); setIsBatchEntryOpen(true); }}
           />
         )}
       </div>
@@ -1218,11 +1230,22 @@ export default function Inventory() {
         onClose={() => setIsVariantModalOpen(false)}
         onRefresh={fetchInventory}
       />
+
+      {/* Modal de Entrada de Mercancía en Bloque / Recepción de Pedidos */}
+      <BatchStockEntryModal
+        isOpen={isBatchEntryOpen}
+        onClose={() => setIsBatchEntryOpen(false)}
+        products={products}
+        initialRef={batchPreselectedRef}
+        onSuccess={(data) => {
+          fetchInventory();
+        }}
+      />
     </div>
   );
 }
 
-function HistoryTab({ inventory, reloadInventory }) {
+function HistoryTab({ inventory, reloadInventory, onOpenBatchEntry }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   
@@ -1433,9 +1456,20 @@ function HistoryTab({ inventory, reloadInventory }) {
 
                         {/* Formulario de Entrada */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="font-bold text-slate-800 text-sm uppercase mb-4 flex items-center gap-2">
-                                <Plus size={16} className="text-indigo-600" /> Registrar Nueva Entrada
-                            </h3>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-bold text-slate-800 text-sm uppercase flex items-center gap-2">
+                                    <Plus size={16} className="text-indigo-600" /> Registrar Nueva Entrada
+                                </h3>
+                                {onOpenBatchEntry && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => onOpenBatchEntry(selected.ref.split('-')[0])}
+                                        className="text-[11px] font-black uppercase text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 cursor-pointer bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors"
+                                    >
+                                        <Layers size={13} /> Ingreso en Lote de esta Ref
+                                    </button>
+                                )}
+                            </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                                 <div>
                                     <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Cantidad *</label>
@@ -1475,10 +1509,20 @@ function HistoryTab({ inventory, reloadInventory }) {
                         </div>
                     </>
                 ) : (
-                    <div className="bg-indigo-600 text-white p-6 rounded-[30px] shadow-lg relative overflow-hidden">
-                         <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl"></div>
-                         <h2 className="text-2xl font-black uppercase tracking-tight">Historial de Mercancía</h2>
-                         <p className="text-indigo-100 text-sm font-medium">Control global de ingresos, costos y proveedores.</p>
+                    <div className="bg-gradient-to-r from-indigo-700 to-indigo-900 text-white p-6 rounded-[30px] shadow-lg relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                         <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none"></div>
+                         <div className="relative z-10">
+                           <h2 className="text-2xl font-black uppercase tracking-tight">Historial de Mercancía</h2>
+                           <p className="text-indigo-100 text-sm font-medium">Control global de ingresos, costos y proveedores.</p>
+                         </div>
+                         {onOpenBatchEntry && (
+                           <button 
+                             onClick={() => onOpenBatchEntry('')}
+                             className="relative z-10 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer self-start sm:self-auto"
+                           >
+                             <Layers size={16} /> + Entrada en Bloque (Lote)
+                           </button>
+                         )}
                     </div>
                 )}
 

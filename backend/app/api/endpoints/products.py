@@ -12,7 +12,7 @@ from app.models.stock_entry import StockEntry as StockEntryModel
 from app.models.cash_movement import CashMovement as CashMovementModel
 from app.schemas.product import Product, ProductCreate, ProductUpdate, RestockRequest, RestockResponse
 import re
-from app.schemas.stock_entry import StockEntryCreate, StockEntryResponse, CancelEntryRequest
+from app.schemas.stock_entry import StockEntryCreate, StockEntryResponse, CancelEntryRequest, BatchStockEntryRequest, BatchStockEntryResponse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 import pandas as pd
 import io
@@ -404,3 +404,173 @@ def cancel_stock_entry(entry_id: int, db: Session = Depends(get_db)):
     
     db.commit()
     return {"message": "Entrada anulada exitosamente", "id": entry.id}
+
+# 11. HISTORIAL DE ENTRADAS - RECEPCIÓN DE PEDIDO EN BLOQUE (LOTE COMPLETO)
+@router.post("/batch-entries", response_model=BatchStockEntryResponse)
+def create_batch_stock_entries(data: BatchStockEntryRequest, db: Session = Depends(get_db)):
+    # 1. Buscar o Crear Prenda Base
+    base_product = None
+    if data.product_id:
+        base_product = db.query(ProductModel).filter(ProductModel.id == data.product_id).first()
+    if not base_product and data.base_ref:
+        base_product = db.query(ProductModel).filter(ProductModel.ref == data.base_ref.strip().upper(), ProductModel.parent_id == None).first()
+        if not base_product:
+            # Buscar cualquier prenda que coincida con la ref base
+            base_product = db.query(ProductModel).filter(ProductModel.ref == data.base_ref.strip().upper()).first()
+
+    if not base_product:
+        if not data.is_new_base and not data.base_ref:
+            raise HTTPException(status_code=404, detail="Referencia base no encontrada y no se especificó creación de prenda nueva")
+        
+        # Crear Prenda Base
+        clean_ref = data.base_ref.strip().upper()
+        base_name = data.base_name.strip() if data.base_name else f"PRENDA {clean_ref}"
+        base_product = ProductModel(
+            ref=clean_ref,
+            name=base_name,
+            category=data.category or "Hombre",
+            subcategory=data.subcategory or "General",
+            brand=data.brand or "Estilo Nórdico",
+            origin="Propio",
+            price_sale=data.base_price_sale or 0.0,
+            my_cost=round(data.unit_cost, 2),
+            stock=0,
+            initial_stock=0,
+            entry_count=0,
+            current_cost_total=0.0,
+            product_type="ROPA",
+            is_published=False,
+            slug=generate_product_slug(clean_ref, base_name, db)
+        )
+        db.add(base_product)
+        db.flush()
+
+    # Si se pasó un nuevo precio de venta base, actualizarlo
+    if data.base_price_sale is not None and data.base_price_sale > 0:
+        base_product.price_sale = data.base_price_sale
+
+    entries_created = 0
+    variants_created = 0
+    total_units = 0
+    unit_cost = data.unit_cost
+
+    # 2. Procesar cada ítem del lote
+    for item in data.items:
+        qty = item.quantity
+        if qty <= 0:
+            continue
+
+        clean_color = item.color.strip().upper()
+        clean_size = item.size.strip().upper()
+        item_brand = item.brand.strip().upper() if item.brand else (base_product.brand or "Estilo Nórdico")
+        
+        # Generar SKU estándar: [REF]-[COLOR]-[TALLA] o [REF]-[MARCA]-[COLOR]-[TALLA]
+        color_slug = clean_color.replace(" ", "-")
+        brand_slug = item_brand.replace(" ", "-") if item_brand and item_brand not in ["ESTILO NÓRDICO", "ESTILO NORDICO"] else ""
+        
+        if brand_slug:
+            sku = f"{base_product.ref}-{brand_slug}-{color_slug}-{clean_size}"
+            variant_name = f"{base_product.name.strip()} {item_brand} {clean_color} {clean_size}"
+        else:
+            sku = f"{base_product.ref}-{color_slug}-{clean_size}"
+            variant_name = f"{base_product.name.strip()} {clean_color} {clean_size}"
+
+        # Buscar si ya existe la variante
+        variant = db.query(ProductModel).filter(
+            ProductModel.parent_id == base_product.id,
+            ProductModel.color == clean_color,
+            ProductModel.size == clean_size
+        ).first()
+
+        if not variant:
+            # Buscar por ref exacta
+            variant = db.query(ProductModel).filter(ProductModel.ref == sku).first()
+
+        if not variant:
+            # Crear la variante hija
+            variant = ProductModel(
+                ref=sku,
+                name=variant_name,
+                category=base_product.category or "Hombre",
+                subcategory=base_product.subcategory or "",
+                brand=item_brand,
+                origin=base_product.origin or "Propio",
+                color=clean_color,
+                size=clean_size,
+                parent_id=base_product.id,
+                price_sale=item.new_price_sale or base_product.price_sale or 0.0,
+                my_cost=round(unit_cost, 2),
+                stock=qty,
+                entry_count=qty,
+                current_cost_total=round(unit_cost * qty, 2),
+                slug=generate_product_slug(sku, variant_name, db),
+                product_type=base_product.product_type or "ROPA",
+                is_published=False,
+                images=base_product.images if base_product.images else []
+            )
+            db.add(variant)
+            db.flush()
+            variants_created += 1
+        else:
+            # Actualizar costo ponderado y stock de la variante existente
+            stock_actual = variant.stock or 0
+            costo_actual = variant.my_cost or 0.0
+            stock_nuevo = stock_actual + qty
+            weighted_cost = (stock_actual * costo_actual + qty * unit_cost) / stock_nuevo if stock_nuevo > 0 else unit_cost
+            
+            variant.stock = stock_nuevo
+            variant.entry_count = (variant.entry_count or 0) + qty
+            variant.my_cost = round(weighted_cost, 2)
+            variant.current_cost_total = round(weighted_cost * stock_nuevo, 2)
+            if item.new_price_sale:
+                variant.price_sale = item.new_price_sale
+            elif data.base_price_sale:
+                variant.price_sale = data.base_price_sale
+
+        # 3. Registrar entrada individual en StockEntry
+        total_item_cost = round(qty * unit_cost, 2)
+        new_entry = StockEntryModel(
+            product_id=variant.id,
+            quantity=qty,
+            unit_cost=unit_cost,
+            total_cost=total_item_cost,
+            provider=data.provider or "PROVEEDOR GENÉRICO",
+            paid_from_cash=False
+        )
+        db.add(new_entry)
+        entries_created += 1
+        total_units += qty
+
+    # 4. Actualizar Prenda Base (stock consolidado de todas sus variantes)
+    all_children = db.query(ProductModel).filter(ProductModel.parent_id == base_product.id).all()
+    if all_children:
+        base_product.stock = sum(c.stock or 0 for c in all_children)
+    else:
+        base_product.stock = (base_product.stock or 0) + total_units
+
+    base_product.entry_count = (base_product.entry_count or 0) + total_units
+    base_product.my_cost = round(unit_cost, 2)
+
+    # 5. Si el usuario marcó pagar desde caja, registrar egreso consolidado
+    if data.paid_from_cash and total_units > 0:
+        total_batch_cost = round(total_units * unit_cost, 2)
+        db.add(CashMovementModel(
+            description=f"Pago Pedido Lote {base_product.ref} ({total_units} prendas)",
+            amount=total_batch_cost,
+            type="SALIDA",
+            category="REINVERSION"
+        ))
+
+    db.commit()
+    db.refresh(base_product)
+
+    return BatchStockEntryResponse(
+        message=f"Lote de {total_units} prendas registrado exitosamente para la referencia {base_product.ref}",
+        base_product_id=base_product.id,
+        base_ref=base_product.ref,
+        total_units=total_units,
+        unit_cost=round(unit_cost, 2),
+        total_cost=round(total_units * unit_cost, 2),
+        entries_created=entries_created,
+        variants_created=variants_created
+    )

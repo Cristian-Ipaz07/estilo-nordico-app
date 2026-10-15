@@ -33,3 +33,37 @@ class StockEntryResponse(BaseModel):
 
 class CancelEntryRequest(BaseModel):
     entry_id: int
+
+
+class BatchEntryItem(BaseModel):
+    color: str
+    size: str
+    quantity: int
+    brand: Optional[str] = None
+    new_price_sale: Optional[float] = None
+
+class BatchStockEntryRequest(BaseModel):
+    product_id: Optional[int] = None
+    base_ref: str
+    is_new_base: bool = False
+    base_name: Optional[str] = None
+    category: Optional[str] = "Hombre"
+    subcategory: Optional[str] = None
+    brand: Optional[str] = "Estilo Nórdico"
+    base_price_sale: Optional[float] = None
+    total_invoice: Optional[float] = 0.0
+    freight_cost: Optional[float] = 0.0
+    unit_cost: float
+    provider: Optional[str] = "PROVEEDOR GENÉRICO"
+    paid_from_cash: bool = False
+    items: List[BatchEntryItem]
+
+class BatchStockEntryResponse(BaseModel):
+    message: str
+    base_product_id: int
+    base_ref: str
+    total_units: int
+    unit_cost: float
+    total_cost: float
+    entries_created: int
+    variants_created: int
