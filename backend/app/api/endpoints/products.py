@@ -13,7 +13,7 @@ from app.models.cash_movement import CashMovement as CashMovementModel
 from app.schemas.product import Product, ProductCreate, ProductUpdate, RestockRequest, RestockResponse
 import re
 from app.schemas.stock_entry import StockEntryCreate, StockEntryResponse, CancelEntryRequest
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 import pandas as pd
 import io
 from app.services.excel_service import sync_from_estilo_nordico_excel
@@ -119,6 +119,7 @@ SUPABASE_URL = "https://rnlvzrelpvqjamcfvoga.supabase.co"
 async def upload_product_image(
     product_id: int,
     file: UploadFile = File(...),
+    replace: bool = Query(False),
     db: Session = Depends(get_db)
 ):
     product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
@@ -155,10 +156,14 @@ async def upload_product_image(
 
     public_url = f"{SUPABASE_URL}/storage/v1/object/public/products/{filename}"
 
-    # Agregar URL a la lista de imágenes del producto
-    current_imgs = list(product.images) if isinstance(product.images, list) else []
-    current_imgs.append(public_url)
-    product.images = current_imgs
+    # Si se pide reemplazar o es una variante individual (con parent_id), fijar como foto principal única
+    if replace or product.parent_id is not None:
+        product.images = [public_url]
+    else:
+        current_imgs = list(product.images) if isinstance(product.images, list) else []
+        if public_url not in current_imgs:
+            current_imgs.append(public_url)
+        product.images = current_imgs
     db.commit()
     db.refresh(product)
 
@@ -167,6 +172,24 @@ async def upload_product_image(
         "image_url": public_url,
         "images": product.images
     }
+
+
+@router.delete("/{product_id}/images", tags=["Productos"])
+def remove_product_image(
+    product_id: int,
+    image_url: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    current_imgs = list(product.images) if isinstance(product.images, list) else []
+    new_imgs = [img for img in current_imgs if img != image_url]
+    product.images = new_imgs
+    db.commit()
+    db.refresh(product)
+    return {"message": "Imagen eliminada", "images": product.images}
 
 
 

@@ -1,6 +1,7 @@
 import { API_URL } from '../config/api';
 import React, { useState, useEffect } from 'react';
-import { X, Globe, Image as ImageIcon, RefreshCw, Check } from 'lucide-react';
+import { X, Globe, Image as ImageIcon, RefreshCw, Check, UploadCloud } from 'lucide-react';
+import { normalizeImageUrl, optimizeImageToWebP, uploadProductImage } from '../utils/imageOptimizer';
 
 export default function ProductModal({ product, isOpen, onClose, onSaved }) {
   const isEdit = Boolean(product && product.id);
@@ -25,6 +26,36 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
   const [newImageUrl, setNewImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handleUploadFromPC = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPhoto(true);
+    try {
+      // Optimizar en el navegador a WebP 1200px con transparencia
+      const webpFile = await optimizeImageToWebP(file);
+
+      if (isEdit && product?.id) {
+        // Subir directo a Supabase Storage mediante el backend
+        const res = await uploadProductImage(product.id, webpFile);
+        if (res.image_url) {
+          setFormData(prev => ({
+            ...prev,
+            images: [...prev.images, res.image_url]
+          }));
+        }
+      } else {
+        alert('Para subir fotos directamente a la nube, primero guarda la prenda base con su referencia.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error al subir foto');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   useEffect(() => {
     if (product) {
@@ -343,12 +374,45 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
 
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                  Galería de Fotos (URLs)
+                  Galería de Fotos
                 </label>
+
+                {/* Botón de subida rápida desde el PC con conversión a WebP */}
+                {isEdit && (
+                  <div className="mb-3">
+                    <label
+                      htmlFor="product-modal-file-upload"
+                      className={`w-full py-2.5 px-4 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        uploadingPhoto ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                    >
+                      {uploadingPhoto ? (
+                        <>
+                          <RefreshCw className="animate-spin text-indigo-600" size={15} />
+                          <span>Optimizando a WebP y subiendo a la nube...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud size={16} className="text-indigo-600" />
+                          <span>📁 Subir Foto desde mi PC (Convierte a WebP automático)</span>
+                        </>
+                      )}
+                    </label>
+                    <input
+                      id="product-modal-file-upload"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUploadFromPC}
+                      disabled={uploadingPhoto}
+                    />
+                  </div>
+                )}
+
                 <div className="flex gap-2 mb-3">
                   <input
                     type="url"
-                    placeholder="https://ejemplo.com/foto-chaqueta.jpg"
+                    placeholder="O pega un enlace de foto externa..."
                     value={newImageUrl}
                     onChange={e => setNewImageUrl(e.target.value)}
                     className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-indigo-500"
@@ -356,16 +420,16 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
                   <button
                     type="button"
                     onClick={handleAddImage}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all cursor-pointer"
                   >
-                    + Agregar Foto
+                    + Agregar Enlace
                   </button>
                 </div>
 
                 <div className="grid grid-cols-4 gap-3">
                   {formData.images.map((img, idx) => (
                     <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100">
-                      <img src={img} alt={`Foto ${idx+1}`} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                      <img src={normalizeImageUrl(img)} alt={`Foto ${idx+1}`} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                       <button
                         type="button"
                         onClick={() => handleRemoveImage(idx)}

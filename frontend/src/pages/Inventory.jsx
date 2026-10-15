@@ -2,14 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Search, RefreshCw, Package, UploadCloud, AlertCircle, ChevronUp, ChevronDown, 
   ChevronsUpDown, History, ArrowRight, Truck, CheckCircle2, RotateCcw, TrendingUp, 
-  Edit3, Plus, Globe, Sparkles, Layers, Trash2, Check, Filter, BarChart3, X, SlidersHorizontal,
+  Edit3, Plus, Globe, Sparkles, Layers, Trash2, Check, Filter, BarChart3, X, SlidersHorizontal, ExternalLink,
   ArrowDownAZ, ArrowUpAZ, ArrowDown10, ArrowUp01, FileSpreadsheet, Archive, PackageCheck, PackageX
 } from 'lucide-react';
 import ProductModal from '../components/ProductModal';
 import AdvisorCatalog from '../components/AdvisorCatalog';
 import VariantBreakdownModal from '../components/VariantBreakdownModal';
 import { useAuth } from '../context/AuthContext';
-import { API_URL } from '../config/api';
+import { API_URL, WEB_STORE_URL } from '../config/api';
 
 function AssetValuationCard({ products, variantStats }) {
   const STORAGE_KEY = 'inv_ajuste_creditos_externos';
@@ -1105,15 +1105,28 @@ export default function Inventory() {
 
                             {/* Estado Web */}
                             <td className="px-4 py-3.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={(e) => handleTogglePublish(p, e)}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                                  p.is_published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                }`}
-                                title={p.is_published ? 'Publicado en tienda web. Clic para ocultar.' : 'Oculto de tienda web. Clic para publicar.'}
-                              >
-                                <Globe size={11} /> {p.is_published ? 'Online' : 'Oculto'}
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={(e) => handleTogglePublish(p, e)}
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                    p.is_published ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                  }`}
+                                  title={p.is_published ? 'Publicado en tienda web. Clic para ocultar.' : 'Oculto de tienda web. Clic para publicar.'}
+                                >
+                                  <Globe size={11} /> {p.is_published ? 'Online' : 'Oculto'}
+                                </button>
+                                {p.is_published && (
+                                  <a
+                                    href={p.slug ? `${WEB_STORE_URL}/chaquetas/${p.slug}` : (p.ref ? `${WEB_STORE_URL}/chaquetas/${p.ref.toLowerCase()}` : WEB_STORE_URL)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"
+                                    title="Mirar esta prenda en la tienda web (abre en nueva pestaña)"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </a>
+                                )}
+                              </div>
                             </td>
 
                             {/* Acciones */}
@@ -1176,6 +1189,7 @@ export default function Inventory() {
         {activeTab === 'catalog' && (
           <AdvisorCatalog 
             products={baseProducts} 
+            allProducts={products}
             onEditProduct={openEditModal} 
           />
         )}
