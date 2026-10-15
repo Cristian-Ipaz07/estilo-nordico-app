@@ -50,3 +50,17 @@
 2. **Carga de Imágenes**: Subida de fotos limpias sin fondo desde disco `D:` asociadas a cada referencia/variante.
 3. **Onboarding de Asesores**: Instalación de la PWA en móviles de vendedores con rol `Vendedor` (costos ocultos automáticamente).
 4. **Fase Web (Astro)**: Conectar `src/lib/erpApi.ts` en `Web-Estilo-Nordico` apuntando a `https://estilo-nordico-app.onrender.com/api/public/*`.
+
+
+### 🚀 Actualización (2026-10-15 16:18): Asignación de Fotos a Variantes y Catálogo de Asesores
+- **Asignación de fotos por variante en `VariantBreakdownModal.jsx`**:
+  - Cada fila de variante ahora tiene su miniatura de foto.
+  - Botón '+ Foto' para subir directo desde el disco (D:) con optimización client-side a WebP (1200px máx, calidad 0.85, transparencia preservada).
+  - Selector para vincular con 1 clic fotos ya existentes en la prenda base a cualquier variante.
+- **Catálogo de Asesores (`AdvisorCatalog.jsx`) potenciado**:
+  - Desglose inteligente de todas las variantes por referencia base.
+  - Píldoras de colores interactivas (ej: NEGRO, AZUL, ROJO): al hacer clic en un color, la foto de la tarjeta cambia dinámicamente a la foto exacta de ese color.
+  - Visualización de tallas y stock en tiempo real.
+  - Botón '🌐 Mirar en Web' y mundito interactivo que redirige directamente a la página del producto publicado en la tienda web (`https://web-estilo-nordico.vercel.app/chaquetas/[slug]`), o a la tienda principal si está en borrador.
+  - Generador de Ficha WhatsApp hiper-persuasiva con desglose de tallas disponibles, enlace a la foto y enlace web directo.
+- **URLs de imágenes corregidas en Supabase**: Todas las referencias (incluyendo 5080) migradas de `http://localhost:8000` a HTTPS en Render y Supabase Storage.
