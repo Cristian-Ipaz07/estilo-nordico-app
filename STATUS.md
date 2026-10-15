@@ -50,6 +50,10 @@
 2. **Carga de Imágenes**: Subida de fotos limpias sin fondo desde disco `D:` asociadas a cada referencia/variante.
 3. **Onboarding de Asesores**: Instalación de la PWA en móviles de vendedores con rol `Vendedor` (costos ocultos automáticamente).
 4. **Fase Web (Astro)**: Conectar `src/lib/erpApi.ts` en `Web-Estilo-Nordico` apuntando a `https://estilo-nordico-app.onrender.com/api/public/*`.
+5. ⏳ **Automatización de Finanzas & Nómina (Pendiente Prioritario para Fase Siguiente)**:
+   - Liquidación automática de comisiones y salarios por corte de ventas.
+   - Control y libro de cuentas por pagar a socios (saldo pendiente de Cristian) y empleados (Adriana, Andrés, Tereza).
+   - Cruce automático de abonos: cada salida registrada en Flujo de Caja con categoría `SALARIO` o `RETIRO UTILIDADES` descuenta automáticamente de la deuda/saldo pendiente.
 
 
 ### 🚀 Actualización (2026-10-15 16:18): Asignación de Fotos a Variantes y Catálogo de Asesores
