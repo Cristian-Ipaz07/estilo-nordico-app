@@ -64,3 +64,14 @@
   - Botón '🌐 Mirar en Web' y mundito interactivo que redirige directamente a la página del producto publicado en la tienda web (`https://web-estilo-nordico.vercel.app/chaquetas/[slug]`), o a la tienda principal si está en borrador.
   - Generador de Ficha WhatsApp hiper-persuasiva con desglose de tallas disponibles, enlace a la foto y enlace web directo.
 - **URLs de imágenes corregidas en Supabase**: Todas las referencias (incluyendo 5080) migradas de `http://localhost:8000` a HTTPS en Render y Supabase Storage.
+
+
+### 🎯 Actualización (2026-10-15 16:30): Catálogo de Asesores Optimizado & Seguro
+- **Eliminación Total de Costo Base**: Protegida la confidencialidad comercial; ningún asesor ni pantalla del catálogo muestra costos internos.
+- **Tarjetas Compactas y Estéticas**: Tamaño estándar optimizado (h-48 de foto), sin alargar la pantalla, con badges limpios de stock, talla y tienda web.
+- **Ventana Emergente de Ventas (1 Clic en la Tarjeta)**:
+  - Al hacer clic en cualquier prenda (ej: 5080), se abre el nuevo **Modal de Asesor**.
+  - **Filtro Instantáneo por Talla (S, M, L, XL, XXL, XXXL)**: Si un cliente pregunta *"¿Qué colores hay en talla M?"*, el asesor presiona `M` y el modal muestra al instante solo los colores disponibles en M con su foto y stock.
+  - **Filtro por Color**: Permite ver qué tallas quedan de cualquier color.
+  - **Ficha WhatsApp Contextual**: Si está filtrado por talla M, genera el mensaje de WhatsApp especificando los colores disponibles en M, enlaces a las fotos y tienda web.
+- **Filtro Global por Talla**: En la barra superior del catálogo, el asesor puede filtrar todo el inventario por una talla específica con un solo toque.
