@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, Package, Globe, Copy, Check, Edit3, 
-  ExternalLink, ChevronDown, ChevronUp, Sparkles, Layers, Tag 
+  ExternalLink, X, Eye, Sparkles, Layers, Tag, ChevronRight,
+  Shirt, CheckCircle2, ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
@@ -10,37 +11,48 @@ import { WEB_STORE_URL } from '../config/api';
 const fmt = (num) => Number(num || 0).toLocaleString('es-CO');
 
 /**
- * Tarjeta individual de producto con variantes interactivas,
- * selector dinámico de color/foto, enlace directo a la web y ficha WhatsApp.
+ * MODAL EMERGENTE DE CONSULTA DE TALLAS & COLORES
+ * Permite al asesor responder en 2 segundos: "¿Qué colores tienes en talla M?"
+ * o "¿Qué tallas tienes en color Azul?", con fotos exactas y copia a WhatsApp.
  */
-function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) {
-  const [selectedColor, setSelectedColor] = useState(null);
-  const [showAllVariants, setShowAllVariants] = useState(false);
+function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
+  if (!isOpen || !product) return null;
+
+  const [selectedSize, setSelectedSize] = useState('TODAS');
+  const [selectedColor, setSelectedColor] = useState('TODOS');
+  const [activeVariant, setActiveVariant] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  // Agrupar variantes por color con sus tallas, stock y fotos
-  const colorGroups = useMemo(() => {
+  // Lista única de tallas disponibles con stock > 0
+  const availableSizes = useMemo(() => {
+    const set = new Set();
+    variants.forEach(v => {
+      if ((v.stock || 0) > 0 && v.size) set.add(v.size.trim().toUpperCase());
+    });
+    const order = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '30', '32', '34', '36', '38'];
+    return Array.from(set).sort((a, b) => {
+      const idxA = order.indexOf(a);
+      const idxB = order.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [variants]);
+
+  // Lista única de colores disponibles con stock > 0
+  const availableColors = useMemo(() => {
     const map = {};
     variants.forEach(v => {
       const col = (v.color || 'ÚNICO').trim().toUpperCase();
       if (!map[col]) {
         map[col] = {
-          color: col,
+          name: col,
           totalStock: 0,
-          sizes: [],
-          image: (Array.isArray(v.images) && v.images.length > 0) ? v.images[0] : null,
-          variants: []
+          image: (Array.isArray(v.images) && v.images.length > 0) ? v.images[0] : null
         };
       }
       map[col].totalStock += (v.stock || 0);
-      map[col].sizes.push({
-        id: v.id,
-        size: v.size || '-',
-        stock: v.stock || 0,
-        ref: v.ref,
-        image: (Array.isArray(v.images) && v.images.length > 0) ? v.images[0] : null
-      });
-      map[col].variants.push(v);
       if (!map[col].image && Array.isArray(v.images) && v.images.length > 0) {
         map[col].image = v.images[0];
       }
@@ -48,26 +60,433 @@ function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) 
     return Object.values(map);
   }, [variants]);
 
-  // Stock total de la referencia (sumando variantes o stock base)
+  // Variantes filtradas según la talla y/o color seleccionados
+  const filteredVariants = useMemo(() => {
+    return variants.filter(v => {
+      const vSize = (v.size || '').trim().toUpperCase();
+      const vColor = (v.color || '').trim().toUpperCase();
+      const sizeMatch = selectedSize === 'TODAS' || vSize === selectedSize;
+      const colorMatch = selectedColor === 'TODOS' || vColor === selectedColor;
+      return sizeMatch && colorMatch;
+    });
+  }, [variants, selectedSize, selectedColor]);
+
+  // Foto destacada para previsualizar en el modal
+  const heroImage = useMemo(() => {
+    if (activeVariant && Array.isArray(activeVariant.images) && activeVariant.images.length > 0) {
+      return activeVariant.images[0];
+    }
+    if (selectedColor !== 'TODOS') {
+      const colObj = availableColors.find(c => c.name === selectedColor);
+      if (colObj?.image) return colObj.image;
+    }
+    const withImg = filteredVariants.find(v => Array.isArray(v.images) && v.images.length > 0);
+    if (withImg) return withImg.images[0];
+    if (Array.isArray(product.images) && product.images.length > 0) return product.images[0];
+    return null;
+  }, [activeVariant, selectedColor, availableColors, filteredVariants, product.images]);
+
   const totalStock = variants.length > 0 
     ? variants.reduce((sum, v) => sum + (v.stock || 0), 0)
     : (product.stock || 0);
 
-  // Foto activa: según el color seleccionado, o la base, o la primera variante que tenga foto
-  const activeImage = useMemo(() => {
-    if (selectedColor) {
-      const group = colorGroups.find(g => g.color === selectedColor);
-      if (group && group.image) return group.image;
-    }
-    if (Array.isArray(product.images) && product.images.length > 0) {
-      return product.images[0];
-    }
-    const variantWithImg = variants.find(v => Array.isArray(v.images) && v.images.length > 0);
-    if (variantWithImg) return variantWithImg.images[0];
-    return null;
-  }, [selectedColor, colorGroups, product.images, variants]);
+  const productWebUrl = useMemo(() => {
+    if (!product.is_published) return WEB_STORE_URL;
+    if (product.slug) return `${WEB_STORE_URL}/chaquetas/${product.slug}`;
+    if (product.ref) return `${WEB_STORE_URL}/chaquetas/${product.ref.toLowerCase()}`;
+    return WEB_STORE_URL;
+  }, [product.is_published, product.slug, product.ref]);
 
-  // URL directa al producto publicado en la web o a la tienda principal
+  // Copia inteligente y contextual a WhatsApp
+  const handleCopyWhatsApp = () => {
+    let text = `❄️ *ESTILO NÓRDICO* ❄️\n`;
+    text += `🏷️ *${product.name}*\n`;
+    text += `🔖 *Ref:* ${product.ref}\n`;
+    text += `💰 *Precio:* $${fmt(product.price_sale)}\n\n`;
+
+    // 1. Si filtró por una talla específica (ej: M):
+    if (selectedSize !== 'TODAS') {
+      text += `📏 *CONSULTA EN TALLA ${selectedSize}:*\n`;
+      const inStockInSize = variants.filter(v => (v.size || '').toUpperCase() === selectedSize && (v.stock || 0) > 0);
+      if (inStockInSize.length > 0) {
+        text += `✨ *Colores disponibles en ${selectedSize}:*\n`;
+        inStockInSize.forEach(v => {
+          const brandText = v.brand && v.brand !== 'Estilo Nórdico' ? ` (${v.brand})` : '';
+          text += `• ${v.color}${brandText}: *${v.stock} un. disponible(s)*\n`;
+        });
+      } else {
+        text += `⚠️ En este momento no hay disponibilidad en talla ${selectedSize}.\n`;
+      }
+    } 
+    // 2. Si filtró por un color específico:
+    else if (selectedColor !== 'TODOS') {
+      text += `🎨 *CONSULTA EN COLOR ${selectedColor}:*\n`;
+      const inStockInColor = variants.filter(v => (v.color || '').toUpperCase() === selectedColor && (v.stock || 0) > 0);
+      if (inStockInColor.length > 0) {
+        const sizesStr = inStockInColor.map(v => `${v.size} (${v.stock} un.)`).join(', ');
+        text += `📏 *Tallas disponibles en ${selectedColor}:* ${sizesStr}\n`;
+      }
+    } 
+    // 3. Resumen general completo:
+    else {
+      text += `🎨 *COLORES Y TALLAS DISPONIBLES:*\n`;
+      availableColors.forEach(c => {
+        const sizesForCol = variants
+          .filter(v => (v.color || '').toUpperCase() === c.name && (v.stock || 0) > 0)
+          .map(v => `${v.size} (${v.stock} un.)`);
+        if (sizesForCol.length > 0) {
+          text += `• *${c.name}:* ${sizesForCol.join(', ')}\n`;
+        }
+      });
+    }
+
+    text += `\n⚡ *Disponibilidad:* ¡${totalStock} unidades en stock real para entrega inmediata!\n`;
+    if (heroImage) {
+      text += `📸 *Ver foto:* ${normalizeImageUrl(heroImage)}\n`;
+    }
+    text += `🌐 *Ver en Tienda Web:* ${productWebUrl}\n`;
+    text += `\n🚚 *¿Te gustaría apartarla o solicitar envío contraentrega?*`;
+
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Header del Modal */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
+              <Shirt size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-black bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-lg">
+                  REF: {product.ref}
+                </span>
+                <span className="text-xs font-bold text-slate-400 uppercase">
+                  {product.category} · {product.subcategory || product.product_type}
+                </span>
+                {product.is_published && (
+                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Globe size={10} /> Web
+                  </span>
+                )}
+              </div>
+              <h3 className="font-black text-slate-900 text-lg leading-snug">{product.name}</h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xl font-black text-slate-900">${fmt(product.price_sale)}</p>
+              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider font-mono">
+                {totalStock} unidades en stock
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de Filtro Rápido por Talla */}
+        <div className="px-6 py-3 bg-indigo-50/60 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1">
+              <span>🎯 Filtrar por Talla:</span>
+            </span>
+            <button
+              onClick={() => setSelectedSize('TODAS')}
+              className={`px-3 py-1 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                selectedSize === 'TODAS'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              Todas ({availableSizes.length})
+            </button>
+            {availableSizes.map(s => {
+              const stockInSize = variants.filter(v => (v.size || '').toUpperCase() === s).reduce((sum, v) => sum + (v.stock || 0), 0);
+              const isSelected = selectedSize === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setSelectedSize(isSelected ? 'TODAS' : s)}
+                  className={`px-3 py-1 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs scale-105'
+                      : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                  }`}
+                >
+                  <span>{s}</span>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded-md ${
+                    isSelected ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {stockInSize}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedSize !== 'TODAS' && (
+            <span className="text-[11px] font-bold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200">
+              Mostrando colores en talla <strong className="font-black text-indigo-900">{selectedSize}</strong>
+            </span>
+          )}
+        </div>
+
+        {/* Barra de Filtro Rápido por Color */}
+        <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0">
+            Color:
+          </span>
+          <button
+            onClick={() => setSelectedColor('TODOS')}
+            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black border uppercase transition-all shrink-0 cursor-pointer ${
+              selectedColor === 'TODOS'
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Todos
+          </button>
+          {availableColors.map(c => {
+            const isSelected = selectedColor === c.name;
+            return (
+              <button
+                key={c.name}
+                onClick={() => setSelectedColor(isSelected ? 'TODOS' : c.name)}
+                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black border uppercase transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                  isSelected
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>{c.name}</span>
+                <span className={`text-[8px] px-1 rounded ${isSelected ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  {c.totalStock}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Cuerpo del Modal: Foto Activa + Grid de Variantes */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar flex flex-col md:flex-row gap-6">
+          
+          {/* Columna Izquierda: Visor de Foto Grande */}
+          <div className="w-full md:w-64 shrink-0 flex flex-col gap-3">
+            <div className="aspect-square bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden relative flex items-center justify-center p-2 shadow-xs">
+              {heroImage ? (
+                <img
+                  src={normalizeImageUrl(heroImage)}
+                  alt={product.name}
+                  className="w-full h-full object-contain drop-shadow-sm transition-all"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="text-center text-slate-300">
+                  <Package size={48} className="mx-auto mb-1 opacity-40 text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-400">Sin foto</span>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 text-xs space-y-1">
+              <div className="flex justify-between font-bold text-slate-600">
+                <span>Variantes filtradas:</span>
+                <span className="font-mono text-slate-900">{filteredVariants.length}</span>
+              </div>
+              <div className="flex justify-between font-bold text-slate-600">
+                <span>Stock disponible:</span>
+                <span className="font-mono text-emerald-700">
+                  {filteredVariants.reduce((sum, v) => sum + (v.stock || 0), 0)} un.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Columna Derecha: Tarjetas de Variantes Filtradas */}
+          <div className="flex-1 space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+              <span>
+                {selectedSize !== 'TODAS' 
+                  ? `Colores disponibles en talla ${selectedSize}:`
+                  : 'Opciones de color y talla disponibles:'}
+              </span>
+              {(selectedSize !== 'TODAS' || selectedColor !== 'TODOS') && (
+                <button
+                  onClick={() => { setSelectedSize('TODAS'); setSelectedColor('TODOS'); }}
+                  className="text-indigo-600 hover:underline text-[11px] font-bold cursor-pointer"
+                >
+                  Restablecer filtros
+                </button>
+              )}
+            </div>
+
+            {filteredVariants.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <Shirt size={36} className="mx-auto mb-2 opacity-30 text-slate-400" />
+                <p className="font-bold text-sm text-slate-600">No hay existencias con este filtro.</p>
+                <p className="text-xs text-slate-400 mt-1">Prueba seleccionando otra talla o color arriba.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {filteredVariants.map(v => {
+                  const hasImg = Array.isArray(v.images) && v.images.length > 0;
+                  const isStockOut = (v.stock || 0) <= 0;
+
+                  return (
+                    <div
+                      key={v.id}
+                      onClick={() => setActiveVariant(v)}
+                      className={`p-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer ${
+                        activeVariant?.id === v.id
+                          ? 'bg-indigo-50/80 border-indigo-400 shadow-xs'
+                          : 'bg-white hover:bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      {/* Thumbnail de la foto exacta */}
+                      <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                        {hasImg ? (
+                          <img
+                            src={normalizeImageUrl(v.images[0])}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        ) : (
+                          <span className="font-mono font-black text-xs text-slate-500">{v.size || '-'}</span>
+                        )}
+                      </div>
+
+                      {/* Info de la variante */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-black text-xs text-slate-900 truncate uppercase">
+                            {v.color || 'COLOR ÚNICO'}
+                          </p>
+                          {v.brand && v.brand !== 'Estilo Nórdico' && (
+                            <span className="text-[8px] font-black uppercase bg-amber-100 text-amber-800 px-1 py-0.2 rounded">
+                              {v.brand}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 font-mono truncate">{v.ref}</p>
+
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs font-black font-mono text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">
+                            Talla: {v.size}
+                          </span>
+                          <span className={`text-[11px] font-black font-mono ${
+                            isStockOut ? 'text-rose-500' : 'text-emerald-700'
+                          }`}>
+                            {isStockOut ? 'Agotado' : `${v.stock} un.`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer del Modal con Copiado WhatsApp y Link a Web */}
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <a
+              href={productWebUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors flex items-center gap-1.5 shadow-2xs"
+            >
+              <Globe size={14} className="text-indigo-600" />
+              <span>Ver en Tienda Web</span>
+              <ExternalLink size={11} className="text-slate-400" />
+            </a>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyWhatsApp}
+              className={`px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-sm cursor-pointer ${
+                copied 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white'
+              }`}
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              <span>
+                {copied 
+                  ? '✅ ¡Ficha Copiada al Portapapeles!' 
+                  : selectedSize !== 'TODAS'
+                    ? `💬 Copiar Ficha Talla ${selectedSize} para WhatsApp`
+                    : '💬 Copiar Ficha Completa para WhatsApp'}
+              </span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/**
+ * TARJETA COMPACTA DEL PRODUCTO EN EL CATÁLOGO
+ * Diseño optimizado, tamaño estándar, sin costos internos y con apertura de la ventana de tallas.
+ */
+function CompactAdvisorProductCard({ product, variants = [], isAdmin, onEditProduct, onOpenSalesModal }) {
+  const [copied, setCopied] = useState(false);
+
+  // Total stock
+  const totalStock = variants.length > 0 
+    ? variants.reduce((sum, v) => sum + (v.stock || 0), 0)
+    : (product.stock || 0);
+
+  // Lista de tallas únicas disponibles
+  const sizes = useMemo(() => {
+    const set = new Set();
+    variants.forEach(v => {
+      if ((v.stock || 0) > 0 && v.size) set.add(v.size);
+    });
+    return Array.from(set);
+  }, [variants]);
+
+  // Lista de colores únicos
+  const colorsCount = useMemo(() => {
+    const set = new Set();
+    variants.forEach(v => {
+      if ((v.stock || 0) > 0 && v.color) set.add(v.color.toUpperCase());
+    });
+    return set.size;
+  }, [variants]);
+
+  // Foto principal limpia
+  const cardImage = useMemo(() => {
+    if (Array.isArray(product.images) && product.images.length > 0) return product.images[0];
+    const vImg = variants.find(v => Array.isArray(v.images) && v.images.length > 0);
+    return vImg ? vImg.images[0] : null;
+  }, [product.images, variants]);
+
   const productWebUrl = useMemo(() => {
     if (!product.is_published) return WEB_STORE_URL;
     if (product.slug) return `${WEB_STORE_URL}/chaquetas/${product.slug}`;
@@ -77,46 +496,19 @@ function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) 
 
   const hasDiscount = product.compare_price && product.compare_price > product.price_sale;
 
-  // Generador de Ficha WhatsApp súper rica y persuasiva
-  const handleCopyWhatsApp = () => {
+  const handleQuickCopyWhatsApp = (e) => {
+    e.stopPropagation();
     let text = `❄️ *ESTILO NÓRDICO* ❄️\n`;
     text += `🏷️ *${product.name}*\n`;
     text += `🔖 *Ref:* ${product.ref}\n`;
     text += `💰 *Precio:* $${fmt(product.price_sale)}`;
-    if (hasDiscount) {
-      text += ` ~(Antes: $${fmt(product.compare_price)})~`;
-    }
+    if (hasDiscount) text += ` ~(Antes: $${fmt(product.compare_price)})~`;
     text += `\n`;
-
-    if (selectedColor) {
-      const group = colorGroups.find(g => g.color === selectedColor);
-      text += `🎨 *Color Seleccionado:* ${selectedColor}\n`;
-      if (group && group.sizes.length > 0) {
-        const inStockSizes = group.sizes.filter(s => s.stock > 0).map(s => `${s.size} (${s.stock} un.)`);
-        text += `📏 *Tallas Disponibles:* ${inStockSizes.length > 0 ? inStockSizes.join(', ') : 'Agotado en este color'}\n`;
-      }
-    } else if (colorGroups.length > 0) {
-      text += `\n🎨 *COLORES Y TALLAS DISPONIBLES:*\n`;
-      colorGroups.forEach(g => {
-        const inStock = g.sizes.filter(s => s.stock > 0).map(s => `${s.size} (${s.stock} un.)`);
-        if (inStock.length > 0) {
-          text += `• *${g.color}:* ${inStock.join(', ')}\n`;
-        }
-      });
-    }
-
-    text += `⚡ *Stock Disponible:* ${totalStock > 0 ? `¡${totalStock} unidades en tienda!` : 'Agotado'}\n`;
-
-    if (product.description) {
-      text += `\n📝 _${product.description}_\n`;
-    }
-
-    if (activeImage) {
-      text += `\n📸 *Ver foto:* ${normalizeImageUrl(activeImage)}\n`;
-    }
-
-    text += `\n🌐 *Mirar en Tienda Web:* ${productWebUrl}\n`;
-    text += `\n🚚 *¿Te gustaría apartarla para entrega inmediata en Pasto o envío contraentrega a todo Colombia?*`;
+    if (sizes.length > 0) text += `📏 *Tallas disponibles:* ${sizes.join(', ')}\n`;
+    text += `⚡ *Stock disponible:* ${totalStock} unidades\n`;
+    if (cardImage) text += `📸 *Ver foto:* ${normalizeImageUrl(cardImage)}\n`;
+    text += `🌐 *Ver en Web:* ${productWebUrl}\n`;
+    text += `\n🚚 *¿Te gustaría apartarla o solicitar envío contraentrega?*`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -124,51 +516,48 @@ function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) 
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col group">
-      
-      {/* Zona de Imagen Principal */}
-      <div className="h-56 bg-slate-50 relative overflow-hidden flex items-center justify-center p-2">
-        {activeImage ? (
+    <div 
+      onClick={() => onOpenSalesModal(product)}
+      className="bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-xl hover:border-indigo-300 transition-all duration-200 overflow-hidden flex flex-col group cursor-pointer"
+    >
+      {/* Zona de Imagen Compacta (h-48) */}
+      <div className="h-48 bg-slate-50 relative overflow-hidden flex items-center justify-center p-3">
+        {cardImage ? (
           <img
-            src={normalizeImageUrl(activeImage)}
+            src={normalizeImageUrl(cardImage)}
             alt={product.name}
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 drop-shadow-sm"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
         ) : (
           <div className="text-center text-slate-300">
-            <Package size={44} className="mx-auto mb-1 opacity-40 text-slate-400" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sin foto asignada</span>
+            <Package size={40} className="mx-auto mb-1 opacity-40 text-slate-400" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sin foto</span>
           </div>
         )}
 
-        {/* Badges superiores izquierda (Tipo y Botón Mundito Web) */}
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
-          <span className="bg-slate-900/85 backdrop-blur-md text-white text-[9px] font-black uppercase px-2.5 py-1 rounded-xl shadow-xs">
+        {/* Badges superiores izquierda */}
+        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
+          <span className="bg-slate-900/85 backdrop-blur-md text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-lg shadow-xs">
             {product.product_type || 'ROPA'}
           </span>
-
-          {/* Botón Mundito interactivo que redirige a la web */}
-          <a
-            href={productWebUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`backdrop-blur-md text-[9px] font-black uppercase px-2.5 py-1 rounded-xl flex items-center gap-1 shadow-xs transition-all hover:scale-105 cursor-pointer ${
-              product.is_published 
-                ? 'bg-emerald-600/95 hover:bg-emerald-600 text-white' 
-                : 'bg-slate-800/80 hover:bg-slate-900 text-slate-300'
-            }`}
-            title={product.is_published ? 'Ver producto publicado en la web (abre en nueva pestaña)' : 'Ir a la tienda web principal'}
-          >
-            <Globe size={10} />
-            <span>{product.is_published ? 'Online' : 'Tienda'}</span>
-            <ExternalLink size={9} />
-          </a>
+          {product.is_published && (
+            <a
+              href={productWebUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="bg-emerald-600/95 hover:bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-xs transition-transform hover:scale-105 cursor-pointer"
+              title="Abrir en la tienda web"
+            >
+              <Globe size={10} /> Online
+            </a>
+          )}
         </div>
 
         {/* Badge superior derecha (Stock Total) */}
-        <div className="absolute top-3 right-3 z-10">
-          <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl shadow-xs ${
+        <div className="absolute top-2.5 right-2.5 z-10">
+          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-lg shadow-xs font-mono ${
             totalStock <= 0 
               ? 'bg-rose-500 text-white' 
               : totalStock < 3 
@@ -179,234 +568,93 @@ function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) 
           </span>
         </div>
 
-        {/* Indicador de color activo sobre la foto */}
-        {selectedColor && (
-          <div className="absolute bottom-2 left-2 z-10 bg-indigo-600/90 backdrop-blur-sm text-white px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-xs">
-            <span>Color: {selectedColor}</span>
-            <button 
-              type="button" 
-              onClick={() => setSelectedColor(null)}
-              className="hover:text-rose-200 ml-1 cursor-pointer font-bold"
-              title="Ver foto general"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        {/* Botón flotante para inspeccionar tallas */}
+        <div className="absolute inset-x-0 bottom-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="bg-slate-900/90 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-md">
+            <Eye size={12} /> Clic para ver tallas y colores
+          </span>
+        </div>
       </div>
 
-      {/* Contenido / Información del Producto */}
-      <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+      {/* Contenido / Información Compacta */}
+      <div className="p-4 flex-1 flex flex-col justify-between space-y-2.5">
         <div>
-          {/* Header de Ref y Categoría */}
           <div className="flex justify-between items-center gap-2 mb-1">
-            <span className="text-[10px] font-mono font-black text-indigo-700 uppercase bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg">
+            <span className="text-[10px] font-mono font-black text-indigo-700 uppercase bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
               REF: {product.ref}
             </span>
-            {product.category && (
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
-                {product.category} {product.subcategory ? `· ${product.subcategory}` : ''}
-              </span>
-            )}
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+              {product.category}
+            </span>
           </div>
 
-          {/* Nombre de la prenda */}
-          <h4 className="font-black text-sm text-slate-900 leading-snug line-clamp-2">
+          <h4 className="font-black text-sm text-slate-900 leading-snug line-clamp-1 group-hover:text-indigo-600 transition-colors">
             {product.name}
           </h4>
 
-          {/* Selector Interactivo de Colores y Variantes */}
-          {colorGroups.length > 0 ? (
-            <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Colores ({colorGroups.length}):
-                </span>
-                <span className="text-[9px] text-indigo-600 font-bold">
-                  {selectedColor ? 'Clic para ver foto' : 'Toca un color'}
-                </span>
-              </div>
-
-              {/* Pills de Color */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {colorGroups.map(g => {
-                  const isSelected = selectedColor === g.color;
-                  return (
-                    <button
-                      key={g.color}
-                      type="button"
-                      onClick={() => setSelectedColor(isSelected ? null : g.color)}
-                      className={`px-2 py-1 rounded-xl text-[10px] font-black border transition-all cursor-pointer flex items-center gap-1 ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                      }`}
-                      title={`Ver foto y stock de color ${g.color}`}
-                    >
-                      <span>{g.color}</span>
-                      <span className={`text-[8px] px-1 py-0.2 rounded-md ${
-                        isSelected ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-200 text-slate-600'
-                      }`}>
-                        {g.totalStock}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Tallas del color seleccionado */}
-              {selectedColor ? (
-                <div className="p-2 bg-indigo-50/60 border border-indigo-100 rounded-xl">
-                  <p className="text-[9px] font-black uppercase tracking-wider text-indigo-700 mb-1">
-                    Tallas para {selectedColor}:
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {colorGroups
-                      .find(g => g.color === selectedColor)
-                      ?.sizes.map(s => (
-                        <span
-                          key={s.id}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
-                            s.stock > 0
-                              ? 'bg-white text-indigo-900 border-indigo-200 shadow-2xs'
-                              : 'bg-slate-100 text-slate-400 border-slate-200 line-through'
-                          }`}
-                        >
-                          {s.size}: <strong className="font-mono">{s.stock} un.</strong>
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              ) : (
-                /* Resumen general de tallas en stock */
-                <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase">Tallas:</span>
-                  {Array.from(new Set(variants.map(v => v.size).filter(Boolean))).map(s => {
-                    const stockForSize = variants.filter(v => v.size === s).reduce((sum, v) => sum + (v.stock || 0), 0);
-                    return (
-                      <span
-                        key={s}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-black font-mono ${
-                          stockForSize > 0 ? 'bg-slate-100 text-slate-700' : 'bg-slate-50 text-slate-300'
-                        }`}
-                      >
-                        {s}({stockForSize})
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Acordeón para ver detalle completo de SKUs */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowAllVariants(!showAllVariants)}
-                  className="w-full text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center justify-between py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  <span>Ver todas las {variants.length} variantes</span>
-                  {showAllVariants ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                </button>
-
-                {showAllVariants && (
-                  <div className="mt-1 max-h-36 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-xl custom-scrollbar bg-slate-50/50">
-                    {variants.map(v => (
-                      <div key={v.id} className="p-1.5 flex items-center justify-between text-[10px]">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {Array.isArray(v.images) && v.images.length > 0 ? (
-                            <img src={normalizeImageUrl(v.images[0])} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
-                          ) : (
-                            <div className="w-5 h-5 rounded bg-slate-200 text-slate-500 font-bold text-[8px] flex items-center justify-center shrink-0">
-                              {v.size || '-'}
-                            </div>
-                          )}
-                          <span className="font-mono text-slate-700 truncate">{v.ref}</span>
-                        </div>
-                        <span className={`font-black font-mono shrink-0 ml-2 ${v.stock > 0 ? 'text-emerald-700' : 'text-rose-500'}`}>
-                          {v.stock} un.
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+          {/* Fila de Resumen de Tallas y Colores */}
+          <div className="flex items-center justify-between text-[11px] pt-1 text-slate-600 font-medium">
+            <span className="text-slate-400 font-bold">
+              {colorsCount > 0 ? `${colorsCount} colores` : 'Color único'}
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Tallas:</span>
+              <span className="font-black text-slate-800 font-mono">
+                {sizes.length > 0 ? sizes.slice(0, 4).join(', ') + (sizes.length > 4 ? '...' : '') : 'Única'}
+              </span>
             </div>
-          ) : (
-            (product.color || product.size) && (
-              <div className="flex items-center gap-2 mt-2 text-xs text-slate-600 font-medium">
-                {product.color && (
-                  <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200 font-bold">
-                    {product.color}
-                  </span>
-                )}
-                {product.size && (
-                  <span className="bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 font-black text-indigo-700 font-mono">
-                    {product.size}
-                  </span>
-                )}
-              </div>
-            )
-          )}
+          </div>
         </div>
 
-        {/* Zona Inferior: Precios y Acciones */}
-        <div className="pt-3 border-t border-slate-100">
-          <div className="flex items-baseline justify-between mb-3">
-            <div>
-              <p className="text-xl font-black text-slate-900 tracking-tight">
-                ${fmt(product.price_sale)}
+        {/* Zona Inferior: Precio y Acciones */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-lg font-black text-slate-900 tracking-tight">
+              ${fmt(product.price_sale)}
+            </p>
+            {hasDiscount && (
+              <p className="text-[9px] font-bold text-slate-400 line-through">
+                Antes: ${fmt(product.compare_price)}
               </p>
-              {hasDiscount && (
-                <p className="text-[10px] font-bold text-slate-400 line-through">
-                  Antes: ${fmt(product.compare_price)}
-                </p>
-              )}
-            </div>
-
-            {isAdmin && (
-              <div className="text-right">
-                <span className="text-[9px] font-bold text-slate-400 uppercase block">Costo Base</span>
-                <span className="text-xs font-black text-slate-600 font-mono">${fmt(product.my_cost)}</span>
-              </div>
             )}
           </div>
 
-          {/* Botones de Acción */}
-          <div className="flex items-center gap-2">
-            {/* Botón Principal Ficha WhatsApp */}
+          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+            {/* Botón WhatsApp */}
             <button
               type="button"
-              onClick={handleCopyWhatsApp}
-              className={`flex-1 py-2.5 px-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer ${
+              onClick={handleQuickCopyWhatsApp}
+              className={`py-2 px-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1 shadow-xs cursor-pointer ${
                 copied 
                   ? 'bg-emerald-500 text-white' 
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
               }`}
+              title="Copiar ficha básica para WhatsApp"
             >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copied ? '✅ ¡Copiado!' : '💬 Ficha WhatsApp'}</span>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              <span className="text-[11px]">{copied ? '¡Copiado!' : 'WhatsApp'}</span>
             </button>
 
-            {/* Botón Mirar en Web (Redirige a la página web) */}
+            {/* Botón Ver Web */}
             <a
               href={productWebUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2.5 border border-slate-200 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-2xl transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-2xs"
-              title="Mirar esta prenda directamente en la tienda web"
+              className="p-2 border border-slate-200 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-xl transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-2xs"
+              title="Mirar esta prenda en la tienda web"
             >
-              <Globe size={16} />
+              <Globe size={15} />
             </a>
 
             {/* Botón Editar para Admin */}
             {isAdmin && onEditProduct && (
               <button
                 type="button"
-                onClick={() => onEditProduct(product)}
-                className="p-2.5 border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-2xl transition-all shrink-0 cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onEditProduct(product); }}
+                className="p-2 border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all shrink-0 cursor-pointer"
                 title="Editar ficha del producto"
               >
-                <Edit3 size={15} />
+                <Edit3 size={14} />
               </button>
             )}
           </div>
@@ -418,17 +666,22 @@ function AdvisorProductCard({ product, variants = [], isAdmin, onEditProduct }) 
 }
 
 /**
- * Catálogo Asesores completo con filtros avanzados, búsqueda instantánea
- * y mapeo inteligente de variantes para cada prenda base.
+ * CATÁLOGO COMPLETO DE ASESORES
+ * Con filtros rápidos por Talla, Tipo, Búsqueda instantánea y Modal emergente de ventas.
  */
 export default function AdvisorCatalog({ products = [], allProducts = [], onEditProduct }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
+
   const [search, setSearch] = useState('');
   const [selectedType, setSelectedType] = useState('TODOS');
+  const [selectedGlobalSize, setSelectedGlobalSize] = useState('TODAS');
   const [onlyInStock, setOnlyInStock] = useState(false);
 
-  // Mapear variantes para cada producto base
+  // Estado del modal emergente de venta
+  const [activeModalProduct, setActiveModalProduct] = useState(null);
+
+  // Mapear variantes por id de producto base
   const variantsByParent = useMemo(() => {
     const map = {};
     (allProducts || []).forEach(item => {
@@ -438,7 +691,6 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
       }
     });
 
-    // Para productos que no tengan parent_id explícito pero su ref sea prefijo
     (products || []).forEach(p => {
       if (!map[p.id]) {
         const prefix = `${p.ref}-`.toLowerCase();
@@ -452,14 +704,32 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
     return map;
   }, [products, allProducts]);
 
+  // Lista de tallas comunes para el filtro rápido superior
+  const commonFilterSizes = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+
   // Filtrado reactivo de productos
   const filtered = useMemo(() => {
     let list = [...products];
 
+    // Filtro por Tipo de prenda
     if (selectedType !== 'TODOS') {
       list = list.filter(p => (p.product_type || 'ROPA').toUpperCase() === selectedType);
     }
 
+    // Filtro por Talla Global (ej: "¿Qué hay en talla M?")
+    if (selectedGlobalSize !== 'TODAS') {
+      list = list.filter(p => {
+        const vars = variantsByParent[p.id] || [];
+        // Si tiene variantes, verificar si alguna tiene stock > 0 en esa talla
+        if (vars.length > 0) {
+          return vars.some(v => (v.size || '').toUpperCase() === selectedGlobalSize && (v.stock || 0) > 0);
+        }
+        // Si no tiene variantes desglosadas, verificar la talla base
+        return (p.size || '').toUpperCase() === selectedGlobalSize && (p.stock || 0) > 0;
+      });
+    }
+
+    // Filtro Solo en Stock
     if (onlyInStock) {
       list = list.filter(p => {
         const vars = variantsByParent[p.id] || [];
@@ -470,6 +740,7 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
       });
     }
 
+    // Buscador
     if (search && search.trim()) {
       const kws = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
       list = list.filter(item => {
@@ -481,76 +752,133 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
     }
 
     return list;
-  }, [products, selectedType, onlyInStock, search, variantsByParent]);
+  }, [products, selectedType, selectedGlobalSize, onlyInStock, search, variantsByParent]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 space-y-4">
       
-      {/* Barra Superior de Búsqueda y Filtros */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2 flex-1 min-w-[280px]">
-          <div className="relative w-full max-w-md">
+      {/* Barra Superior de Filtros */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-3 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Buscador */}
+          <div className="relative flex-1 min-w-[280px] max-w-md">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="Buscar prenda, ref, color (ej: azul, negro), talla (ej: XL, M)..."
+              placeholder="Buscar por referencia (ej: 5080), nombre, color..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
             />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Filtros de Tipo */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {['TODOS', 'CHAQUETA', 'ROPA', 'PERFUME', 'RELOJ', 'ACCESORIO'].map(t => (
+              <button
+                key={t}
+                onClick={() => setSelectedType(t)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  selectedType === t 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+
+            <button
+              onClick={() => setOnlyInStock(!onlyInStock)}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer ${
+                onlyInStock 
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700' 
+                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <Filter size={12} /> En Stock
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {['TODOS', 'CHAQUETA', 'ROPA', 'PERFUME', 'RELOJ', 'ACCESORIO'].map(t => (
-            <button
-              key={t}
-              onClick={() => setSelectedType(t)}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                selectedType === t 
-                  ? 'bg-slate-900 text-white shadow-xs' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-
+        {/* Fila 2: Filtro Rápido Global por Talla */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+            <Shirt size={12} className="text-indigo-600" /> Talla:
+          </span>
           <button
-            onClick={() => setOnlyInStock(!onlyInStock)}
-            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer ${
-              onlyInStock 
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-700' 
-                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            onClick={() => setSelectedGlobalSize('TODAS')}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+              selectedGlobalSize === 'TODAS'
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
             }`}
           >
-            <Filter size={12} /> Solo en Stock
+            Todas
           </button>
+          {commonFilterSizes.map(s => {
+            const isSelected = selectedGlobalSize === s;
+            return (
+              <button
+                key={s}
+                onClick={() => setSelectedGlobalSize(isSelected ? 'TODAS' : s)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                {s}
+              </button>
+            );
+          })}
+
+          {selectedGlobalSize !== 'TODAS' && (
+            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md ml-auto">
+              Filtrando prendas con existencias en talla <strong>{selectedGlobalSize}</strong>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Grid de Tarjetas del Catálogo */}
+      {/* Grid de Tarjetas Compactas */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
         {filtered.length === 0 ? (
           <div className="bg-white rounded-3xl border border-slate-200 p-16 text-center text-slate-400">
             <Package size={48} className="mx-auto mb-3 opacity-30 text-slate-400" />
             <p className="font-bold text-sm text-slate-600">No se encontraron prendas con este criterio.</p>
-            <p className="text-xs text-slate-400 mt-1">Prueba cambiando los filtros o buscando por color o talla.</p>
+            <p className="text-xs text-slate-400 mt-1">Prueba cambiando los filtros de talla o búsqueda.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 pb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-8">
             {filtered.map(p => (
-              <AdvisorProductCard
+              <CompactAdvisorProductCard
                 key={p.id}
                 product={p}
                 variants={variantsByParent[p.id] || []}
                 isAdmin={isAdmin}
                 onEditProduct={onEditProduct}
+                onOpenSalesModal={(prod) => setActiveModalProduct(prod)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Modal Emergente de Ventas para Asesor */}
+      {activeModalProduct && (
+        <ProductSalesModal
+          product={activeModalProduct}
+          variants={variantsByParent[activeModalProduct.id] || []}
+          isOpen={Boolean(activeModalProduct)}
+          onClose={() => setActiveModalProduct(null)}
+        />
+      )}
 
     </div>
   );
