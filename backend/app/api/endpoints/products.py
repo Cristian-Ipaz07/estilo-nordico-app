@@ -1,3 +1,6 @@
+import uuid
+import os
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timedelta
 from typing import Optional
@@ -108,6 +111,63 @@ async def upload_inventory(file: UploadFile = File(...), db: Session = Depends(g
     except Exception as e:
         print(f"Error detallado: {e}")
         raise HTTPException(status_code=500, detail=f"Error al procesar Excel: {str(e)}")
+
+# 5b. SUBIR IMAGEN A SUPABASE STORAGE Y VINCULAR AL PRODUCTO O VARIANTE
+SUPABASE_URL = "https://rnlvzrelpvqjamcfvoga.supabase.co"
+
+@router.post("/{product_id}/upload-image", tags=["Productos"])
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="El archivo está vacío")
+
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+    if not supabase_key:
+        raise HTTPException(status_code=500, detail="Falta configurar SUPABASE_SERVICE_KEY en Render")
+
+    # Nombre limpio para la foto
+    clean_ref = re.sub(r'[^a-zA-Z0-9_-]', '_', product.ref or f"prod_{product.id}").lower()
+    unique_suffix = uuid.uuid4().hex[:8]
+    filename = f"{clean_ref}_{unique_suffix}.webp"
+
+    # Subir directo al bucket público 'products' de Supabase Storage
+    headers = {
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "image/webp",
+        "x-upsert": "true"
+    }
+    storage_url = f"{SUPABASE_URL}/storage/v1/object/products/{filename}"
+
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        r = await client.post(storage_url, content=contents, headers=headers)
+        if r.status_code not in (200, 201):
+            r = await client.put(storage_url, content=contents, headers=headers)
+            if r.status_code not in (200, 201):
+                raise HTTPException(status_code=500, detail=f"Error al subir a Supabase Storage: {r.text}")
+
+    public_url = f"{SUPABASE_URL}/storage/v1/object/public/products/{filename}"
+
+    # Agregar URL a la lista de imágenes del producto
+    current_imgs = list(product.images) if isinstance(product.images, list) else []
+    current_imgs.append(public_url)
+    product.images = current_imgs
+    db.commit()
+    db.refresh(product)
+
+    return {
+        "message": "Imagen subida exitosamente",
+        "image_url": public_url,
+        "images": product.images
+    }
+
 
 
 # 6. RESTOCK con cálculo de costo ponderado
