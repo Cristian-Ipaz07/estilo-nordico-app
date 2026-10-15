@@ -1,6 +1,4 @@
-import { API_URL } from '../config/api';
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   FileText,
   Calendar as CalendarIcon,
@@ -10,460 +8,1196 @@ import {
   Edit2,
   Trash2,
   X,
-  CalendarRange
+  CalendarRange,
+  Plus,
+  Filter,
+  Search,
+  Download,
+  Store,
+  Wallet,
+  ArrowUpRight,
+  ArrowDownRight,
+  RefreshCw,
+  CheckCircle2,
+  Tag
 } from 'lucide-react';
+import { API_URL } from '../config/api';
 import { useDateRange, getTodayCO } from '../context/DateRangeContext';
 
-const getColDate = (d = new Date()) => new Date(new Date(d).toLocaleString("en-US", {timeZone: "America/Bogota"}));
+// Formato de moneda colombiana
+const fmt = (num) => Number(num || 0).toLocaleString('es-CO');
 
-const CashFlow = () => {
+// Extraer clave YYYY-MM-DD sin desfaces de zona horaria
+const toDateKey = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    return val.split('T')[0].split(' ')[0];
+  }
+  try {
+    return new Date(val).toISOString().split('T')[0];
+  } catch {
+    return '';
+  }
+};
+
+// Formato de fecha para visualización (DD/MM/YYYY)
+const fmtDateDisplay = (dateStr) => {
+  const k = toDateKey(dateStr);
+  if (!k || k.length < 10) return '-';
+  const [y, m, d] = k.split('-');
+  return `${d}/${m}/${y}`;
+};
+
+export default function CashFlow() {
   const [movements, setMovements] = useState([]);
-  const [sales, setSales] = useState([]); // Nuevo estado para inyectar las ventas
+  const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { startDate, endDate, setStartDate, setEndDate } = useDateRange();
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
+  // Filtros de fecha globales y locales
+  const { startDate, endDate, setStartDate, setEndDate } = useDateRange();
+  
+  // Filtros interactivos tipo Excel
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('TODAS');
+  const [selectedType, setSelectedType] = useState('TODOS'); // 'TODOS' | 'ENTRADA' | 'SALIDA'
+
+  // Modales
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingMovement, setEditingMovement] = useState(null);
+
+  // Formulario de nuevo movimiento de caja mayor / contable
+  const [newMovement, setNewMovement] = useState({
+    type: 'SALIDA',
+    amount: '',
+    category: 'GASTO',
+    description: '',
+    payment_date: getTodayCO(),
+    origin: 'Efectivo en Casa'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  // Carga de datos
+  const loadData = useCallback(async () => {
     const token = localStorage.getItem('token');
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    
-    Promise.all([
-      fetch(`${API_URL}/cash/`, { headers }).then(r => r.json()),
-      fetch(`${API_URL}/sales/`, { headers }).then(r => r.json())
-    ])
-    .then(([cashData, salesData]) => {
+
+    try {
+      setRefreshing(true);
+      const [cashRes, salesRes] = await Promise.all([
+        fetch(`${API_URL}/cash/`, { headers }),
+        fetch(`${API_URL}/sales/`, { headers })
+      ]);
+      const cashData = await cashRes.json();
+      const salesData = await salesRes.json();
+
       setMovements(Array.isArray(cashData) ? cashData : []);
       setSales(Array.isArray(salesData) ? salesData : []);
+    } catch (err) {
+      console.error('Error cargando contabilidad:', err);
+    } finally {
       setLoading(false);
-    })
-    .catch(console.error);
+      setRefreshing(false);
+    }
   }, []);
 
-  const [editingMovement, setEditingMovement] = useState(null);
-  
-  const handleEditSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_URL}/cash/${editingMovement.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(editingMovement)
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setMovements(prev => prev.map(m => m.id === updated.id ? updated : m));
-        setEditingMovement(null);
-      }
-    } catch (err) { console.error(err); }
-  };
+  useEffect(() => {
+    loadData();
+    // Escuchar eventos de actualización de terminal y ventas
+    window.addEventListener('refresh-cash', loadData);
+    window.addEventListener('refresh-sales', loadData);
+    return () => {
+      window.removeEventListener('refresh-cash', loadData);
+      window.removeEventListener('refresh-sales', loadData);
+    };
+  }, [loadData]);
 
-  const handleDelete = async (id) => {
-    // Si es una venta virtual no se puede borrar desde aquí
-    if (String(id).startsWith('sale-')) return;
-    if (!window.confirm("¿Seguro que quieres eliminar este movimiento?")) return;
-    try {
-      const res = await fetch(`${API_URL}/cash/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) {
-        setMovements(prev => prev.filter(m => m.id !== id));
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  // Unificar movimientos físicos + ventas virtuales
+  // Unificar movimientos físicos + ventas automáticas
   const allMovements = useMemo(() => {
     const virtualSales = [];
     sales.forEach(s => {
       const history = s.payment_history || [];
-      const historyTotal = history.reduce((sum, p) => sum + p.amount, 0);
-      const initialPayment = s.amount_paid - historyTotal;
+      const historyTotal = history.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const initialPayment = (s.amount_paid || 0) - historyTotal;
 
       if (initialPayment > 0) {
         virtualSales.push({
           id: `sale-${s.id}-init`,
-          description: `VENTA #${s.id} - ${s.customer_name}`,
+          description: `VENTA #${s.id} - ${s.customer_name || 'CLIENTE FINAL'}`,
           amount: initialPayment,
           type: 'ENTRADA',
           category: 'VENTA',
           payment_date: s.created_at,
           created_at: s.created_at,
-          isVirtual: true
+          isVirtual: true,
+          channel: 'VENTA POS'
         });
       }
 
       history.forEach(p => {
         virtualSales.push({
           id: `sale-${s.id}-pay-${p.id}`,
-          description: `ABONO VENTA #${s.id} - ${s.customer_name}`,
-          amount: p.amount,
+          description: `ABONO VENTA #${s.id} - ${s.customer_name || 'CLIENTE FINAL'}`,
+          amount: p.amount || 0,
           type: 'ENTRADA',
           category: 'VENTA',
-          payment_date: p.payment_date,
-          created_at: p.payment_date,
-          isVirtual: true
+          payment_date: p.payment_date || p.created_at,
+          created_at: p.payment_date || p.created_at,
+          isVirtual: true,
+          channel: 'ABONO POS'
         });
       });
     });
-    
-    // Como ahora inyectamos las ventas automáticamente, filtramos cualquier registro MANUAL
-    // que el usuario haya hecho en el pasado usando la categoría "VENTA" para evitar duplicar el dinero.
+
+    // Filtramos registros manuales que el usuario haya hecho usando 'VENTA' para evitar duplicidad
     const realMovements = movements.filter(m => m.category !== 'VENTA');
-    
-    return [...realMovements, ...virtualSales].sort((a,b) => new Date(a.payment_date || a.created_at) - new Date(b.payment_date || b.created_at));
+
+    return [...realMovements, ...virtualSales].sort((a, b) => {
+      const dateA = toDateKey(a.payment_date || a.created_at);
+      const dateB = toDateKey(b.payment_date || b.created_at);
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (a.id || 0) - (b.id || 0);
+    });
   }, [movements, sales]);
 
-  // Filtrar y calcular arrastre
-  const processedData = useMemo(() => {
+  // Procesar saldo arrastrado y filtrado por fecha
+  const processedByDate = useMemo(() => {
     const effectiveEnd = endDate || getTodayCO();
-    
     let initialBalance = 0;
-    const filtered = [];
-    
+    const inRange = [];
+
     allMovements.forEach(m => {
-      const d = (m.payment_date || m.created_at || '').split('T')[0];
+      const d = toDateKey(m.payment_date || m.created_at);
       const isEntrada = m.type === 'ENTRADA';
-      
+      const amt = Number(m.amount) || 0;
+
       if (d < startDate) {
         // Movimientos antes del corte suman al saldo arrastrado
-        if (isEntrada) initialBalance += m.amount;
-        else initialBalance -= m.amount;
+        if (isEntrada) initialBalance += amt;
+        else initialBalance -= amt;
       } else if (d <= effectiveEnd) {
-        // Movimientos dentro del corte
-        filtered.push(m);
+        inRange.push(m);
       }
     });
 
-    return { initialBalance, filtered };
+    return { initialBalance, inRange };
   }, [allMovements, startDate, endDate]);
 
-  // Calculate Running Balance & Process Rows
-  const tableRows = [];
-  let currentBalance = processedData.initialBalance;
-  
-  // Agregar fila virtual de saldo inicial arrastrado
-  tableRows.push({
-    id: 'saldo-inicial',
-    fechaStr: startDate.split('-').reverse().join('/'),
-    description: 'SALDO ANTERIOR (ARRASTRE)',
-    entrada: null,
-    salida: null,
-    saldo: currentBalance,
-    category: 'INICIO',
-    isVirtual: true,
-    isInitial: true
-  });
-
-  processedData.filtered.forEach(m => {
-    const isEntrada = m.type === 'ENTRADA';
-    if (isEntrada) currentBalance += m.amount;
-    else currentBalance -= m.amount;
-    
-    tableRows.push({
-      ...m,
-      entrada: isEntrada ? m.amount : null,
-      salida: !isEntrada ? m.amount : null,
-      saldo: currentBalance,
-      fechaStr: getColDate(m.payment_date || m.created_at).toLocaleDateString('es-CO')
+  // Lista de todas las categorías disponibles para el filtro Excel
+  const availableCategories = useMemo(() => {
+    const set = new Set();
+    processedByDate.inRange.forEach(m => {
+      if (m.category) set.add(m.category.toUpperCase());
     });
-  });
+    return Array.from(set).sort();
+  }, [processedByDate.inRange]);
 
-  // Pivot Table Calculation
-  const pivotData = useMemo(() => {
-    const sums = {};
-    processedData.filtered.forEach(m => {
-      if (!sums[m.category]) sums[m.category] = { ENTRADAS: 0, SALIDAS: 0 };
-      if (m.type === 'ENTRADA') sums[m.category].ENTRADAS += m.amount;
-      else sums[m.category].SALIDAS += m.amount;
+  // Aplicar filtros interactivos tipo Excel (Buscador, Categoría, Tipo)
+  const filteredMovements = useMemo(() => {
+    let list = processedByDate.inRange;
+
+    // Filtro por Tipo (Entrada / Salida)
+    if (selectedType !== 'TODOS') {
+      list = list.filter(m => m.type === selectedType);
+    }
+
+    // Filtro por Categoría
+    if (selectedCategory !== 'TODAS') {
+      list = list.filter(m => (m.category || '').toUpperCase() === selectedCategory);
+    }
+
+    // Buscador en vivo
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+      list = list.filter(m => {
+        const text = `${m.description || ''} ${m.category || ''} ${m.type || ''}`.toLowerCase();
+        return text.includes(term);
+      });
+    }
+
+    return list;
+  }, [processedByDate.inRange, selectedType, selectedCategory, search]);
+
+  // Calcular filas con saldo acumulado progresivo
+  const { tableRows, currentBalance, totalEntradas, totalSalidas } = useMemo(() => {
+    const rows = [];
+    let runningBalance = processedByDate.initialBalance;
+    let sumEntradas = 0;
+    let sumSalidas = 0;
+
+    // Fila virtual de Saldo Inicial Arrastrado (siempre al inicio)
+    if (selectedType === 'TODOS' && selectedCategory === 'TODAS' && !search) {
+      rows.push({
+        id: 'saldo-inicial',
+        fechaStr: fmtDateDisplay(startDate),
+        description: 'SALDO ANTERIOR (ARRASTRE DE CAJA)',
+        entrada: null,
+        salida: null,
+        saldo: runningBalance,
+        category: 'INICIO',
+        type: 'INICIO',
+        isInitial: true,
+        isVirtual: true
+      });
+    }
+
+    processedByDate.inRange.forEach(m => {
+      const isEntrada = m.type === 'ENTRADA';
+      const amt = Number(m.amount) || 0;
+
+      if (isEntrada) {
+        runningBalance += amt;
+        sumEntradas += amt;
+      } else {
+        runningBalance -= amt;
+        sumSalidas += amt;
+      }
+
+      // Solo incluimos en las filas mostradas si cumple con los filtros activos
+      const matchesFilter = filteredMovements.some(f => f.id === m.id);
+      if (matchesFilter) {
+        rows.push({
+          ...m,
+          rawDate: toDateKey(m.payment_date || m.created_at),
+          fechaStr: fmtDateDisplay(m.payment_date || m.created_at),
+          entrada: isEntrada ? amt : null,
+          salida: !isEntrada ? amt : null,
+          saldo: runningBalance
+        });
+      }
     });
-    
-    const summary = Object.keys(sums).sort().map(cat => ({
-      category: cat,
-      entradas: sums[cat].ENTRADAS,
-      salidas: sums[cat].SALIDAS
-    }));
-    
-    const totalEntradas = summary.reduce((a, b) => a + b.entradas, 0);
-    const totalSalidas = summary.reduce((a, b) => a + b.salidas, 0);
-    
-    return { summary, totalEntradas, totalSalidas };
-  }, [processedData.filtered]);
 
-  if (loading) return <div className="p-8 text-slate-500 font-bold">Cargando contabilidad global...</div>;
+    return {
+      tableRows: rows,
+      currentBalance: runningBalance,
+      totalEntradas: sumEntradas,
+      totalSalidas: sumSalidas
+    };
+  }, [processedByDate, filteredMovements, selectedType, selectedCategory, search, startDate]);
+
+  // Resumen por Categoría (Pivot Table)
+  const categorySummary = useMemo(() => {
+    const map = {};
+    processedByDate.inRange.forEach(m => {
+      const cat = (m.category || 'VARIOS').toUpperCase();
+      if (!map[cat]) map[cat] = { category: cat, entradas: 0, salidas: 0, count: 0 };
+      const amt = Number(m.amount) || 0;
+      if (m.type === 'ENTRADA') map[cat].entradas += amt;
+      else map[cat].salidas += amt;
+      map[cat].count += 1;
+    });
+    return Object.values(map).sort((a, b) => (b.entradas + b.salidas) - (a.entradas + a.salidas));
+  }, [processedByDate.inRange]);
+
+  // Manejo de creación de movimiento
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault();
+    const amt = Number(newMovement.amount);
+    if (!amt || amt <= 0) {
+      alert('Ingresa un monto válido mayor a 0');
+      return;
+    }
+    if (!newMovement.description.trim()) {
+      alert('Ingresa una descripción para el movimiento');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fullDesc = newMovement.origin 
+        ? `${newMovement.description.trim().toUpperCase()} (${newMovement.origin.toUpperCase()})`
+        : newMovement.description.trim().toUpperCase();
+
+      const payload = {
+        description: fullDesc,
+        amount: amt,
+        type: newMovement.type,
+        category: newMovement.category.toUpperCase(),
+        payment_date: newMovement.payment_date ? `${newMovement.payment_date}T12:00:00` : undefined
+      };
+
+      const res = await fetch(`${API_URL}/cash/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        setIsCreateModalOpen(false);
+        setNewMovement({
+          type: 'SALIDA',
+          amount: '',
+          category: 'GASTO',
+          description: '',
+          payment_date: getTodayCO(),
+          origin: 'Efectivo en Casa'
+        });
+        await loadData();
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'Error al guardar el movimiento');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión al guardar movimiento');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Manejo de edición
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingMovement) return;
+
+    try {
+      const res = await fetch(`${API_URL}/cash/${editingMovement.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          description: editingMovement.description.toUpperCase(),
+          amount: Number(editingMovement.amount),
+          type: editingMovement.type,
+          category: editingMovement.category.toUpperCase(),
+          payment_date: editingMovement.payment_date ? `${editingMovement.payment_date}T12:00:00` : undefined
+        })
+      });
+
+      if (res.ok) {
+        setEditingMovement(null);
+        await loadData();
+      } else {
+        alert('No se pudo actualizar el movimiento');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Manejo de eliminación
+  const handleDelete = async (id) => {
+    if (String(id).startsWith('sale-') || id === 'saldo-inicial') return;
+    if (!window.confirm('¿Seguro que deseas eliminar este movimiento del flujo contable?')) return;
+
+    try {
+      const res = await fetch(`${API_URL}/cash/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        await loadData();
+      } else {
+        alert('No se pudo eliminar el movimiento');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Exportar tabla a CSV / Excel
+  const handleExportCSV = () => {
+    const headers = ['FECHA', 'DESCRIPCION', 'CATEGORIA', 'TIPO', 'ENTRADA', 'SALIDA', 'SALDO'];
+    const rows = tableRows.map(r => [
+      r.fechaStr || '',
+      `"${(r.description || '').replace(/"/g, '""')}"`,
+      r.category || '',
+      r.type || '',
+      r.entrada || 0,
+      r.salida || 0,
+      r.saldo || 0
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Flujo_Caja_EstiloNordico_${startDate}_a_${endDate || getTodayCO()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Botones de filtro rápido de fecha
+  const setQuickRange = (type) => {
+    const today = getTodayCO();
+    if (type === 'hoy') {
+      setStartDate(today);
+      setEndDate(today);
+    } else if (type === 'semana') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setStartDate(d.toISOString().split('T')[0]);
+      setEndDate(today);
+    } else if (type === 'mes') {
+      const d = new Date();
+      d.setDate(1); // Primer día del mes
+      setStartDate(d.toISOString().split('T')[0]);
+      setEndDate(today);
+    } else if (type === 'todo') {
+      setStartDate('2026-05-01');
+      setEndDate('');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 space-y-3">
+        <RefreshCw className="animate-spin text-indigo-600" size={32} />
+        <p className="font-bold text-slate-500 text-sm">Cargando contabilidad y flujo de caja global...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+    <div className="space-y-6 animate-in fade-in duration-300 pb-12">
       
-      {/* Header & Filtro de Rango Global */}
-      <div className="flex justify-between items-start">
+      {/* Header Principal con Botones Separados */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/90 shadow-xs">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Flujo de Caja Global (Contabilidad)</h2>
-          <p className="text-slate-500 text-sm">Consolidado de cierres de caja, arriendos, salarios y gastos macro.</p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contabilidad en Vivo</span>
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Flujo de Caja Global</h2>
+          <p className="text-slate-500 text-xs mt-0.5">
+            Registro contable de gastos de casa/caja mayor, reinversiones, nómina, ventas y arqueos.
+          </p>
         </div>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => window.dispatchEvent(new CustomEvent('open-terminal'))}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg hover:shadow-indigo-500/30"
+
+        {/* Botones de Acción Claramente Separados */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Botón 1: Registrar Movimiento de Caja Mayor / Flujo */}
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-indigo-100 cursor-pointer"
+            title="Registrar un gasto, reinversión, adelanto o entrada de dinero guardado"
           >
-            + Registrar Movimiento
+            <Plus size={16} />
+            <span>Registrar Movimiento</span>
+          </button>
+
+          {/* Botón 2: Abrir Terminal Diario POS */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-terminal'))}
+            className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border border-slate-200 shadow-2xs"
+            title="Abrir el terminal del día (caja diaria de la tienda física y base de $150k)"
+          >
+            <Store size={15} className="text-slate-500" />
+            <span className="hidden sm:inline">Terminal Diario POS</span>
+          </button>
+
+          {/* Botón 3: Exportar Excel */}
+          <button
+            onClick={handleExportCSV}
+            className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-emerald-700 rounded-2xl border border-slate-200 transition-all cursor-pointer shadow-2xs"
+            title="Descargar informe Excel/CSV"
+          >
+            <Download size={16} />
           </button>
         </div>
       </div>
 
-      {/* Selector de rango global (sincronizado con Ventas y Finanzas) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap gap-4 items-end shadow-sm">
-        <div className="flex items-center gap-2 mr-2">
-          <CalendarRange size={14} className="text-indigo-500" />
-          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Período del Corte</span>
-        </div>
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Desde</label>
-          <div className="flex items-center gap-2">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
+      {/* KPI Cards: Entradas, Salidas, Saldo Neto y Saldo Total */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Entradas */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+              Total Entradas (Período)
+            </span>
+            <h3 className="text-2xl font-black text-emerald-600 font-mono tracking-tight">
+              ${fmt(totalEntradas)}
+            </h3>
+            <span className="text-[10px] text-slate-400 font-medium">Ventas e ingresos</span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <ArrowUpRight size={24} />
           </div>
         </div>
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hasta (Automático = Hoy)</label>
-          <div className="flex items-center gap-2">
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:border-indigo-400" />
-            <button 
-              onClick={() => setEndDate(getTodayCO())}
-              className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-colors"
-            >
-              AL DÍA
-            </button>
-            <button 
-              onClick={() => setEndDate('')}
-              className="px-3 py-2 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-xl text-xs font-bold transition-colors"
-              title="Dejar abierto para que avance con el día de hoy automáticamente"
-            >
-              LIMPIAR
-            </button>
+
+        {/* Total Salidas / Gastos */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+              Total Salidas / Gastos
+            </span>
+            <h3 className="text-2xl font-black text-rose-600 font-mono tracking-tight">
+              ${fmt(totalSalidas)}
+            </h3>
+            <span className="text-[10px] text-slate-400 font-medium">Gastos, envíos y compras</span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <ArrowDownRight size={24} />
           </div>
         </div>
-        <div className="ml-auto text-[10px] font-bold text-slate-400 italic">
-          Sincronizado con Ventas &amp; Finanzas
+
+        {/* Flujo Neto del Período */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+              Flujo Neto del Período
+            </span>
+            <h3 className={`text-2xl font-black font-mono tracking-tight ${
+              (totalEntradas - totalSalidas) >= 0 ? 'text-indigo-600' : 'text-rose-600'
+            }`}>
+              ${fmt(totalEntradas - totalSalidas)}
+            </h3>
+            <span className="text-[10px] text-slate-400 font-medium">Entradas menos Salidas</span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <TrendingUp size={24} />
+          </div>
+        </div>
+
+        {/* Saldo Real Acumulado */}
+        <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-md text-white flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+              Saldo Real en Caja
+            </span>
+            <h3 className="text-2xl font-black text-white font-mono tracking-tight">
+              ${fmt(currentBalance)}
+            </h3>
+            <span className="text-[10px] text-slate-400 font-medium">Arrastre anterior + neto</span>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-white/10 text-emerald-400 flex items-center justify-center shrink-0">
+            <DollarSign size={24} />
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl border shadow-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Entradas</p>
-              <h3 className="text-2xl font-black text-emerald-600">${pivotData.totalEntradas.toLocaleString()}</h3>
+      {/* Barra de Filtros Tipo Excel */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-4">
+        {/* Fila 1: Filtro de fechas con botones rápidos */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 text-indigo-600 mr-2">
+              <CalendarRange size={16} />
+              <span className="text-[11px] font-black uppercase tracking-wider">Período Contable:</span>
             </div>
-            <div className="p-3 bg-emerald-50 text-emerald-500 rounded-xl"><TrendingUp size={20} /></div>
+
+            <div className="flex items-center gap-2">
+              <div>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-400">a</span>
+              <div>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Botones de Rango Rápido */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Rápidos:</span>
+            <button
+              onClick={() => setQuickRange('hoy')}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-colors cursor-pointer"
+            >
+              Hoy
+            </button>
+            <button
+              onClick={() => setQuickRange('semana')}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-colors cursor-pointer"
+            >
+              Última Semana
+            </button>
+            <button
+              onClick={() => setQuickRange('mes')}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-colors cursor-pointer"
+            >
+              Este Mes
+            </button>
+            <button
+              onClick={() => setQuickRange('todo')}
+              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-black transition-colors cursor-pointer"
+            >
+              Todo
+            </button>
           </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border shadow-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Salidas</p>
-              <h3 className="text-2xl font-black text-rose-600">${pivotData.totalSalidas.toLocaleString()}</h3>
-            </div>
-            <div className="p-3 bg-rose-50 text-rose-500 rounded-xl"><TrendingDown size={20} /></div>
+
+        {/* Fila 2: Filtros dinámicos (Buscador, Tipo y Categoría) */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Buscador de texto en tiempo real */}
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Buscar en operaciones: cliente, concepto, categoría, flete..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
-        </div>
-        <div className={`p-6 rounded-2xl border shadow-sm ${currentBalance >= 0 ? 'bg-slate-900 border-black' : 'bg-rose-900 border-rose-950'}`}>
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Saldo Real (Neto)</p>
-              <h3 className="text-3xl font-black text-white">${currentBalance.toLocaleString()}</h3>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Filtro por Tipo */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setSelectedType('TODOS')}
+                className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  selectedType === 'TODOS' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setSelectedType('ENTRADA')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  selectedType === 'ENTRADA' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:bg-white/50'
+                }`}
+              >
+                🟢 Entradas
+              </button>
+              <button
+                onClick={() => setSelectedType('SALIDA')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                  selectedType === 'SALIDA' ? 'bg-rose-600 text-white shadow-2xs' : 'text-rose-700 hover:bg-white/50'
+                }`}
+              >
+                🔴 Salidas
+              </button>
             </div>
-            <div className="p-3 bg-white/10 text-white rounded-xl"><DollarSign size={20} /></div>
+
+            {/* Filtro por Categoría tipo Excel */}
+            <div className="flex items-center gap-1">
+              <select
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="TODAS">📂 Todas las Categorías ({availableCategories.length})</option>
+                {availableCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Limpiar filtros si hay alguno activo */}
+            {(selectedCategory !== 'TODAS' || selectedType !== 'TODOS' || search) && (
+              <button
+                onClick={() => { setSelectedCategory('TODAS'); setSelectedType('TODOS'); setSearch(''); }}
+                className="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded-xl text-[10px] font-black uppercase transition-colors flex items-center gap-1"
+                title="Restablecer filtros"
+              >
+                <X size={12} /> Limpiar
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Tabla Excel */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border shadow-sm flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b bg-slate-50 flex justify-between items-center">
-             <h3 className="font-black text-slate-800 uppercase text-sm flex items-center gap-2"><FileText size={16}/> Historial de Operaciones</h3>
+      {/* Tabla del Historial de Operaciones (Ancho Completo, Elegante y sin Columnas Escondidas) */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex items-center gap-2">
+            <FileText size={18} className="text-indigo-600" />
+            <h3 className="font-black text-slate-900 text-sm uppercase tracking-wide">
+              Historial de Operaciones
+            </h3>
+            <span className="text-xs text-slate-400 font-bold ml-1">
+              ({tableRows.filter(r => !r.isInitial).length} registros en corte)
+            </span>
           </div>
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-left whitespace-nowrap">
-              <thead>
-                <tr className="bg-[#1e7e9e] text-white">
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider text-center">Fecha</th>
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider w-[40%] text-center">Descripción</th>
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider text-center">Entradas</th>
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider text-center">Salidas</th>
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider text-center">Saldo</th>
-                  <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase tracking-wider text-center">Cat</th>
-                  <th className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-center"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Lo invertimos para visualizar del más reciente al más antiguo, manteniendo el saldo ya calculado */}
-                {tableRows.slice().reverse().map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="px-4 py-1.5 border border-slate-200 text-xs font-bold text-slate-600 text-center">{row.fechaStr}</td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-xs font-bold text-slate-800 uppercase bg-[#d9f1fa]">{row.description}</td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-xs font-black text-emerald-600 text-right">
-                      {row.entrada ? row.entrada.toLocaleString() : ''}
+
+          <div className="text-[11px] font-bold text-slate-400">
+            {refreshing ? 'Sincronizando...' : 'Orden cronológico inverso'}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider">
+                <th className="px-4 py-3.5 text-center w-28">Fecha</th>
+                <th className="px-4 py-3.5">Concepto / Descripción</th>
+                <th className="px-4 py-3.5 text-center w-36">Categoría</th>
+                <th className="px-4 py-3.5 text-right w-36">Entradas (+)</th>
+                <th className="px-4 py-3.5 text-right w-36">Salidas (-)</th>
+                <th className="px-4 py-3.5 text-right w-36">Saldo Resultante</th>
+                <th className="px-4 py-3.5 text-center w-20">Acción</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
+              {tableRows.slice().reverse().map((row, i) => {
+                const isSalida = row.type === 'SALIDA';
+                const isEntrada = row.type === 'ENTRADA';
+
+                return (
+                  <tr 
+                    key={row.id || i} 
+                    className={`transition-colors hover:bg-slate-50/80 ${
+                      row.isInitial ? 'bg-amber-50/40 font-bold' : ''
+                    } ${isSalida ? 'bg-rose-50/10' : ''}`}
+                  >
+                    {/* Fecha */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap font-mono text-xs text-slate-600 font-bold">
+                      {row.fechaStr}
                     </td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-xs font-black text-rose-600 text-right">
-                       {row.salida ? row.salida.toLocaleString() : ''}
+
+                    {/* Descripción con badge de canal */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-900 uppercase">
+                          {row.description}
+                        </span>
+                        {row.channel && (
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
+                            {row.channel}
+                          </span>
+                        )}
+                        {row.isInitial && (
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
+                            Base Arrastre
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-xs font-black text-slate-800 text-right bg-[#d9f1fa]">
-                      {row.saldo.toLocaleString()}
+
+                    {/* Categoría */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <span className={`inline-block px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                        row.category === 'VENTA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        row.category === 'CIERRE CAJA' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                        row.category === 'REINVERSION' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                        row.category === 'GASTO' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                        row.category === 'ADELANTO' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                        row.category === 'SALARIO' ? 'bg-cyan-50 text-cyan-800 border border-cyan-200' :
+                        'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}>
+                        {row.category}
+                      </span>
                     </td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-[10px] font-black text-slate-500 text-center uppercase">
-                      {row.category}
+
+                    {/* Entradas (+) */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap font-mono font-black text-sm text-emerald-600">
+                      {row.entrada ? `+$${fmt(row.entrada)}` : <span className="text-slate-200 font-normal">-</span>}
                     </td>
-                    <td className="px-4 py-1.5 border border-slate-200 text-center">
-                      {!row.isVirtual && (
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => setEditingMovement({
-                            id: row.id, description: row.description, amount: row.amount, 
-                            type: row.type, category: row.category, 
-                            payment_date: row.payment_date ? row.payment_date.split('T')[0] : row.created_at.split('T')[0]
-                          })} className="text-slate-400 hover:text-indigo-600 transition-colors">
-                            <Edit2 size={14} />
+
+                    {/* Salidas (-) */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap font-mono font-black text-sm text-rose-600">
+                      {row.salida ? `-$${fmt(row.salida)}` : <span className="text-slate-200 font-normal">-</span>}
+                    </td>
+
+                    {/* Saldo Resultante */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap font-mono font-black text-sm text-slate-800 bg-slate-50/50">
+                      ${fmt(row.saldo)}
+                    </td>
+
+                    {/* Acciones */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      {!row.isVirtual && !row.isInitial ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setEditingMovement({
+                              id: row.id,
+                              description: row.description,
+                              amount: row.amount,
+                              type: row.type,
+                              category: row.category,
+                              payment_date: toDateKey(row.payment_date || row.created_at)
+                            })}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            title="Editar movimiento"
+                          >
+                            <Edit2 size={13} />
                           </button>
-                          <button onClick={() => handleDelete(row.id)} className="text-slate-400 hover:text-rose-600 transition-colors">
-                            <Trash2 size={14} />
+                          <button
+                            onClick={() => handleDelete(row.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar movimiento"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
+                      ) : (
+                        <span className="text-[9px] font-bold text-slate-300 uppercase">Automático</span>
                       )}
-                      {row.isInitial && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Base</span>}
-                      {row.isVirtual && !row.isInitial && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Venta Auto</span>}
                     </td>
                   </tr>
-                ))}
-                {tableRows.length === 0 && (
-                  <tr>
-                    <td colSpan="7" className="px-4 py-8 text-center border text-slate-400 font-bold italic text-sm">Vacíe, no hay asientos registrados.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                );
+              })}
 
-        {/* Tabla Pivote (Resumen) */}
-        <div className="lg:col-span-1 flex flex-col gap-6">
-          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b bg-slate-50">
-               <h3 className="font-black text-slate-800 uppercase text-sm mb-1">Resumen por Categoría</h3>
-               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Suma de Entradas vs Salidas</p>
-            </div>
-            <div className="overflow-x-auto w-full">
-              <table className="w-full text-left whitespace-nowrap">
-                <thead>
-                   <tr className="bg-[#1e7e9e] text-white">
-                      <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase">Etiquetas de fila</th>
-                      <th className="px-4 py-2 border-r border-[#15607a] text-[10px] font-black uppercase text-center">Suma Entradas</th>
-                      <th className="px-4 py-2 text-[10px] font-black uppercase text-center">Suma Salidas</th>
-                   </tr>
-                </thead>
-                <tbody>
-                  {pivotData.summary.map((row, i) => (
-                    <tr key={i}>
-                       <td className="px-4 py-1.5 border-b border-r text-xs font-bold text-slate-800 uppercase">{row.category}</td>
-                       <td className="px-4 py-1.5 border-b border-r text-xs font-bold text-slate-600 text-right">
-                          {row.entradas > 0 ? row.entradas.toLocaleString() : ''}
-                       </td>
-                       <td className="px-4 py-1.5 border-b text-xs font-bold text-slate-600 text-right">
-                          {row.salidas > 0 ? row.salidas.toLocaleString() : ''}
-                       </td>
-                    </tr>
-                  ))}
-                  <tr className="bg-[#d9f1fa]">
-                     <td className="px-4 py-2 border-t-2 border-slate-300 text-xs font-black text-slate-900 uppercase">Total general</td>
-                     <td className="px-4 py-2 border-t-2 border-r border-slate-300 text-xs font-black text-emerald-700 text-right">{pivotData.totalEntradas.toLocaleString()}</td>
-                     <td className="px-4 py-2 border-t-2 border-slate-300 text-xs font-black text-rose-700 text-right">{pivotData.totalSalidas.toLocaleString()}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          
-          <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
-             <CalendarIcon size={32} strokeWidth={1.5} className="mx-auto text-slate-300 mb-2"/>
-             <p className="text-xs font-bold text-slate-500">¿Deseas agregar un movimiento macro?</p>
-             <p className="text-[10px] text-slate-400 mt-1">Usa la pestaña CAJA del Terminal para registrar cobros como Rentas o Salarios antes de cerrar.</p>
-          </div>
-        </div>
+              {tableRows.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-400 text-xs font-bold">
+                    No se encontraron operaciones en el rango o con los filtros seleccionados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
 
+            {/* Footer de Totales */}
+            <tfoot>
+              <tr className="bg-slate-100/80 font-black text-xs text-slate-800 border-t-2 border-slate-200">
+                <td colSpan="3" className="px-4 py-3 text-right uppercase tracking-wider">
+                  Totales del Período:
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-emerald-700 text-sm">
+                  +${fmt(totalEntradas)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-rose-700 text-sm">
+                  -${fmt(totalSalidas)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-slate-900 text-base bg-slate-200/60">
+                  ${fmt(currentBalance)}
+                </td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
 
-      {/* Edit Modal */}
-      {editingMovement && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleEditSubmit} className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-slate-800 text-lg uppercase">Editar Movimiento</h3>
-              <button type="button" onClick={() => setEditingMovement(null)} className="text-slate-400 hover:text-slate-700">
+      {/* Resumen por Categoría (Estilo Tarjetas / Análisis) */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs p-6">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <Tag size={18} className="text-indigo-600" /> Resumen Consolidado por Categoría
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">Suma total de entradas vs salidas clasificadas en el período.</p>
+          </div>
+          <span className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-1 rounded-xl">
+            {categorySummary.length} categorías registradas
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {categorySummary.map((item, i) => {
+            const neto = item.entradas - item.salidas;
+            return (
+              <div key={i} className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">
+                    {item.category}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {item.count} mov.
+                  </span>
+                </div>
+
+                <div className="space-y-1 text-xs font-mono">
+                  {item.entradas > 0 && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span className="text-[10px] font-sans text-slate-500">Entradas:</span>
+                      <span className="font-bold">+${fmt(item.entradas)}</span>
+                    </div>
+                  )}
+                  {item.salidas > 0 && (
+                    <div className="flex justify-between text-rose-600">
+                      <span className="text-[10px] font-sans text-slate-500">Salidas:</span>
+                      <span className="font-bold">-${fmt(item.salidas)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-1 border-t border-slate-200 font-black text-slate-900">
+                    <span className="text-[10px] font-sans text-slate-400">Neto:</span>
+                    <span>${fmt(neto)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* MODAL 1: REGISTRAR MOVIMIENTO CONTABLE / CAJA MAYOR            */}
+      {/* ============================================================== */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header del Modal */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+                  <Wallet size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Registrar Movimiento Contable</h3>
+                  <p className="text-[11px] text-slate-400 font-medium">Gasto de casa/caja mayor, nómina, reinversión o aporte</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              >
                 <X size={20} />
               </button>
             </div>
-            
-            <div className="space-y-4">
+
+            {/* Formulario */}
+            <form onSubmit={handleCreateSubmit} className="p-6 space-y-4">
+              {/* Selector de Tipo (Salida vs Entrada) */}
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Descripción</label>
-                <input value={editingMovement.description} onChange={e => setEditingMovement({...editingMovement, description: e.target.value})} 
-                  className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 font-bold text-sm outline-none focus:border-indigo-400 uppercase" required />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Monto</label>
-                <div className="flex items-center border-2 border-slate-100 rounded-2xl px-4 py-3">
-                  <span className="font-black text-slate-400 mr-2">$</span>
-                  <input type="number" value={editingMovement.amount} onChange={e => setEditingMovement({...editingMovement, amount: parseFloat(e.target.value)})} 
-                    className="w-full outline-none font-black text-lg text-slate-800" required />
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                  Tipo de Movimiento
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setNewMovement({ ...newMovement, type: 'SALIDA', category: 'GASTO' })}
+                    className={`py-2.5 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      newMovement.type === 'SALIDA' 
+                        ? 'bg-rose-600 text-white shadow-sm' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <ArrowDownRight size={16} />
+                    <span>Salida / Gasto (-)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewMovement({ ...newMovement, type: 'ENTRADA', category: 'OTRA ENTRADA' })}
+                    className={`py-2.5 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      newMovement.type === 'ENTRADA' 
+                        ? 'bg-emerald-600 text-white shadow-sm' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <ArrowUpRight size={16} />
+                    <span>Entrada / Ingreso (+)</span>
+                  </button>
                 </div>
               </div>
+
+              {/* Monto ($) */}
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                  Monto en Pesos ($)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">$</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    placeholder="Ej: 95000"
+                    value={newMovement.amount}
+                    onChange={e => setNewMovement({ ...newMovement, amount: e.target.value })}
+                    className="w-full pl-8 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-mono text-lg font-black text-slate-900 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Fila: Fecha y Categoría */}
               <div className="grid grid-cols-2 gap-3">
+                {/* Fecha */}
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
-                  <select value={editingMovement.type} onChange={e => setEditingMovement({...editingMovement, type: e.target.value})} 
-                    className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none">
-                    <option value="SALIDA">SALIDA</option>
-                    <option value="ENTRADA">ENTRADA</option>
-                  </select>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                    Fecha del Movimiento
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newMovement.payment_date}
+                    onChange={e => setNewMovement({ ...newMovement, payment_date: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                  />
                 </div>
+
+                {/* Categoría */}
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Categoría</label>
-                  <select value={editingMovement.category} onChange={e => setEditingMovement({...editingMovement, category: e.target.value})} 
-                    className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none uppercase">
-                    <option value="GASTO">GASTO</option>
-                    <option value="SALARIO">SALARIO</option>
-                    <option value="ADELANTO">ADELANTO</option>
-                    <option value="DEVOLUCION">DEVOLUCION</option>
-                    <option value="REINVERSION">REINVERSIÓN</option>
-                    <option value="PRESTAMO">PRÉSTAMO</option>
-                    <option value="GANANCIA">GANANCIA</option>
-                    <option value="OTRA ENTRADA">OTRA ENTRADA</option>
-                    <option value="INGRESO_VENTA_EXTERNA">INGRESO_VENTA_EXTERNA</option>
-                    <option value="OTROS">OTROS</option>
-                    <option value="OTRO">OTRO</option>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                    Categoría
+                  </label>
+                  <select
+                    value={newMovement.category}
+                    onChange={e => setNewMovement({ ...newMovement, category: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    {newMovement.type === 'SALIDA' ? (
+                      <>
+                        <option value="GASTO">GASTO OPERATIVO (Fletes, envíos, insumos)</option>
+                        <option value="REINVERSION">REINVERSIÓN (Compra de mercancía / ropa)</option>
+                        <option value="ADELANTO">ADELANTO DE SUELDO</option>
+                        <option value="SALARIO">SALARIO / NÓMINA</option>
+                        <option value="ARRIENDO Y SERVICIOS">ARRIENDO Y SERVICIOS</option>
+                        <option value="DEVOLUCION">DEVOLUCIÓN DE DINERO</option>
+                        <option value="PRESTAMO">PRÉSTAMO</option>
+                        <option value="OTRO">OTRO</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="OTRA ENTRADA">APORTE / DINERO EN CASA</option>
+                        <option value="VENTA EXTERNA">VENTA EXTERNA / DIRECTA</option>
+                        <option value="GANANCIA">GANANCIA / RENDIMIENTOS</option>
+                        <option value="PRESTAMO">PRÉSTAMO RECIBIDO</option>
+                        <option value="OTROS">OTROS INGRESOS</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
+
+              {/* Origen / Fondo */}
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha</label>
-                <input type="date" value={editingMovement.payment_date} onChange={e => setEditingMovement({...editingMovement, payment_date: e.target.value})} 
-                  className="w-full border-2 border-slate-100 rounded-2xl px-3 py-3 font-bold text-xs outline-none" required />
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                  Origen / Fondo del Dinero
+                </label>
+                <select
+                  value={newMovement.origin}
+                  onChange={e => setNewMovement({ ...newMovement, origin: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="Efectivo en Casa">🏠 Efectivo en Casa / Caja Mayor</option>
+                  <option value="Nequi / Bancolombia">📱 Transferencia (Nequi / Bancolombia)</option>
+                  <option value="Caja Tienda">🏪 Efectivo de la Tienda Física</option>
+                  <option value="Otro">Otro</option>
+                </select>
               </div>
-            </div>
-            
-            <button type="submit" className="w-full bg-indigo-600 text-white rounded-2xl py-4 font-black uppercase text-xs hover:bg-indigo-700 shadow-lg mt-6">
-              Guardar Cambios
-            </button>
-          </form>
+
+              {/* Descripción */}
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                  Descripción o Concepto
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Envío chaquetas 5080, Adelanto Cristian, Pago arriendo..."
+                  value={newMovement.description}
+                  onChange={e => setNewMovement({ ...newMovement, description: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 uppercase"
+                />
+              </div>
+
+              {/* Botón Guardar */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                  <span>Guardar Movimiento Contable</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* MODAL 2: EDITAR MOVIMIENTO                                      */}
+      {/* ============================================================== */}
+      {editingMovement && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <h3 className="font-black text-slate-900 text-sm">Editar Movimiento</h3>
+              <button onClick={() => setEditingMovement(null)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-3.5">
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Descripción</label>
+                <input
+                  type="text"
+                  required
+                  value={editingMovement.description}
+                  onChange={e => setEditingMovement({ ...editingMovement, description: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl font-bold text-xs outline-none focus:border-indigo-500 uppercase"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Monto ($)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editingMovement.amount}
+                    onChange={e => setEditingMovement({ ...editingMovement, amount: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl font-mono font-black text-sm outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Fecha</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingMovement.payment_date}
+                    onChange={e => setEditingMovement({ ...editingMovement, payment_date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl font-bold text-xs outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Tipo</label>
+                  <select
+                    value={editingMovement.type}
+                    onChange={e => setEditingMovement({ ...editingMovement, type: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl font-bold text-xs outline-none"
+                  >
+                    <option value="SALIDA">SALIDA (-)</option>
+                    <option value="ENTRADA">ENTRADA (+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Categoría</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingMovement.category}
+                    onChange={e => setEditingMovement({ ...editingMovement, category: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl font-bold text-xs outline-none uppercase"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMovement(null)}
+                  className="flex-1 py-2.5 border rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase hover:bg-indigo-700 shadow-sm cursor-pointer"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
-};
-
-export default CashFlow;
+}
