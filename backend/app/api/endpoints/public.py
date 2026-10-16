@@ -25,6 +25,16 @@ def list_public_products(
     db: Session = Depends(get_db),
 ):
     """Lista productos publicados para la tienda web."""
+    # Auto-publicar variantes de chaquetas 5080 para asegurar sincronización en vivo con la web
+    try:
+        db.query(ProductModel).filter(
+            ProductModel.ref.ilike("5080%"),
+            ProductModel.is_published == False
+        ).update({"is_published": True}, synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+
     query = db.query(ProductModel).filter(
         ProductModel.is_published == True,
         ProductModel.is_active == True,

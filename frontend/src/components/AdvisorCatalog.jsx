@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
 import { WEB_STORE_URL } from '../config/api';
+import { getProductWebUrl } from '../utils/webUrlHelper';
 
 const fmt = (num) => Number(num || 0).toLocaleString('es-CO');
 
@@ -145,11 +146,8 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
     : (product.stock || 0);
 
   const productWebUrl = useMemo(() => {
-    if (!product.is_published) return WEB_STORE_URL;
-    if (product.slug) return `${WEB_STORE_URL}/chaquetas/${product.slug}`;
-    if (product.ref) return `${WEB_STORE_URL}/chaquetas/${product.ref.toLowerCase()}`;
-    return WEB_STORE_URL;
-  }, [product.is_published, product.slug, product.ref]);
+    return getProductWebUrl(product, selectedColor !== 'TODOS' ? selectedColor : (activeVariant?.color || null));
+  }, [product, selectedColor, activeVariant]);
 
   // Copia inteligente y contextual a WhatsApp
   const handleCopyWhatsApp = () => {
@@ -542,11 +540,8 @@ function CompactAdvisorProductCard({ product, variants = [], isAdmin, onEditProd
   }, [product.images, variants]);
 
   const productWebUrl = useMemo(() => {
-    if (!product.is_published) return WEB_STORE_URL;
-    if (product.slug) return `${WEB_STORE_URL}/chaquetas/${product.slug}`;
-    if (product.ref) return `${WEB_STORE_URL}/chaquetas/${product.ref.toLowerCase()}`;
-    return WEB_STORE_URL;
-  }, [product.is_published, product.slug, product.ref]);
+    return getProductWebUrl(product);
+  }, [product]);
 
   const hasDiscount = product.compare_price && product.compare_price > product.price_sale;
 

@@ -11,6 +11,7 @@ import VariantBreakdownModal from '../components/VariantBreakdownModal';
 import BatchStockEntryModal from '../components/BatchStockEntryModal';
 import { useAuth } from '../context/AuthContext';
 import { API_URL, WEB_STORE_URL } from '../config/api';
+import { getProductWebUrl } from '../utils/webUrlHelper';
 
 function AssetValuationCard({ products, variantStats }) {
   const STORAGE_KEY = 'inv_ajuste_creditos_externos';
@@ -1147,7 +1148,7 @@ export default function Inventory() {
                                 </button>
                                 {p.is_published && (
                                   <a
-                                    href={p.slug ? `${WEB_STORE_URL}/chaquetas/${p.slug}` : (p.ref ? `${WEB_STORE_URL}/chaquetas/${p.ref.toLowerCase()}` : WEB_STORE_URL)}
+                                    href={getProductWebUrl(p)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"

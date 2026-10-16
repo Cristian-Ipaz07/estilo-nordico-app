@@ -437,7 +437,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
         my_cost: baseProduct.my_cost || 0,
         stock: Number(quantity) || 0,
         product_type: baseProduct.product_type || 'ROPA',
-        is_published: false,
+        is_published: baseProduct.is_published !== false,
         images: inheritedImages
       };
 
