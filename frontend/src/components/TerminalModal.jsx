@@ -33,11 +33,23 @@ const fmtDateTime = (iso) => {
 
 function useStickyState(defaultValue, key) {
   const [value, setValue] = useState(() => {
-    const stickyValue = window.localStorage.getItem(key);
-    return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+    try {
+      const stickyValue = window.localStorage.getItem(key);
+      if (!stickyValue || stickyValue === 'undefined' || stickyValue === 'null') return defaultValue;
+      return JSON.parse(stickyValue);
+    } catch (e) {
+      console.warn(`Error al leer clave ${key} de localStorage:`, e);
+      return defaultValue;
+    }
   });
   useEffect(() => {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    try {
+      if (value !== undefined) {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (e) {
+      console.warn(`Error al guardar clave ${key} en localStorage:`, e);
+    }
   }, [key, value]);
   return [value, setValue];
 }
@@ -80,21 +92,27 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const [vendedorId, setVendedorId] = useStickyState(user?.id || '', 'en_terminal_vendedor');
 
   useEffect(() => {
-    if (user && !vendedorId) setVendedorId(user.id);
-  }, [user]);
+    if (user?.id) {
+      if (!isAdmin || !vendedorId) {
+        setVendedorId(user.id);
+      }
+    }
+  }, [user, isAdmin]);
 
   useEffect(() => {
-    fetch(`${API_URL}/users/`, {
-       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (Array.isArray(data)) {
-         setSellers(data.filter(u => u.status === 'Activo'));
-      }
-    })
-    .catch(console.error);
-  }, []);
+    if (isAdmin) {
+      fetch(`${API_URL}/users/`, {
+         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+           setSellers(data.filter(u => u.status === 'Activo'));
+        }
+      })
+      .catch(console.error);
+    }
+  }, [isAdmin]);
   const [amountPaid, setAmountPaid] = useState(0);
   const [saleDate, setSaleDate] = useState(getTodayCO());
   const [isDelivery, setIsDelivery] = useState(false);
@@ -205,24 +223,34 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const handleFinalizar = async () => {
     if (cart.length === 0 || hasStockError || isSubmitting) return;
     setIsSubmitting(true);
+    if (isDelivery && !deliveryAddress.trim()) {
+      alert("Por favor ingresa la dirección de entrega para el domicilio.");
+      return;
+    }
+
+    const chosenUserId = isAdmin ? (Number(vendedorId) || user?.id || null) : (user?.id || null);
+
+    const saleStatus = isDelivery 
+      ? "en_domicilio" 
+      : (!isAdmin ? "por_confirmar" : (Number(amountPaid) < totalVenta ? "separado" : "pagado"));
+
     const payload = {
-      customer_name: customer,
+      customer_name: (customer || "CLIENTE FINAL").trim(),
       total_price: totalVenta,
-      sale_channel: "LOCAL",
-      user_id: isAdmin ? Number(vendedorId) : user.id,
-      created_by: user.id,
-      amount_paid: Number(amountPaid),
+      sale_channel: isDelivery ? "DOMICILIO" : "LOCAL",
+      user_id: chosenUserId,
+      amount_paid: Number(amountPaid || 0),
       sale_date: saleDate,
-      status: isDelivery ? "en_domicilio" : (!isAdmin ? "por_confirmar" : undefined),
-      delivery_address: isDelivery ? deliveryAddress : null,
-      delivery_notes: isDelivery ? deliveryNotes : null,
+      status: saleStatus,
+      delivery_address: isDelivery ? deliveryAddress.trim() : null,
+      delivery_notes: isDelivery ? deliveryNotes.trim() : null,
       items: cart.map(i => ({
         product_id: i.id,
         quantity: i.qty,
-        // Bug 3: precio real vendido = total de fila / cantidad (captura descuentos editados)
-        unit_price: i.qty > 0 ? Math.round(i.total_item / i.qty) : i.original_price,
+        unit_price: i.qty > 0 ? Math.round(i.total_item / i.qty) : (i.original_price || 0),
       })),
     };
+
     try {
       const res = await fetch(`${API_URL}/sales/`, {
         method: 'POST',
@@ -232,23 +260,38 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
         },
         body: JSON.stringify(payload),
       });
+
       if (!res.ok) {
-        const errData = await res.json();
-        // FastAPI devuelve detail como string o array de objetos de validación
+        const errData = await res.json().catch(() => ({}));
         const msg = Array.isArray(errData.detail)
           ? errData.detail.map(d => `${d.loc?.join('.')} → ${d.msg}`).join('\n')
-          : (errData.detail || 'Error desconocido');
+          : (errData.detail || `Error del servidor HTTP ${res.status}`);
         throw new Error(msg);
       }
+
       const isSep = Number(amountPaid) < totalVenta;
-      setSuccessMsg(!isAdmin ? '¡Pedido registrado por confirmar!' : (isSep ? '¡Separado registrado!' : '¡Venta finalizada!'));
-      setTimeout(() => setSuccessMsg(''), 3000);
+      const successText = isDelivery 
+        ? '¡Domicilio registrado con éxito!' 
+        : (!isAdmin ? '¡Pedido registrado por confirmar!' : (isSep ? '¡Separado registrado!' : '¡Venta finalizada!'));
+
+      setSuccessMsg(successText);
+      setTimeout(() => setSuccessMsg(''), 3500);
       window.dispatchEvent(new CustomEvent('refresh-sales'));
       reloadInventory();
-      setCart([]); setCustomer('CLIENTE FINAL'); setVendedorId(user?.id || ''); setAmountPaid(0); setSearch(''); setFilteredResults([]);
+      setCart([]); 
+      setCustomer('CLIENTE FINAL'); 
+      setVendedorId(user?.id || ''); 
+      setAmountPaid(0); 
+      setSearch(''); 
+      setFilteredResults([]);
+      setDeliveryAddress('');
+      setDeliveryNotes('');
+      setIsDelivery(false);
     } catch (e) {
-      alert(`Error al guardar venta:\n${e.message}`);
-    } finally { setIsSubmitting(false); }
+      alert(`Error al registrar el pedido:\n${e.message}`);
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   return (
@@ -350,6 +393,65 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Modalidad de Entrega: Local / Tienda vs Envío a Domicilio */}
+      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/90 mb-3 space-y-2 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+            <Truck size={14} className="text-indigo-600" /> Modalidad del Pedido:
+          </span>
+          <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => { setIsDelivery(false); setAmountPaid(totalVenta); }}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                !isDelivery 
+                  ? 'bg-white text-slate-900 shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🛍️ Venta Local / Tienda
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsDelivery(true); setAmountPaid(0); }}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                isDelivery 
+                  ? 'bg-indigo-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🛵 Envío a Domicilio (Contraentrega)
+            </button>
+          </div>
+        </div>
+
+        {/* Campos obligatorios y adicionales para Domicilio */}
+        {isDelivery && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-200/70 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-indigo-200 shadow-2xs">
+              <Truck size={15} className="text-indigo-600 shrink-0" />
+              <input
+                type="text"
+                placeholder="Dirección exacta y Barrio (ej: Cra 25 # 14-20 B/ Maridiaz)..."
+                value={deliveryAddress}
+                onChange={e => setDeliveryAddress(e.target.value)}
+                className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
+              />
+            </div>
+            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
+              <AlertCircle size={15} className="text-amber-500 shrink-0" />
+              <input
+                type="text"
+                placeholder="Teléfono y Notas (ej: 315 123 4567 - cobrar contraentrega)..."
+                value={deliveryNotes}
+                onChange={e => setDeliveryNotes(e.target.value)}
+                className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabla carrito */}

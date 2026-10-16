@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Filter, Package, Globe, Copy, Check, Edit3, 
   ExternalLink, X, Eye, Sparkles, Layers, Tag, ChevronRight,
@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
 import { copyImageToClipboard } from '../utils/clipboardHelper';
-import { Camera, Link as LinkIcon, Share2 } from 'lucide-react';
+import { Camera, Link as LinkIcon, Share2, Palette, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import { WEB_STORE_URL } from '../config/api';
 import { getProductWebUrl } from '../utils/webUrlHelper';
 
@@ -35,7 +35,6 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
       setTimeout(() => setCopiedImg(false), 2500);
     } catch (e) {
       console.error(e);
-      window.open(normalizeImageUrl(heroImage), '_blank');
     }
   };
 
@@ -549,7 +548,6 @@ function CompactAdvisorProductCard({ product, variants = [], isAdmin, onEditProd
       setTimeout(() => setCopiedImg(false), 2500);
     } catch (err) {
       console.error(err);
-      window.open(normalizeImageUrl(cardImage), '_blank');
     }
   };
 
@@ -784,6 +782,9 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
   const [search, setSearch] = useState('');
   const [selectedType, setSelectedType] = useState('TODOS');
   const [selectedSizes, setSelectedSizes] = useState([]);
+  const [selectedColors, setSelectedColors] = useState([]);
+  const [isColorMenuOpen, setIsColorMenuOpen] = useState(false);
+  const colorMenuRef = useRef(null);
   const [onlyInStock, setOnlyInStock] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCatalog, setCopiedCatalog] = useState(false);
@@ -815,6 +816,29 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
   }, [products, allProducts]);
 
   // Lista de tallas comunes para el filtro rápido superior
+  // Cerrar desplegable de colores al hacer clic fuera
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (colorMenuRef.current && !colorMenuRef.current.contains(e.target)) {
+        setIsColorMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Lista dinámica de todos los colores registrados en inventario con stock > 0
+  const availableColorsList = useMemo(() => {
+    const set = new Set();
+    (allProducts || []).forEach(p => {
+      const c = (p.color || '').trim().toUpperCase();
+      if (c && c !== 'UNICO' && c !== 'ÚNICO' && (p.stock || 0) > 0) {
+        set.add(c);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [allProducts]);
+
   const commonFilterSizes = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38'];
 
   // Filtrado reactivo de productos
@@ -834,6 +858,19 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
           return vars.some(v => selectedSizes.includes((v.size || '').toUpperCase()) && (v.stock || 0) > 0);
         }
         return selectedSizes.includes((p.size || '').toUpperCase()) && (p.stock || 0) > 0;
+      });
+    }
+
+    // Filtro por Color(es) Seleccionado(s) desde el menú desplegable
+    if (selectedColors.length > 0) {
+      list = list.filter(p => {
+        const vars = variantsByParent[p.id] || [];
+        if (vars.length > 0) {
+          return vars.some(v => 
+            selectedColors.includes((v.color || '').trim().toUpperCase()) && (v.stock || 0) > 0
+          );
+        }
+        return selectedColors.includes((p.color || '').trim().toUpperCase()) && (p.stock || 0) > 0;
       });
     }
 
@@ -889,7 +926,7 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
       return (a.ref || '').localeCompare(b.ref || '', 'es');
     });
-  }, [products, selectedType, selectedSizes, onlyInStock, search, variantsByParent]);
+  }, [products, selectedType, selectedSizes, selectedColors, onlyInStock, search, variantsByParent]);
 
   const toggleSize = (s) => {
     setSelectedSizes(prev => 
@@ -897,10 +934,23 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
     );
   };
 
+  const toggleColor = (c) => {
+    setSelectedColors(prev => 
+      prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+    );
+  };
+
   const handleCopyFilteredLink = () => {
     let url = `${WEB_STORE_URL}/chaquetas`;
+    const params = [];
     if (selectedSizes.length > 0) {
-      url += `?talla=${encodeURIComponent(selectedSizes.join(','))}`;
+      params.push(`talla=${encodeURIComponent(selectedSizes.join(','))}`);
+    }
+    if (selectedColors.length > 0) {
+      params.push(`color=${encodeURIComponent(selectedColors.join(','))}`);
+    }
+    if (params.length > 0) {
+      url += `?${params.join('&')}`;
     }
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
@@ -908,8 +958,12 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
   };
 
   const handleCopyCatalogSummary = () => {
-    let title = selectedSizes.length > 0 
-      ? `❄️ *DISPONIBLES EN TALLA ${selectedSizes.join(' / ')}* ❄️\n`
+    let titleParts = [];
+    if (selectedSizes.length > 0) titleParts.push(`TALLA ${selectedSizes.join(' / ')}`);
+    if (selectedColors.length > 0) titleParts.push(`COLOR ${selectedColors.join(' / ')}`);
+
+    let title = titleParts.length > 0 
+      ? `❄️ *DISPONIBLES EN ${titleParts.join(' - ')}* ❄️\n`
       : `❄️ *CATÁLOGO DE PRENDAS DISPONIBLES* ❄️\n`;
     
     let text = title;
@@ -917,20 +971,26 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
     filtered.slice(0, 15).forEach(p => {
       const vars = variantsByParent[p.id] || [];
-      const availableInSizes = selectedSizes.length > 0
-        ? vars.filter(v => selectedSizes.includes((v.size || '').toUpperCase()) && (v.stock || 0) > 0)
-        : vars.filter(v => (v.stock || 0) > 0);
+      const availableItems = vars.length > 0
+        ? vars.filter(v => {
+            const matchesSize = selectedSizes.length === 0 || selectedSizes.includes((v.size || '').toUpperCase());
+            const matchesColor = selectedColors.length === 0 || selectedColors.includes((v.color || '').trim().toUpperCase());
+            return matchesSize && matchesColor && (v.stock || 0) > 0;
+          })
+        : [p];
 
-      const colorsArr = Array.from(new Set(availableInSizes.map(v => v.color).filter(Boolean)));
-      const colorsStr = colorsArr.length > 0 ? colorsArr.join(', ') : 'Disponible';
+      const colorsArr = Array.from(new Set(availableItems.map(v => v.color).filter(Boolean)));
+      const colorsStr = colorsArr.length > 0 ? colorsArr.join(', ') : (p.color || 'Disponible');
       text += `• *${p.name}* (Ref: ${p.ref})\n`;
       text += `  🎨 Colores: ${colorsStr}\n`;
       text += `  💰 Precio: $${fmt(p.price_sale)}\n\n`;
     });
 
-    const webUrl = selectedSizes.length > 0 
-      ? `${WEB_STORE_URL}/chaquetas?talla=${encodeURIComponent(selectedSizes.join(','))}`
-      : `${WEB_STORE_URL}/chaquetas`;
+    let webUrl = `${WEB_STORE_URL}/chaquetas`;
+    const params = [];
+    if (selectedSizes.length > 0) params.push(`talla=${encodeURIComponent(selectedSizes.join(','))}`);
+    if (selectedColors.length > 0) params.push(`color=${encodeURIComponent(selectedColors.join(','))}`);
+    if (params.length > 0) webUrl += `?${params.join('&')}`;
 
     text += `🌐 *Ver fotos completas y colores en la tienda web:* ${webUrl}\n`;
     text += `\n🚚 *¿Te gustaría apartar alguna para envío contraentrega?*`;
@@ -1029,6 +1089,88 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
             })}
           </div>
 
+          {/* Menú Desplegable de Colores con selección múltiple */}
+          <div className="relative" ref={colorMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsColorMenuOpen(prev => !prev)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                selectedColors.length > 0
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+              }`}
+              title="Filtrar por uno o varios colores disponibles"
+            >
+              <Palette size={12} className={selectedColors.length > 0 ? 'text-white' : 'text-indigo-600'} />
+              <span>{selectedColors.length > 0 ? `Colores (${selectedColors.length})` : 'Color'}</span>
+              <ChevronDownIcon size={12} className={`transition-transform duration-200 ${isColorMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isColorMenuOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 z-40 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    Colores Disponibles
+                  </span>
+                  {selectedColors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedColors([])}
+                      className="text-[10px] text-rose-500 font-black hover:underline cursor-pointer"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+                  {availableColorsList.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 text-center py-3">No hay colores registrados</p>
+                  ) : (
+                    availableColorsList.map(col => {
+                      const isChecked = selectedColors.includes(col);
+                      return (
+                        <div
+                          key={col}
+                          onClick={() => toggleColor(col)}
+                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                            isChecked ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3.5 h-3.5 rounded-full border transition-all ${
+                              isChecked ? 'bg-indigo-600 border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-300 bg-white'
+                            }`} />
+                            <span className="text-xs uppercase font-bold">{col}</span>
+                          </div>
+                          {isChecked && <Check size={13} className="text-indigo-600" />}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Badges de Colores Seleccionados para remover con un clic */}
+          {selectedColors.map(col => (
+            <span
+              key={col}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs"
+            >
+              {col}
+              <button
+                type="button"
+                onClick={() => toggleColor(col)}
+                className="hover:text-rose-600 cursor-pointer ml-0.5"
+                title={`Quitar filtro ${col}`}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+
           {/* Botones de Acción para Asesores: Compartir link filtrado y Resumen WhatsApp */}
           <div className="flex items-center gap-2 ml-auto">
             <button
@@ -1039,10 +1181,16 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
                   ? 'bg-emerald-500 text-white border-emerald-500' 
                   : 'bg-white hover:bg-indigo-50 border-slate-200 text-slate-700 hover:text-indigo-700'
               }`}
-              title="Copiar enlace directo de la web con el filtro de tallas activo para enviar al cliente"
+              title="Copiar enlace directo de la web con el filtro de tallas y colores activo para enviar al cliente"
             >
               {copiedLink ? <Check size={12} /> : <LinkIcon size={12} className="text-indigo-600" />}
-              <span>{copiedLink ? '¡Link Copiado!' : selectedSizes.length > 0 ? `🔗 Link Tienda (${selectedSizes.join('+')})` : '🔗 Link Tienda'}</span>
+              <span>
+                {copiedLink 
+                  ? '¡Link Copiado!' 
+                  : (selectedSizes.length > 0 || selectedColors.length > 0)
+                    ? `🔗 Link Tienda (${[...selectedSizes, ...selectedColors].slice(0, 2).join('+')}${selectedSizes.length + selectedColors.length > 2 ? '...' : ''})` 
+                    : '🔗 Link Tienda'}
+              </span>
             </button>
 
             <button
