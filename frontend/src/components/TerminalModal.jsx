@@ -104,15 +104,55 @@ const { user } = useAuth();
   const [successMsg, setSuccessMsg] = useState('');
   const searchRef = useRef(null);
 
+  const KNOWN_SIZES = useMemo(() => new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '28', '30', '32', '34', '36', '38']), []);
+
   useEffect(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) { setFilteredResults([]); return; }
-    const kws = term.split(' ');
-    setFilteredResults(inventory.filter(item => {
-      const content = `${item.ref} ${item.name || item.producto || ''} ${item.category} ${item.subcategory} ${item.color || ''} ${item.size || ''}`.toLowerCase();
-      return kws.every(k => content.includes(k));
-    }));
-  }, [search, inventory]);
+    const raw = search.trim().toLowerCase();
+    if (!raw) { setFilteredResults([]); return; }
+    
+    // Separar palabras clave
+    const kws = raw.split(/\s+/).filter(Boolean);
+
+    const results = inventory.filter(item => {
+      const itemSize = (item.size || '').trim().toLowerCase();
+      const itemColor = (item.color || '').trim().toLowerCase();
+      const itemRef = (item.ref || '').trim().toLowerCase();
+      const itemName = (item.name || item.producto || '').trim().toLowerCase();
+      const itemCat = (item.category || '').trim().toLowerCase();
+      const itemSubcat = (item.subcategory || '').trim().toLowerCase();
+      const itemBrand = (item.brand || '').trim().toLowerCase();
+
+      // Texto general sin la talla para que 'L' no coincida con 'impermeabLe' ni 'M' con 'hoMbre'
+      const generalText = `${itemRef} ${itemName} ${itemCat} ${itemSubcat} ${itemBrand} ${itemColor}`.toLowerCase();
+
+      for (const kw of kws) {
+        if (KNOWN_SIZES.has(kw)) {
+          // Si el usuario escribió una talla específica (ej: 'l', 'm', 's', 'xl', 'xxl'):
+          // Debe coincidir exactamente con la talla del producto o el sufijo de la referencia
+          const matchesSize = itemSize === kw || 
+            itemRef.endsWith(`-${kw}`) || 
+            itemRef.includes(`-${kw}-`);
+          if (!matchesSize) return false;
+        } else {
+          // Búsqueda general en ref, nombre, color, etc.
+          if (!generalText.includes(kw)) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
+    // Ordenar resultados: Disponibles con stock primero, luego alfabético
+    results.sort((a, b) => {
+      const sA = (a.stock || 0) > 0 ? 1 : 0;
+      const sB = (b.stock || 0) > 0 ? 1 : 0;
+      if (sA !== sB) return sB - sA;
+      return (a.name || a.ref || '').localeCompare(b.name || b.ref || '', 'es');
+    });
+
+    setFilteredResults(results.slice(0, 30));
+  }, [search, inventory, KNOWN_SIZES]);
 
   useEffect(() => {
     const fn = (e) => {
@@ -137,14 +177,24 @@ const { user } = useAuth();
   const updateCart = (id, field, value) => {
     setCart(cart.map(item => {
       if (item.id !== id) return item;
-      const u = { ...item, [field]: Number(value) };
-      if (field === 'qty' || field === 'original_price') u.total_item = u.qty * u.original_price;
+      const numVal = value === '' ? '' : Math.max(0, parseInt(value, 10) || 0);
+      const u = { ...item, [field]: numVal };
+      if (field === 'qty' || field === 'original_price') {
+        const q = typeof u.qty === 'number' ? u.qty : 1;
+        const p = typeof u.original_price === 'number' ? u.original_price : 0;
+        u.total_item = q * p;
+      }
       return u;
     }));
   };
 
-  const updateRowTotal = (id, val) =>
-    setCart(cart.map(i => i.id === id ? { ...i, total_item: Number(val) } : i));
+  const updateRowTotal = (id, val) => {
+    setCart(cart.map(i => {
+      if (i.id !== id) return i;
+      if (val === '') return { ...i, total_item: '' };
+      return { ...i, total_item: Math.max(0, parseInt(val, 10) || 0) };
+    }));
+  };
 
   const totalVenta = cart.reduce((a, i) => a + (i.total_item || 0), 0);
   const hasStockError = cart.some(i => i.qty < 1 || i.stock <= 0 || i.qty > i.stock);
@@ -194,7 +244,7 @@ const { user } = useAuth();
       setTimeout(() => setSuccessMsg(''), 3000);
       window.dispatchEvent(new CustomEvent('refresh-sales'));
       reloadInventory();
-      setCart([]); setCustomer('CLIENTE FINAL'); setVendedorId(user?.id || ''); setAmountPaid(0);
+      setCart([]); setCustomer('CLIENTE FINAL'); setVendedorId(user?.id || ''); setAmountPaid(0); setSearch(''); setFilteredResults([]);
     } catch (e) {
       alert(`Error al guardar venta:\n${e.message}`);
     } finally { setIsSubmitting(false); }
@@ -219,21 +269,61 @@ const { user } = useAuth();
             onChange={e => setSearch(e.target.value)}
           />
           {filteredResults.length > 0 && (
-            <div className="absolute z-[110] w-full bg-white shadow-2xl rounded-2xl mt-2 border border-slate-100 max-h-72 overflow-auto py-2">
-              {filteredResults.map(p => (
-                <div key={p.id} onClick={() => addToCart(p)}
-                   className="px-5 py-3 hover:bg-emerald-50 cursor-pointer flex justify-between items-center border-b border-slate-50 last:border-0">
-                  <div>
-                    <p className="font-black text-xs uppercase text-slate-800">
-                      {p.name || p.producto} <span className="text-emerald-500">[{p.ref}]</span>
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {p.category} • {p.subcategory} {p.color ? `• ${p.color}` : ''} {p.size ? `• ${p.size}` : ''} | Stock: {p.stock}
-                    </p>
+            <div className="absolute z-[110] w-full bg-white shadow-2xl rounded-2xl mt-2 border border-slate-200 max-h-80 overflow-y-auto divide-y divide-slate-100 py-1 animate-in fade-in duration-150">
+              {filteredResults.map(p => {
+                const isOutOfStock = (p.stock || 0) <= 0;
+                return (
+                  <div 
+                    key={p.id} 
+                    onClick={() => addToCart(p)}
+                    className="px-4 py-2.5 hover:bg-slate-50 cursor-pointer flex items-center justify-between gap-3 transition-colors group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-black text-xs uppercase text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                          {p.name || p.producto}
+                        </p>
+                        {p.ref && (
+                          <span className="text-[10px] font-mono text-slate-400 font-bold shrink-0">
+                            {p.ref}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {p.color && (
+                          <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200/60">
+                            {p.color}
+                          </span>
+                        )}
+                        {p.size && (
+                          <span className="text-[9px] font-black font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
+                            Talla: {p.size}
+                          </span>
+                        )}
+                        <span className="text-[9px] text-slate-400 font-bold uppercase truncate">
+                          {p.category} {p.subcategory ? `· ${p.subcategory}` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <p className="font-black text-sm text-slate-900 font-mono">
+                        ${fmt(p.price_sale || p.p_venta || 0)}
+                      </p>
+                      <span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 ${
+                        isOutOfStock 
+                          ? 'bg-rose-50 text-rose-600' 
+                          : p.stock < 3 
+                            ? 'bg-amber-50 text-amber-700' 
+                            : 'bg-emerald-50 text-emerald-700'
+                      }`}>
+                        {isOutOfStock ? 'Agotado' : `${p.stock} un.`}
+                      </span>
+                    </div>
                   </div>
-                  <p className="font-black text-sm text-slate-900">${fmt(p.price_sale || p.p_venta || 0)}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -280,8 +370,19 @@ const { user } = useAuth();
                   </td>
                   <td className={`py-3 text-center border-y font-black text-xs ${item.stock <= 0 ? 'text-rose-500' : 'text-slate-400'}`}>{item.stock}</td>
                   <td className="py-3 border-y text-center">
-                    <input type="number" min="1" className="w-14 bg-slate-100 rounded-xl py-2 text-center font-black text-xs outline-none"
-                      value={item.qty} onChange={e => updateCart(item.id, 'qty', e.target.value)} />
+                    <input 
+                      type="number" 
+                      min="1" 
+                      className="w-14 bg-slate-100 rounded-xl py-2 text-center font-black text-xs outline-none"
+                      value={item.qty === '' ? '' : item.qty}
+                      onFocus={(e) => e.target.select()}
+                      onChange={e => updateCart(item.id, 'qty', e.target.value)}
+                      onBlur={() => {
+                        if (item.qty === '' || isNaN(item.qty) || item.qty < 1) {
+                          updateCart(item.id, 'qty', 1);
+                        }
+                      }}
+                    />
                   </td>
                   <td className="py-3 border-y text-center">
                     <div className="inline-flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
@@ -294,8 +395,19 @@ const { user } = useAuth();
                     <div className="flex flex-col items-center gap-0.5">
                       <div className={`inline-flex items-center rounded-xl px-3 py-1.5 border-2 ${hasDiscount ? 'border-emerald-400 bg-emerald-50' : 'bg-slate-50 border-slate-200'}`}>
                         <span className="text-[10px] font-black text-slate-400 mr-1">$</span>
-                        <input type="number" min="0" className="w-24 bg-transparent text-right font-black text-sm outline-none text-slate-900"
-                          value={item.total_item} onChange={e => updateRowTotal(item.id, e.target.value)} />
+                        <input 
+                          type="number" 
+                          min="0" 
+                          className="w-24 bg-transparent text-right font-black text-sm outline-none text-slate-900"
+                          value={item.total_item === '' ? '' : item.total_item}
+                          onFocus={(e) => e.target.select()}
+                          onChange={e => updateRowTotal(item.id, e.target.value)}
+                          onBlur={() => {
+                            if (item.total_item === '' || isNaN(item.total_item)) {
+                              updateRowTotal(item.id, (item.qty || 1) * (item.original_price || 0));
+                            }
+                          }}
+                        />
                       </div>
                       {hasDiscount && (
                         <span className="text-[9px] text-slate-400 line-through">${fmt(inventoryTotal)}</span>
@@ -329,8 +441,25 @@ const { user } = useAuth();
             <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-1 text-center">Abono Recibido</p>
             <div className="flex items-center justify-center text-3xl font-black text-emerald-700">
               <span className="mr-2 opacity-30 text-xl">$</span>
-              <input type="number" className="bg-transparent outline-none w-full text-center"
-                value={amountPaid} onChange={e => setAmountPaid(Number(e.target.value))} />
+              <input 
+                type="number" 
+                className="bg-transparent outline-none w-full text-center"
+                value={amountPaid === '' ? '' : amountPaid}
+                onFocus={(e) => e.target.select()}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '') {
+                    setAmountPaid('');
+                  } else {
+                    setAmountPaid(parseInt(v, 10) || 0);
+                  }
+                }}
+                onBlur={() => {
+                  if (amountPaid === '' || isNaN(amountPaid)) {
+                    setAmountPaid(totalVenta);
+                  }
+                }}
+              />
             </div>
           </div>
           <div className="col-span-4 flex flex-col gap-2">
