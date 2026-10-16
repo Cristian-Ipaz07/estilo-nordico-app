@@ -40,7 +40,7 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
     });
   }, [variants]);
 
-  // Lista única de colores disponibles con stock > 0
+  // Lista única de colores disponibles, ordenados por disponibilidad y orden alfabético A-Z
   const availableColors = useMemo(() => {
     const map = {};
     variants.forEach(v => {
@@ -57,17 +57,71 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
         map[col].image = v.images[0];
       }
     });
-    return Object.values(map);
+    return Object.values(map).sort((a, b) => {
+      // 1. Con stock primero, agotados al final
+      const sA = a.totalStock > 0 ? 1 : 0;
+      const sB = b.totalStock > 0 ? 1 : 0;
+      if (sA !== sB) return sB - sA;
+      // 2. Orden alfabético A-Z
+      return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
+    });
   }, [variants]);
 
   // Variantes filtradas según la talla y/o color seleccionados
+  // ORDEN ESTILO NÓRDICO:
+  // 1. Disponibles primero (stock > 0), agotadas de últimas (stock <= 0)
+  // 2. Por Talla estándar (si se ven Todas)
+  // 3. Por orden ALFABÉTICO estricto de color (A -> Z) igual que los percheros del local
   const filteredVariants = useMemo(() => {
-    return variants.filter(v => {
+    const list = variants.filter(v => {
       const vSize = (v.size || '').trim().toUpperCase();
       const vColor = (v.color || '').trim().toUpperCase();
       const sizeMatch = selectedSize === 'TODAS' || vSize === selectedSize;
       const colorMatch = selectedColor === 'TODOS' || vColor === selectedColor;
       return sizeMatch && colorMatch;
+    });
+
+    const sizeOrder = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38'];
+
+    return list.sort((a, b) => {
+      // 1. Disponibles con stock > 0 primero, agotadas al final
+      const stockA = (a.stock || 0) > 0 ? 1 : 0;
+      const stockB = (b.stock || 0) > 0 ? 1 : 0;
+      if (stockA !== stockB) return stockB - stockA;
+
+      // 2. Si se están viendo TODAS las tallas, ordenar primero por orden de talla estándar
+      if (selectedSize === 'TODAS') {
+        const sizeA = (a.size || '').trim().toUpperCase();
+        const sizeB = (b.size || '').trim().toUpperCase();
+        if (sizeA !== sizeB) {
+          const idxA = sizeOrder.indexOf(sizeA);
+          const idxB = sizeOrder.indexOf(sizeB);
+          if (idxA !== -1 && idxB !== -1) {
+            if (idxA !== idxB) return idxA - idxB;
+          } else if (idxA !== -1) {
+            return -1;
+          } else if (idxB !== -1) {
+            return 1;
+          } else {
+            const sizeCmp = sizeA.localeCompare(sizeB, 'es', { numeric: true });
+            if (sizeCmp !== 0) return sizeCmp;
+          }
+        }
+      }
+
+      // 3. Orden alfabético estricto de Color (A -> Z)
+      const colorA = (a.color || '').trim().toUpperCase();
+      const colorB = (b.color || '').trim().toUpperCase();
+      const colorCmp = colorA.localeCompare(colorB, 'es', { sensitivity: 'base' });
+      if (colorCmp !== 0) return colorCmp;
+
+      // 4. Orden alfabético por Marca / Submodelo
+      const brandA = (a.brand || '').trim().toUpperCase();
+      const brandB = (b.brand || '').trim().toUpperCase();
+      const brandCmp = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
+      if (brandCmp !== 0) return brandCmp;
+
+      return (a.name || '').localeCompare(b.name || '', 'es');
     });
   }, [variants, selectedSize, selectedColor]);
 
@@ -751,7 +805,26 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
       });
     }
 
-    return list;
+    // ORDENAMIENTO ESTILO NÓRDICO (Igual que el catálogo de tienda):
+    // 1. Prendas con stock disponible primero, agotadas de últimas
+    // 2. Orden alfabético A-Z por Nombre de prenda o Referencia
+    return list.sort((a, b) => {
+      const varsA = variantsByParent[a.id] || [];
+      const stockA = varsA.length > 0 ? varsA.reduce((sum, v) => sum + (v.stock || 0), 0) : (a.stock || 0);
+      const varsB = variantsByParent[b.id] || [];
+      const stockB = varsB.length > 0 ? varsB.reduce((sum, v) => sum + (v.stock || 0), 0) : (b.stock || 0);
+
+      const hasStockA = stockA > 0 ? 1 : 0;
+      const hasStockB = stockB > 0 ? 1 : 0;
+      if (hasStockA !== hasStockB) return hasStockB - hasStockA; // Disponibles primero
+
+      const nameA = (a.name || a.ref || '').trim();
+      const nameB = (b.name || b.ref || '').trim();
+      const nameCmp = nameA.localeCompare(nameB, 'es', { sensitivity: 'base', numeric: true });
+      if (nameCmp !== 0) return nameCmp;
+
+      return (a.ref || '').localeCompare(b.ref || '', 'es');
+    });
   }, [products, selectedType, selectedGlobalSize, onlyInStock, search, variantsByParent]);
 
   return (
