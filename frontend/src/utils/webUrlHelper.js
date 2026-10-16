@@ -1,4 +1,4 @@
-import { WEB_STORE_URL } from '../config/api';
+import { WEB_STORE_URL } from '../config/api.js';
 
 /**
  * Normaliza nombres de colores para slugs de la tienda web Astro
@@ -9,7 +9,7 @@ export function normalizeColorSlug(color) {
   return color
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .replace(/\s+/g, '-');
 }
