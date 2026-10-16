@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Truck, 
-  DollarSign, Calculator, PackageCheck, Sparkles, Search, CheckCircle2 
+  DollarSign, Calculator, PackageCheck, Sparkles, Search, CheckCircle2,
+  Calendar
 } from 'lucide-react';
 import { API_URL } from '../config/api';
 
@@ -41,14 +42,15 @@ export default function BatchStockEntryModal({
   const [freightCost, setFreightCost] = useState('95000');
   const [manualUnitCost, setManualUnitCost] = useState('');
   const [useManualCost, setUseManualCost] = useState(false);
-  const [provider, setProvider] = useState('Medellín');
-  const [paidFromCash, setPaidFromCash] = useState(false); // Default: NO pagar de caja si ya se registró
+  const [provider, setProvider] = useState('Bogotá');
+  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [paidFromCash, setPaidFromCash] = useState(false); // Default: NO pagar de caja chica
 
   // 3. Matriz de Colores y Tallas
   const [sizeType, setSizeType] = useState('letter'); // 'letter' o 'number'
   const sizes = sizeType === 'letter' ? COMMON_SIZES_LETTER : COMMON_SIZES_NUMBER;
 
-  // Lista de colores activos en la matriz: { color: 'BEIGE', quantities: { M: 1, L: 2, ... } }
+  // Lista de colores activos en la matriz
   const [activeRows, setActiveRows] = useState([
     { color: 'BEIGE', quantities: {} }
   ]);
@@ -90,7 +92,6 @@ export default function BatchStockEntryModal({
       setNewPriceSale(p.price_sale);
     }
 
-    // Buscar variantes que ya existen para sugerir colores
     const children = products.filter(child => child.parent_id === p.id);
     const existingColors = Array.from(new Set(children.map(c => c.color?.toUpperCase()).filter(Boolean)));
     
@@ -206,6 +207,7 @@ export default function BatchStockEntryModal({
       freight_cost: Number(freightCost) || 0,
       unit_cost: unitCostResult,
       provider: provider.trim() || 'PROVEEDOR GENÉRICO',
+      entry_date: entryDate || null,
       paid_from_cash: paidFromCash,
       items: items
     };
@@ -281,7 +283,7 @@ export default function BatchStockEntryModal({
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 md:p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
-                <Calculator size={15} className="text-indigo-600" /> 1. Costo del Pedido & Flete (Landed Cost)
+                <Calculator size={15} className="text-indigo-600" /> 1. Costo del Pedido, Flete & Fecha
               </h3>
               <label className="text-[10px] font-bold text-slate-500 flex items-center gap-1 cursor-pointer">
                 <input 
@@ -294,7 +296,7 @@ export default function BatchStockEntryModal({
               </label>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
                   Factura Pedido ($) *
@@ -332,21 +334,33 @@ export default function BatchStockEntryModal({
               </div>
 
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
-                  Proveedor / Detalle
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1 flex items-center gap-1">
+                  <Calendar size={11} className="text-slate-400" /> Fecha Llegada *
                 </label>
                 <input
-                  type="text"
-                  value={provider}
-                  onChange={e => setProvider(e.target.value)}
-                  placeholder="Ej. Medellín - Pedido Chaquetas"
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-800 outline-none text-sm focus:border-indigo-500 shadow-sm"
+                  type="date"
+                  value={entryDate}
+                  onChange={e => setEntryDate(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-800 outline-none text-xs focus:border-indigo-500 shadow-sm"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
-                  {useManualCost ? 'Costo Unitario Fijado' : 'Costo Unitario Calculado'}
+                  Proveedor / Origen
+                </label>
+                <input
+                  type="text"
+                  value={provider}
+                  onChange={e => setProvider(e.target.value)}
+                  placeholder="Ej. Bogotá"
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-800 outline-none text-xs focus:border-indigo-500 shadow-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
+                  {useManualCost ? 'Costo Unitario Fijado' : 'Costo Unit. Calculado'}
                 </label>
                 {useManualCost ? (
                   <div className="flex items-center bg-white border border-amber-300 rounded-xl px-3 py-2 shadow-sm">
@@ -357,12 +371,12 @@ export default function BatchStockEntryModal({
                       value={manualUnitCost}
                       onChange={e => setManualUnitCost(e.target.value)}
                       placeholder="Ej. 54636"
-                      className="w-full font-black text-amber-700 outline-none text-sm"
+                      className="w-full font-black text-amber-700 outline-none text-xs"
                     />
                   </div>
                 ) : (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-emerald-600">Unitario:</span>
+                    <span className="text-[10px] font-black uppercase text-emerald-600">Unit:</span>
                     <span className="text-sm font-black text-emerald-700 font-mono">
                       ${fmt(unitCostResult)}
                     </span>
@@ -371,32 +385,55 @@ export default function BatchStockEntryModal({
               </div>
             </div>
 
-            {/* Micro-resumen en vivo */}
-            <div className="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-3">
-                <span className="text-slate-500 font-medium">
-                  Total Lote: <strong className="text-slate-800">${fmt(calculatedTotalCost)}</strong>
-                </span>
-                <span className="text-slate-300">|</span>
-                <span className="text-slate-500 font-medium">
-                  Unidades en Matriz: <strong className="text-indigo-600 font-black">{totalUnits} uds</strong>
-                </span>
+            {/* Configuración Cristalina de Caja Chica (Sin Confusiones) */}
+            <div className="mt-4 pt-3 border-t border-slate-200/80 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 text-xs font-medium">
+                      Inversión Lote: <strong className="text-slate-800 font-black">${fmt(calculatedTotalCost)}</strong>
+                    </span>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-slate-500 text-xs font-medium">
+                      Prendas en Matriz: <strong className="text-indigo-600 font-black">{totalUnits} uds</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Checkbox explícito */}
+                <label className="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-200 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={paidFromCash}
+                    onChange={e => setPaidFromCash(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                  />
+                  <span className="text-xs font-black text-slate-800">
+                    Descontar este pago de Caja Chica ahora
+                  </span>
+                </label>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={paidFromCash}
-                  onChange={e => setPaidFromCash(e.target.checked)}
-                  className="rounded text-indigo-600"
-                />
-                <span className={`text-[11px] font-bold ${paidFromCash ? 'text-rose-600' : 'text-slate-600'}`}>
-                  {paidFromCash 
-                    ? '⚠️ Se registrará egreso en Caja Chica' 
-                    : '✓ Ya registrado en Flujo de Caja (No duplicar egreso)'}
-                </span>
-              </label>
+              {/* Mensaje de confirmación del estado de caja */}
+              <div className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 ${
+                paidFromCash 
+                  ? 'bg-amber-50 text-amber-800 border border-amber-200' 
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}>
+                {paidFromCash ? (
+                  <>
+                    <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                    <span>⚠️ Se registrará una <strong>SALIDA de ${fmt(totalUnits * unitCostResult)}</strong> en tu Caja Chica.</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
+                    <span>✓ <strong>Caja Protegida:</strong> No se restará dinero de caja chica (ideal si ya anotaste el gasto previamente en Flujo de Caja).</span>
+                  </>
+                )}
+              </div>
             </div>
+
           </div>
 
           {/* 2. SECCIÓN REFERENCIA BASE (EXISTENTE O NUEVA) */}

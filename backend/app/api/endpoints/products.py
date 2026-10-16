@@ -339,14 +339,22 @@ def create_stock_entry(data: StockEntryCreate, db: Session = Depends(get_db)):
         )
 
     # 3. Crear Registro de Entrada
-    new_entry = StockEntryModel(
-        product_id=data.product_id,
-        quantity=qty_in,
-        unit_cost=unit_cost,
-        total_cost=total_cost,
-        provider=data.provider,
-        paid_from_cash=data.paid_from_cash
-    )
+    entry_kwargs = {
+        "product_id": data.product_id,
+        "quantity": qty_in,
+        "unit_cost": unit_cost,
+        "total_cost": total_cost,
+        "provider": data.provider,
+        "paid_from_cash": data.paid_from_cash
+    }
+    if data.entry_date:
+        try:
+            now_t = datetime.now()
+            parsed_d = datetime.strptime(data.entry_date, "%Y-%m-%d")
+            entry_kwargs["created_at"] = parsed_d.replace(hour=now_t.hour, minute=now_t.minute, second=now_t.second)
+        except Exception:
+            pass
+    new_entry = StockEntryModel(**entry_kwargs)
     db.add(new_entry)
     db.flush()
 
@@ -529,14 +537,22 @@ def create_batch_stock_entries(data: BatchStockEntryRequest, db: Session = Depen
 
         # 3. Registrar entrada individual en StockEntry
         total_item_cost = round(qty * unit_cost, 2)
-        new_entry = StockEntryModel(
-            product_id=variant.id,
-            quantity=qty,
-            unit_cost=unit_cost,
-            total_cost=total_item_cost,
-            provider=data.provider or "PROVEEDOR GENÉRICO",
-            paid_from_cash=False
-        )
+        entry_kwargs = {
+            "product_id": variant.id,
+            "quantity": qty,
+            "unit_cost": unit_cost,
+            "total_cost": total_item_cost,
+            "provider": data.provider or "PROVEEDOR GENÉRICO",
+            "paid_from_cash": False
+        }
+        if data.entry_date:
+            try:
+                now_t = datetime.now()
+                parsed_d = datetime.strptime(data.entry_date, "%Y-%m-%d")
+                entry_kwargs["created_at"] = parsed_d.replace(hour=now_t.hour, minute=now_t.minute, second=now_t.second)
+            except Exception:
+                pass
+        new_entry = StockEntryModel(**entry_kwargs)
         db.add(new_entry)
         entries_created += 1
         total_units += qty

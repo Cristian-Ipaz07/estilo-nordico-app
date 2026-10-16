@@ -9,6 +9,7 @@ class StockEntryBase(BaseModel):
     provider: Optional[str] = "PROVEEDOR GENÉRICO"
     paid_from_cash: bool = False
     new_price_sale: Optional[float] = None # Para actualizar el PVP si se desea
+    entry_date: Optional[str] = None
 
 class StockEntryCreate(StockEntryBase):
     pass
@@ -56,6 +57,7 @@ class BatchStockEntryRequest(BaseModel):
     unit_cost: float
     provider: Optional[str] = "PROVEEDOR GENÉRICO"
     paid_from_cash: bool = False
+    entry_date: Optional[str] = None
     items: List[BatchEntryItem]
 
 class BatchStockEntryResponse(BaseModel):
