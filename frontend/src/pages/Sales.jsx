@@ -36,6 +36,13 @@ const StatusBadge = ({ status, balance }) => {
       </span>
     );
   }
+  if (status === 'por_confirmar') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+        <Clock size={11} /> ⏳ Por Confirmar
+      </span>
+    );
+  }
   if (status === 'en_domicilio') {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
@@ -312,21 +319,23 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
           <StatusBadge status={sale.status} balance={sale.balance_due} />
         </td>
         <td className="px-6 py-4 text-right space-x-1" onClick={e => e.stopPropagation()}>
-          {sale.status === 'en_domicilio' && (
+          {(sale.status === 'en_domicilio' || sale.status === 'por_confirmar') && (
             <>
               <button
-                title="Confirmar Entrega y Cobro"
+                title="Confirmar Cobro y Liquidar (Entra a Caja)"
                 onClick={() => onConfirmDelivery(sale)}
-                className="p-2 hover:bg-emerald-50 border border-transparent hover:border-emerald-300 rounded-lg text-emerald-600 font-bold transition-all"
+                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-emerald-700 font-black text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
               >
-                <CheckCircle2 size={15} />
+                <CheckCircle2 size={13} />
+                <span className="text-[10px] uppercase">Confirmar Cobro</span>
               </button>
               <button
-                title="Cancelar Domicilio y Devolver Stock"
+                title="Cancelar Pedido y Devolver Prendas a Stock"
                 onClick={() => onCancelDelivery(sale)}
-                className="p-2 hover:bg-rose-50 border border-transparent hover:border-rose-300 rounded-lg text-rose-500 transition-all"
+                className="p-1.5 hover:bg-rose-50 border border-transparent hover:border-rose-300 rounded-xl text-rose-500 transition-all inline-flex items-center gap-1 cursor-pointer"
               >
-                <X size={15} />
+                <X size={13} />
+                <span className="text-[10px] font-black uppercase hidden xl:inline">Anular</span>
               </button>
             </>
           )}
@@ -643,7 +652,8 @@ const Sales = () => {
       filterStatus === 'pagado' ? (!item.isPayment && (item.status === 'pagado' || (item.balance_due <= 0 && item.status !== 'en_domicilio'))) :
       filterStatus === 'separado' ? (!item.isPayment && (item.status === 'separado' || item.balance_due > 0)) :
       filterStatus === 'abonos' ? item.isPayment :
-      filterStatus === 'en_domicilio' ? (!item.isPayment && item.status === 'en_domicilio') : true;
+      filterStatus === 'en_domicilio' ? (!item.isPayment && item.status === 'en_domicilio') :
+      filterStatus === 'por_confirmar' ? (!item.isPayment && (item.status === 'por_confirmar' || item.status === 'en_domicilio')) : true;
 
     const q = search.toLowerCase();
     const matchItems = item.items?.some(it =>
@@ -881,6 +891,7 @@ const Sales = () => {
           <div className="flex gap-2">
             {[
               { id: 'todos', label: 'Todos' },
+              { id: 'por_confirmar', label: '⏳ Por Confirmar' },
               { id: 'pagado', label: 'Pagado' },
               { id: 'separado', label: 'Separado' },
               { id: 'abonos', label: '💜 Abonos' },

@@ -74,7 +74,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const [filteredResults, setFilteredResults] = useState([]);
   const [cart, setCart] = useStickyState([], 'en_terminal_cart');
   const [customer, setCustomer] = useStickyState('CLIENTE FINAL', 'en_terminal_customer');
-const { user } = useAuth();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [sellers, setSellers] = useState([]);
   const [vendedorId, setVendedorId] = useStickyState(user?.id || '', 'en_terminal_vendedor');
 
@@ -208,11 +209,11 @@ const { user } = useAuth();
       customer_name: customer,
       total_price: totalVenta,
       sale_channel: "LOCAL",
-      user_id: Number(vendedorId),
+      user_id: isAdmin ? Number(vendedorId) : user.id,
       created_by: user.id,
       amount_paid: Number(amountPaid),
       sale_date: saleDate,
-      status: isDelivery ? "en_domicilio" : undefined,
+      status: isDelivery ? "en_domicilio" : (!isAdmin ? "por_confirmar" : undefined),
       delivery_address: isDelivery ? deliveryAddress : null,
       delivery_notes: isDelivery ? deliveryNotes : null,
       items: cart.map(i => ({
@@ -240,7 +241,7 @@ const { user } = useAuth();
         throw new Error(msg);
       }
       const isSep = Number(amountPaid) < totalVenta;
-      setSuccessMsg(isSep ? '¡Separado registrado!' : '¡Venta finalizada!');
+      setSuccessMsg(!isAdmin ? '¡Pedido registrado por confirmar!' : (isSep ? '¡Separado registrado!' : '¡Venta finalizada!'));
       setTimeout(() => setSuccessMsg(''), 3000);
       window.dispatchEvent(new CustomEvent('refresh-sales'));
       reloadInventory();
@@ -335,12 +336,18 @@ const { user } = useAuth();
           </div>
           <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-4">
             <Tag size={16} className="text-slate-400 flex-shrink-0" />
-            <select className="bg-transparent text-[10px] font-black outline-none w-full text-slate-600 uppercase"
-              value={vendedorId} onChange={e => setVendedorId(e.target.value)}>
-              {sellers.map(s => (
-                <option key={s.id} value={s.id}>{s.full_name}</option>
-              ))}
-            </select>
+            {isAdmin ? (
+              <select className="bg-transparent text-[10px] font-black outline-none w-full text-slate-600 uppercase cursor-pointer"
+                value={vendedorId} onChange={e => setVendedorId(e.target.value)}>
+                {sellers.map(s => (
+                  <option key={s.id} value={s.id}>{s.full_name}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-lg truncate">
+                {user?.full_name || user?.username || 'Vendedor'}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -470,7 +477,7 @@ const { user } = useAuth();
             </div>
             <button disabled={cart.length === 0 || hasStockError || isSubmitting} onClick={handleFinalizar}
               className="flex-1 bg-slate-900 text-white rounded-[22px] font-black text-sm hover:bg-black transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tighter">
-              {isSubmitting ? 'Guardando...' : isDelivery ? '🛵 Apartar Domicilio' : amountPaid < totalVenta ? 'Registrar Separado' : 'Finalizar Venta'}
+              {isSubmitting ? 'Guardando...' : isDelivery ? '🛵 Apartar Domicilio' : !isAdmin ? '🛵 Registrar Pedido (Por Confirmar)' : amountPaid < totalVenta ? 'Registrar Separado' : 'Finalizar Venta'}
             </button>
           </div>
         </div>
@@ -481,6 +488,8 @@ const { user } = useAuth();
 
 // ─── MÓDULO SEPARADOS ─────────────────────────────────────────────────────────
 function ModuloSeparados() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [separados, setSeparados] = useState([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useStickyState(null, 'en_terminal_selected_layaway');
@@ -616,14 +625,16 @@ function ModuloSeparados() {
                   <p className="text-xs font-black text-slate-800 uppercase">{selected.customer_name}</p>
                   <p className="text-[10px] text-slate-400 font-bold uppercase">Separado #{selected.id}</p>
                 </div>
+                {isAdmin && (
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(true)}
-                  className="flex items-center gap-1 text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
+                  className="flex items-center gap-1 text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors shadow-2xs cursor-pointer"
                   title="Editar datos, fecha o abonos"
                 >
                   <Edit3 size={11} /> Editar Separado
                 </button>
+              )}
               </div>
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
@@ -706,10 +717,12 @@ function ModuloSeparados() {
                   : `Abonar $${fmt(Number(abonoAmount || 0))}`}
             </button>
 
-            <button onClick={handleCancelar}
-              className="w-full border-2 border-rose-200 text-rose-500 rounded-2xl py-2.5 font-black text-[11px] hover:bg-rose-50 transition-all uppercase">
-              Cancelar separado (restituir stock)
-            </button>
+            {isAdmin && (
+              <button onClick={handleCancelar}
+                className="w-full border-2 border-rose-200 text-rose-500 rounded-2xl py-2.5 font-black text-[11px] hover:bg-rose-50 transition-all uppercase cursor-pointer">
+                Cancelar separado (restituir stock)
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1687,6 +1700,8 @@ function ModuloCaja() {
 
 // ─── TERMINAL MODAL PRINCIPAL ─────────────────────────────────────────────────
 export default function TerminalModal({ isOpen, onClose }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [activeTab, setActiveTab] = useState('ventas');
   const inventoryData = useInventory(isOpen);
   const { inventory, reloadInventory, refreshing } = inventoryData;
@@ -1705,12 +1720,22 @@ export default function TerminalModal({ isOpen, onClose }) {
   // EL GUARD SIEMPRE VA DESPUÉS DE LOS HOOKS
   if (!isOpen) return null;
 
-  const tabs = [
-    { id: 'ventas', icon: <ShoppingCart size={20} />, label: 'VENTAS' },
-    { id: 'separados', icon: <Clock size={20} />, label: 'SEPARADOS' },
-    { id: 'stock', icon: <Package size={20} />, label: 'STOCK' },
-    { id: 'caja', icon: <DollarSign size={20} />, label: 'DIARIO' },
-  ];
+  const tabs = useMemo(() => {
+    if (isAdmin) {
+      return [
+        { id: 'ventas', icon: <ShoppingCart size={20} />, label: 'VENTAS' },
+        { id: 'separados', icon: <Clock size={20} />, label: 'SEPARADOS' },
+        { id: 'stock', icon: <Package size={20} />, label: 'STOCK' },
+        { id: 'caja', icon: <DollarSign size={20} />, label: 'DIARIO' },
+      ];
+    }
+    return [
+      { id: 'ventas', icon: <ShoppingCart size={20} />, label: 'PEDIDOS / VENTAS' },
+      { id: 'separados', icon: <Clock size={20} />, label: 'SEPARADOS' },
+    ];
+  }, [isAdmin]);
+
+  const effectiveTab = (!isAdmin && (activeTab === 'stock' || activeTab === 'caja')) ? 'ventas' : activeTab;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
@@ -1718,10 +1743,10 @@ export default function TerminalModal({ isOpen, onClose }) {
 
         {/* CONTENIDO MÓDULO */}
         <div className="flex-[4] flex flex-col bg-white overflow-hidden">
-          {activeTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} />}
-          {activeTab === 'separados' && <ModuloSeparados />}
-          {activeTab === 'stock' && <ModuloStock inventory={inventory} reloadInventory={reloadInventory} />}
-          {activeTab === 'caja' && <ModuloCaja />}
+          {effectiveTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} />}
+          {effectiveTab === 'separados' && <ModuloSeparados />}
+          {isAdmin && effectiveTab === 'stock' && <ModuloStock inventory={inventory} reloadInventory={reloadInventory} />}
+          {isAdmin && effectiveTab === 'caja' && <ModuloCaja />}
         </div>
 
         {/* NAVEGACIÓN LATERAL */}

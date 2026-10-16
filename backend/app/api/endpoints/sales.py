@@ -75,9 +75,9 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
     else:
         created_at_val = get_colombia_now()
 
-    # Determinar estado: en_domicilio, separado o pagado
-    if sale_data.status == "en_domicilio":
-        status = "en_domicilio"
+    # Determinar estado: en_domicilio, por_confirmar, separado o pagado
+    if sale_data.status in ("en_domicilio", "por_confirmar"):
+        status = sale_data.status
     else:
         is_separado = sale_data.amount_paid < sale_data.total_price
         status = "separado" if is_separado else "pagado"

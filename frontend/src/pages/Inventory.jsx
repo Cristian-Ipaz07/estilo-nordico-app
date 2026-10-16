@@ -135,7 +135,13 @@ export default function Inventory() {
   const [genderFilter, setGenderFilter] = useState('TODOS');
   const [subcategoryFilter, setSubcategoryFilter] = useState('TODAS');
   
-  const [activeTab, setActiveTab] = useState('stock'); // 'stock', 'catalog', 'history'
+  const [activeTab, setActiveTab] = useState(user?.role === 'Admin' ? 'stock' : 'catalog');
+
+  useEffect(() => {
+    if (user && user.role !== 'Admin' && activeTab !== 'catalog') {
+      setActiveTab('catalog');
+    }
+  }, [user, activeTab]);
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -579,58 +585,70 @@ export default function Inventory() {
       {/* Cabecera Principal */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Inventario & Catálogo</h2>
-          <p className="text-slate-500 text-xs font-semibold">Gestión de referencias base, desglose de variantes y catálogo web</p>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+            {isAdmin ? 'Inventario & Catálogo' : 'Catálogo Digital de Ventas'}
+          </h2>
+          <p className="text-slate-500 text-xs font-semibold">
+            {isAdmin 
+              ? 'Gestión de referencias base, desglose de variantes y catálogo web'
+              : 'Consulta rápida de existencias, fotos y tallas para asesorar clientes por WhatsApp'}
+          </p>
         </div>
         
-        {/* Pestañas Principales */}
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          <button 
-            onClick={() => setActiveTab('stock')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'stock' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Inventario ({activeInStockCount} activas)
-          </button>
-          <button 
-            onClick={() => setActiveTab('catalog')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'catalog' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            <Sparkles size={14} className="text-indigo-600" /> Catálogo Asesores
-          </button>
-          <button 
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Historial Entradas
-          </button>
-        </div>
+        {/* Pestañas Principales (Solo para Administrador) */}
+        {isAdmin && (
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button 
+              onClick={() => setActiveTab('stock')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'stock' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Inventario ({activeInStockCount} activas)
+            </button>
+            <button 
+              onClick={() => setActiveTab('catalog')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'catalog' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Sparkles size={14} className="text-indigo-600" /> Catálogo Asesores
+            </button>
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Historial Entradas
+            </button>
+          </div>
+        )}
 
         {/* Acciones Rápidas */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setBatchPreselectedRef(''); setIsBatchEntryOpen(true); }}
-            className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
-            title="Ingreso rápido de múltiples prendas y tallas por lote con cálculo automático de costo puesto en tienda"
-          >
-            <Layers size={15} /> + Entrada en Bloque
-          </button>
-
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-sm cursor-pointer"
-          >
-            <Plus size={15} /> Nueva Prenda
-          </button>
-
-          {activeTab === 'stock' && (
+          {isAdmin && (
             <>
-              <input type="file" id="excel-upload" className="hidden" onChange={handleFileUpload} accept=".xlsx, .xlsm" />
-              <button 
-                onClick={() => document.getElementById('excel-upload').click()}
-                className="flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer transition-all active:scale-95 bg-white"
+              <button
+                onClick={() => { setBatchPreselectedRef(''); setIsBatchEntryOpen(true); }}
+                className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+                title="Ingreso rápido de múltiples prendas y tallas por lote con cálculo automático de costo puesto en tienda"
               >
-                <UploadCloud size={15} className="text-blue-600" /> Importar Excel
+                <Layers size={15} /> + Entrada en Bloque
               </button>
+
+              <button
+                onClick={openCreateModal}
+                className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-sm cursor-pointer"
+              >
+                <Plus size={15} /> Nueva Prenda
+              </button>
+
+              {activeTab === 'stock' && (
+                <>
+                  <input type="file" id="excel-upload" className="hidden" onChange={handleFileUpload} accept=".xlsx, .xlsm" />
+                  <button 
+                    onClick={() => document.getElementById('excel-upload').click()}
+                    className="flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer transition-all active:scale-95 bg-white"
+                  >
+                    <UploadCloud size={15} className="text-blue-600" /> Importar Excel
+                  </button>
+                </>
+              )}
             </>
           )}
 

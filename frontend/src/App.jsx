@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
-  LayoutDashboard, Package, ShoppingCart, Wallet, 
+  LayoutDashboard, Package, Shirt, ShoppingCart, Wallet, 
   CircleDollarSign, BarChart3, Users, Settings,
   Bell, Search, ChevronDown, Store, Terminal,
   PanelLeftClose, PanelLeftOpen, LogOut, Menu, X
@@ -62,7 +62,7 @@ const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = fals
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/" />;
-  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/layaway" />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/inventory" />;
   return children;
 };
 
@@ -167,9 +167,9 @@ const Layout = ({ children }) => {
         <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
           <nav className="space-y-1.5">
             <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
-            <SidebarItem to="/inventory" icon={Package} label="Inventario" isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/inventory" icon={isAdmin ? Package : Shirt} label={isAdmin ? "Inventario" : "Catálogo Asesor"} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
-            <SidebarItem to="/layaway" icon={Wallet} label="Separados" isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/layaway" icon={Wallet} label="Separados" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/reports" icon={BarChart3} label="Finanzas & Corte" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/users" icon={Users} label="Usuarios" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
@@ -285,18 +285,19 @@ const Layout = ({ children }) => {
 const AppContent = () => {
     const { user } = useAuth();
     if (!user) return <Login />;
+    const isAdmin = user?.role === 'Admin';
 
     return (
         <Layout>
             <Routes>
-              <Route path="/" element={<ProtectedRoute allowedRoles={['Admin']}><Dashboard /></ProtectedRoute>} />
+              <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/inventory" />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/sales" element={<ProtectedRoute allowedRoles={['Admin']}><Sales /></ProtectedRoute>} />
-              <Route path="/layaway" element={<LayawayPage />} />
+              <Route path="/layaway" element={<ProtectedRoute allowedRoles={['Admin']}><LayawayPage /></ProtectedRoute>} />
               <Route path="/cash" element={<ProtectedRoute allowedRoles={['Admin']}><CashFlow /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute allowedRoles={['Admin']}><Reports /></ProtectedRoute>} />
               <Route path="/users" element={<ProtectedRoute allowedRoles={['Admin']}><UserManagement /></ProtectedRoute>} />
-              <Route path="*" element={<Navigate to="/" />} />
+              <Route path="*" element={<Navigate to={isAdmin ? "/" : "/inventory"} />} />
             </Routes>
         </Layout>
     );

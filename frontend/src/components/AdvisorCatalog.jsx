@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
+import { copyImageToClipboard } from '../utils/clipboardHelper';
+import { Camera, Link as LinkIcon, Share2 } from 'lucide-react';
 import { WEB_STORE_URL } from '../config/api';
 import { getProductWebUrl } from '../utils/webUrlHelper';
 
@@ -23,6 +25,19 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
   const [selectedColor, setSelectedColor] = useState('TODOS');
   const [activeVariant, setActiveVariant] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copiedImg, setCopiedImg] = useState(false);
+
+  const handleCopyImage = async () => {
+    if (!heroImage) return;
+    try {
+      await copyImageToClipboard(heroImage);
+      setCopiedImg(true);
+      setTimeout(() => setCopiedImg(false), 2500);
+    } catch (e) {
+      console.error(e);
+      window.open(normalizeImageUrl(heroImage), '_blank');
+    }
+  };
 
   // Lista única de tallas disponibles con stock > 0
   const availableSizes = useMemo(() => {
@@ -456,7 +471,7 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
 
         {/* Footer del Modal con Copiado WhatsApp y Link a Web */}
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <a
               href={productWebUrl}
               target="_blank"
@@ -467,6 +482,21 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
               <span>Ver en Tienda Web</span>
               <ExternalLink size={11} className="text-slate-400" />
             </a>
+
+            <button
+              type="button"
+              onClick={handleCopyImage}
+              disabled={!heroImage}
+              className={`px-3.5 py-2.5 rounded-xl font-black text-xs border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                copiedImg 
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md animate-bounce' 
+                  : 'bg-white hover:bg-indigo-50 border-slate-200 text-slate-700 hover:text-indigo-700'
+              }`}
+              title="Copiar foto exacta al portapapeles. Luego ve a WhatsApp y presiona Ctrl + V"
+            >
+              {copiedImg ? <Check size={14} /> : <Camera size={14} className="text-indigo-600" />}
+              <span>{copiedImg ? '✅ ¡Foto Copiada! (Ctrl + V)' : '📸 Copiar Foto'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -508,6 +538,20 @@ function ProductSalesModal({ product, variants = [], isOpen, onClose }) {
  */
 function CompactAdvisorProductCard({ product, variants = [], isAdmin, onEditProduct, onOpenSalesModal }) {
   const [copied, setCopied] = useState(false);
+  const [copiedImg, setCopiedImg] = useState(false);
+
+  const handleCopyCardImage = async (e) => {
+    e.stopPropagation();
+    if (!cardImage) return;
+    try {
+      await copyImageToClipboard(cardImage);
+      setCopiedImg(true);
+      setTimeout(() => setCopiedImg(false), 2500);
+    } catch (err) {
+      console.error(err);
+      window.open(normalizeImageUrl(cardImage), '_blank');
+    }
+  };
 
   // Total stock
   const totalStock = variants.length > 0 
@@ -684,6 +728,21 @@ function CompactAdvisorProductCard({ product, variants = [], isAdmin, onEditProd
               <span className="text-[11px]">{copied ? '¡Copiado!' : 'WhatsApp'}</span>
             </button>
 
+            {/* Botón Copiar Foto */}
+            <button
+              type="button"
+              onClick={handleCopyCardImage}
+              disabled={!cardImage}
+              className={`p-2 border rounded-xl transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-2xs ${
+                copiedImg 
+                  ? 'bg-emerald-50 border-emerald-400 text-emerald-700' 
+                  : 'border-slate-200 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700'
+              }`}
+              title="Copiar foto al portapapeles para pegar en WhatsApp (Ctrl + V)"
+            >
+              {copiedImg ? <Check size={14} className="text-emerald-600" /> : <Camera size={15} />}
+            </button>
+
             {/* Botón Ver Web */}
             <a
               href={productWebUrl}
@@ -724,8 +783,10 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
   const [search, setSearch] = useState('');
   const [selectedType, setSelectedType] = useState('TODOS');
-  const [selectedGlobalSize, setSelectedGlobalSize] = useState('TODAS');
+  const [selectedSizes, setSelectedSizes] = useState([]);
   const [onlyInStock, setOnlyInStock] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCatalog, setCopiedCatalog] = useState(false);
 
   // Estado del modal emergente de venta
   const [activeModalProduct, setActiveModalProduct] = useState(null);
@@ -754,7 +815,7 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
   }, [products, allProducts]);
 
   // Lista de tallas comunes para el filtro rápido superior
-  const commonFilterSizes = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+  const commonFilterSizes = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38'];
 
   // Filtrado reactivo de productos
   const filtered = useMemo(() => {
@@ -765,16 +826,14 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
       list = list.filter(p => (p.product_type || 'ROPA').toUpperCase() === selectedType);
     }
 
-    // Filtro por Talla Global (ej: "¿Qué hay en talla M?")
-    if (selectedGlobalSize !== 'TODAS') {
+    // Filtro por Talla(s) Seleccionada(s) (ej: XL y 32 simultáneamente)
+    if (selectedSizes.length > 0) {
       list = list.filter(p => {
         const vars = variantsByParent[p.id] || [];
-        // Si tiene variantes, verificar si alguna tiene stock > 0 en esa talla
         if (vars.length > 0) {
-          return vars.some(v => (v.size || '').toUpperCase() === selectedGlobalSize && (v.stock || 0) > 0);
+          return vars.some(v => selectedSizes.includes((v.size || '').toUpperCase()) && (v.stock || 0) > 0);
         }
-        // Si no tiene variantes desglosadas, verificar la talla base
-        return (p.size || '').toUpperCase() === selectedGlobalSize && (p.stock || 0) > 0;
+        return selectedSizes.includes((p.size || '').toUpperCase()) && (p.stock || 0) > 0;
       });
     }
 
@@ -789,14 +848,24 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
       });
     }
 
-    // Buscador
+    // Buscador Inteligente con soporte para múltiples términos (ej: "pantalones 32, camisetas M" o "AND / OR")
     if (search && search.trim()) {
-      const kws = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const rawQuery = search.trim();
+      const orClauses = rawQuery.includes(' OR ')
+        ? rawQuery.split(' OR ')
+        : (rawQuery.includes(',') ? rawQuery.split(',') : [rawQuery]);
+
       list = list.filter(item => {
         const vars = variantsByParent[item.id] || [];
-        const variantText = vars.map(v => `${v.ref} ${v.color || ''} ${v.size || ''} ${v.brand || ''}`).join(' ');
-        const content = `${item.ref || ''} ${item.name || ''} ${item.category || ''} ${item.subcategory || ''} ${item.brand || ''} ${item.color || ''} ${item.size || ''} ${item.product_type || ''} ${variantText}`.toLowerCase();
-        return kws.every(k => content.includes(k));
+        const variantSizes = vars.filter(v => (v.stock || 0) > 0).map(v => (v.size || '').toUpperCase()).join(' ');
+        const variantColors = vars.map(v => (v.color || '').toUpperCase()).join(' ');
+        const variantBrands = vars.map(v => (v.brand || '').toUpperCase()).join(' ');
+        const content = `${item.ref || ''} ${item.name || ''} ${item.category || ''} ${item.subcategory || ''} ${item.brand || ''} ${item.color || ''} ${item.size || ''} ${item.product_type || ''} ${variantSizes} ${variantColors} ${variantBrands}`.toLowerCase();
+
+        return orClauses.some(clause => {
+          const terms = clause.replace(/\s+AND\s+/gi, ' ').trim().toLowerCase().split(/\s+/).filter(Boolean);
+          return terms.every(k => content.includes(k));
+        });
       });
     }
 
@@ -820,7 +889,7 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
       return (a.ref || '').localeCompare(b.ref || '', 'es');
     });
-  }, [products, selectedType, selectedGlobalSize, onlyInStock, search, variantsByParent]);
+  }, [products, selectedType, selectedSizes, onlyInStock, search, variantsByParent]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 space-y-4">
@@ -874,43 +943,72 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
           </div>
         </div>
 
-        {/* Fila 2: Filtro Rápido Global por Talla */}
-        <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
-            <Shirt size={12} className="text-indigo-600" /> Talla:
-          </span>
-          <button
-            onClick={() => setSelectedGlobalSize('TODAS')}
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
-              selectedGlobalSize === 'TODAS'
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            Todas
-          </button>
-          {commonFilterSizes.map(s => {
-            const isSelected = selectedGlobalSize === s;
-            return (
-              <button
-                key={s}
-                onClick={() => setSelectedGlobalSize(isSelected ? 'TODAS' : s)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {s}
-              </button>
-            );
-          })}
-
-          {selectedGlobalSize !== 'TODAS' && (
-            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md ml-auto">
-              Filtrando prendas con existencias en talla <strong>{selectedGlobalSize}</strong>
+        {/* Fila 2: Filtro Rápido Global por Talla (Soporta múltiples tallas a la vez: ej. XL y 32) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+              <Shirt size={12} className="text-indigo-600" /> Tallas:
             </span>
-          )}
+            <button
+              type="button"
+              onClick={() => setSelectedSizes([])}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                selectedSizes.length === 0
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Todas
+            </button>
+            {commonFilterSizes.map(s => {
+              const isSelected = selectedSizes.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleSize(s)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs scale-105'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Botones de Acción para Asesores: Compartir link filtrado y Resumen WhatsApp */}
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={handleCopyFilteredLink}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                copiedLink 
+                  ? 'bg-emerald-500 text-white border-emerald-500' 
+                  : 'bg-white hover:bg-indigo-50 border-slate-200 text-slate-700 hover:text-indigo-700'
+              }`}
+              title="Copiar enlace directo de la web con el filtro de tallas activo para enviar al cliente"
+            >
+              {copiedLink ? <Check size={12} /> : <LinkIcon size={12} className="text-indigo-600" />}
+              <span>{copiedLink ? '¡Link Copiado!' : selectedSizes.length > 0 ? `🔗 Link Tienda (${selectedSizes.join('+')})` : '🔗 Link Tienda'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyCatalogSummary}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                copiedCatalog 
+                  ? 'bg-emerald-500 text-white border-emerald-500' 
+                  : 'bg-white hover:bg-emerald-50 border-slate-200 text-slate-700 hover:text-emerald-700'
+              }`}
+              title="Copiar lista de prendas disponibles en esta talla con precios y link para WhatsApp"
+            >
+              {copiedCatalog ? <Check size={12} /> : <Copy size={12} className="text-emerald-600" />}
+              <span>{copiedCatalog ? '¡Lista Copiada!' : '💬 Lista WhatsApp'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
