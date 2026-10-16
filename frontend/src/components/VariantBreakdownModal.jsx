@@ -33,12 +33,52 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [newVariantPreview, setNewVariantPreview] = useState(null);
 
   // Encuentra variantes existentes que pertenezcan a este producto base
+  // ORDEN ESTILO NÓRDICO:
+  // 1. Por COLOR estricto en orden alfabético (A -> Z). Así todas las Azules van seguidas, luego Azul Cobalto, Beige, etc.
+  // 2. Por TALLA estándar (S, M, L, XL, XXL, XXXL...)
+  // 3. Por MARCA / Submodelo
   const existingVariants = useMemo(() => {
     const prefix = `${baseProduct.ref}-`.toLowerCase();
-    return allProducts.filter(p => 
+    const list = allProducts.filter(p => 
       p.id !== baseProduct.id && 
       (p.parent_id === baseProduct.id || (p.ref && p.ref.toLowerCase().startsWith(prefix)))
     );
+
+    const sizeOrder = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38'];
+
+    return list.sort((a, b) => {
+      // 1. Orden alfabético por Color (A -> Z)
+      const colorA = (a.color || '').trim().toUpperCase();
+      const colorB = (b.color || '').trim().toUpperCase();
+      const colorCmp = colorA.localeCompare(colorB, 'es', { sensitivity: 'base' });
+      if (colorCmp !== 0) return colorCmp;
+
+      // 2. Por Talla estándar dentro del mismo color
+      const sizeA = (a.size || '').trim().toUpperCase();
+      const sizeB = (b.size || '').trim().toUpperCase();
+      if (sizeA !== sizeB) {
+        const idxA = sizeOrder.indexOf(sizeA);
+        const idxB = sizeOrder.indexOf(sizeB);
+        if (idxA !== -1 && idxB !== -1) {
+          if (idxA !== idxB) return idxA - idxB;
+        } else if (idxA !== -1) {
+          return -1;
+        } else if (idxB !== -1) {
+          return 1;
+        } else {
+          const sCmp = sizeA.localeCompare(sizeB, 'es', { numeric: true });
+          if (sCmp !== 0) return sCmp;
+        }
+      }
+
+      // 3. Por Marca / Submodelo
+      const brandA = (a.brand || '').trim().toUpperCase();
+      const brandB = (b.brand || '').trim().toUpperCase();
+      const bCmp = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
+      if (bCmp !== 0) return bCmp;
+
+      return (a.name || '').localeCompare(b.name || '', 'es');
+    });
   }, [allProducts, baseProduct]);
 
   const totalAssignedStock = existingVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
@@ -140,10 +180,22 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       ? `${baseProduct.name.trim()} ${cleanBrand} ${color.trim().toUpperCase()} ${cleanSize}`
       : `${baseProduct.name.trim()} ${color.trim().toUpperCase()} ${cleanSize}`;
 
-    // Validar si ya existe
-    const exists = allProducts.find(p => p.ref.toUpperCase() === sku);
-    if (exists) {
-      alert(`La variante ${sku} ya existe en el inventario. Puedes editar su stock abajo.`);
+    // Validar si ya existe por SKU exacto
+    const existsBySku = allProducts.find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
+    if (existsBySku) {
+      alert(`⚠️ La variante con SKU '${sku}' ya existe en el inventario. Puedes editar su stock o foto directamente en la lista inferior.`);
+      return;
+    }
+
+    // Validar si ya existe por Color y Talla (para evitar duplicados como dos 'Gris M')
+    const rawColor = color.trim().toUpperCase();
+    const existsByColorSize = existingVariants.find(v => 
+      (v.color || '').trim().toUpperCase() === rawColor && 
+      (v.size || '').trim().toUpperCase() === cleanSize &&
+      (cleanBrand ? (v.brand || '').trim().toUpperCase() === cleanBrand : true)
+    );
+    if (existsByColorSize) {
+      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${rawColor}' y Talla: '${cleanSize}' (${existsByColorSize.ref}).\n\nNo se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
       return;
     }
 

@@ -736,7 +736,7 @@ export default function Inventory() {
             </div>
 
             {/* 2. Barra de Búsqueda y Filtros Estilo Excel con Selector de Disponibilidad */}
-            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm shrink-0 mb-4 flex flex-col gap-3">
+            <div className="bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200/90 shadow-sm shrink-0 mb-4 flex flex-col gap-3 sticky top-16 z-20 transition-all">
               {/* Fila Superior: Disponibilidad de Stock + Buscador */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 {/* Selector de Disponibilidad: Activas en Tienda vs Archivo Agotadas */}
@@ -818,6 +818,25 @@ export default function Inventory() {
                     {sortConfig.key === 'excel' && (
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse ml-0.5"></span>
                     )}
+                  </button>
+
+                  {/* Acciones Rápidas fijas al hacer scroll */}
+                  <button
+                    onClick={() => { setBatchPreselectedRef(''); setIsBatchEntryOpen(true); }}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                    title="Ingreso rápido de pedido por lote (Landed Cost)"
+                  >
+                    <Layers size={13} />
+                    <span>+ Lote</span>
+                  </button>
+
+                  <button
+                    onClick={openCreateModal}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                    title="Crear nueva prenda base"
+                  >
+                    <Plus size={13} />
+                    <span>+ Nueva</span>
                   </button>
                 </div>
               </div>

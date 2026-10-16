@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 
 // Importación de componentes y páginas
-import TerminalModal from './components/TerminalModal'; 
+import TerminalModal from './components/TerminalModal';
+import ScrollToTopButton from './components/ScrollToTopButton'; 
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import Sales from './pages/Sales';
@@ -270,6 +271,9 @@ const Layout = ({ children }) => {
         <div className="p-4 md:p-8 flex-1 flex flex-col min-w-0">
           {children}
         </div>
+
+        {/* Botón flotante para subir rápido */}
+        <ScrollToTopButton />
       </main>
 
       {/* Modal del Terminal POS */}
