@@ -891,6 +891,56 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
     });
   }, [products, selectedType, selectedSizes, onlyInStock, search, variantsByParent]);
 
+  const toggleSize = (s) => {
+    setSelectedSizes(prev => 
+      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+    );
+  };
+
+  const handleCopyFilteredLink = () => {
+    let url = `${WEB_STORE_URL}/chaquetas`;
+    if (selectedSizes.length > 0) {
+      url += `?talla=${encodeURIComponent(selectedSizes.join(','))}`;
+    }
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const handleCopyCatalogSummary = () => {
+    let title = selectedSizes.length > 0 
+      ? `❄️ *DISPONIBLES EN TALLA ${selectedSizes.join(' / ')}* ❄️\n`
+      : `❄️ *CATÁLOGO DE PRENDAS DISPONIBLES* ❄️\n`;
+    
+    let text = title;
+    text += `¡Hola! Aquí tienes lo disponible para entrega inmediata en Pasto y envíos nacionales:\n\n`;
+
+    filtered.slice(0, 15).forEach(p => {
+      const vars = variantsByParent[p.id] || [];
+      const availableInSizes = selectedSizes.length > 0
+        ? vars.filter(v => selectedSizes.includes((v.size || '').toUpperCase()) && (v.stock || 0) > 0)
+        : vars.filter(v => (v.stock || 0) > 0);
+
+      const colorsArr = Array.from(new Set(availableInSizes.map(v => v.color).filter(Boolean)));
+      const colorsStr = colorsArr.length > 0 ? colorsArr.join(', ') : 'Disponible';
+      text += `• *${p.name}* (Ref: ${p.ref})\n`;
+      text += `  🎨 Colores: ${colorsStr}\n`;
+      text += `  💰 Precio: $${fmt(p.price_sale)}\n\n`;
+    });
+
+    const webUrl = selectedSizes.length > 0 
+      ? `${WEB_STORE_URL}/chaquetas?talla=${encodeURIComponent(selectedSizes.join(','))}`
+      : `${WEB_STORE_URL}/chaquetas`;
+
+    text += `🌐 *Ver fotos completas y colores en la tienda web:* ${webUrl}\n`;
+    text += `\n🚚 *¿Te gustaría apartar alguna para envío contraentrega?*`;
+
+    navigator.clipboard.writeText(text);
+    setCopiedCatalog(true);
+    setTimeout(() => setCopiedCatalog(false), 2500);
+  };
+
+
   return (
     <div className="flex-1 flex flex-col min-h-0 space-y-4">
       

@@ -261,7 +261,7 @@ const Layout = ({ children }) => {
                 <p className="text-[10px] font-black text-slate-400 uppercase">{user?.role} {user?.vendedor_tipo ? `(${user.vendedor_tipo})` : ''}</p>
               </div>
               <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-black text-xs md:text-sm shadow-2xs">
-                 {user?.full_name?.charAt(0).toUpperCase()}
+                 {(user?.full_name || user?.username || 'U').charAt(0).toUpperCase()}
               </div>
             </div>
           </div>
