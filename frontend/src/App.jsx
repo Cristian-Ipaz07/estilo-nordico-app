@@ -277,7 +277,9 @@ const Layout = ({ children }) => {
       </main>
 
       {/* Modal del Terminal POS */}
-      <TerminalModal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
+      {isTerminalOpen && (
+        <TerminalModal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
+      )}
     </div>
   );
 };

@@ -1808,20 +1808,6 @@ export default function TerminalModal({ isOpen, onClose }) {
   const inventoryData = useInventory(isOpen);
   const { inventory, reloadInventory, refreshing } = inventoryData;
 
-  useEffect(() => {
-    const fn = (e) => { 
-      if (e.key === 'Escape' && isOpen) onClose(); 
-      if (e.ctrlKey && e.key === 'k') {
-         // Shortcut inside shortcut is handled by parent App.jsx, but let's be safe
-      }
-    };
-    window.addEventListener('keydown', fn);
-    return () => window.removeEventListener('keydown', fn);
-  }, [isOpen, onClose]);
-
-  // EL GUARD SIEMPRE VA DESPUÉS DE LOS HOOKS
-  if (!isOpen) return null;
-
   const tabs = useMemo(() => {
     if (isAdmin) {
       return [
@@ -1836,6 +1822,20 @@ export default function TerminalModal({ isOpen, onClose }) {
       { id: 'separados', icon: <Clock size={20} />, label: 'SEPARADOS' },
     ];
   }, [isAdmin]);
+
+  useEffect(() => {
+    const fn = (e) => { 
+      if (e.key === 'Escape' && isOpen) onClose(); 
+      if (e.ctrlKey && e.key === 'k') {
+         // Shortcut inside shortcut is handled by parent App.jsx, but let's be safe
+      }
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [isOpen, onClose]);
+
+  // TODOS LOS HOOKS SE HAN LLAMADO. AHORA SÍ EL GUARD DE SALIDA:
+  if (!isOpen) return null;
 
   const effectiveTab = (!isAdmin && (activeTab === 'stock' || activeTab === 'caja')) ? 'ventas' : activeTab;
 
