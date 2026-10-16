@@ -783,6 +783,8 @@ export default function CashFlow() {
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <span className={`inline-block px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
                         row.category === 'VENTA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        row.category === 'ANTICIPO PREVENTA' || row.category === 'ANTICIPO' ? 'bg-teal-50 text-teal-800 border border-teal-200' :
+                        row.category === 'CRUCE ANTICIPO' ? 'bg-orange-50 text-orange-800 border border-orange-200' :
                         row.category === 'CIERRE CAJA' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
                         row.category === 'REINVERSION' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                         row.category === 'GASTO' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
@@ -1036,6 +1038,7 @@ export default function CashFlow() {
                     {newMovement.type === 'SALIDA' ? (
                       <>
                         <option value="GASTO">GASTO OPERATIVO (Fletes, envíos, insumos)</option>
+                        <option value="CRUCE ANTICIPO">CRUCE ANTICIPO (Compensación de preventa)</option>
                         <option value="REINVERSION">REINVERSIÓN (Compra de mercancía / ropa)</option>
                         <option value="ADELANTO">ADELANTO DE SUELDO</option>
                         <option value="SALARIO">SALARIO / NÓMINA</option>
@@ -1046,6 +1049,7 @@ export default function CashFlow() {
                       </>
                     ) : (
                       <>
+                        <option value="ANTICIPO PREVENTA">ANTICIPO / PREVENTA (Cliente por encargo)</option>
                         <option value="OTRA ENTRADA">APORTE / DINERO EN CASA</option>
                         <option value="VENTA EXTERNA">VENTA EXTERNA / DIRECTA</option>
                         <option value="GANANCIA">GANANCIA / RENDIMIENTOS</option>

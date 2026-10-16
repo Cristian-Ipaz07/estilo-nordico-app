@@ -128,7 +128,7 @@ const TabBalance = ({ sales, cashFlow, startDate, endDate, token }) => {
     const totalGanancia = totalVentasSistema - costoMercancia;
 
     // GASTOS OPERATIVOS (informativos — no restan del margen bruto del Excel)
-    const EXCLUIR_GASTOS = new Set(['REINVERSION', 'RETIRO DUEÑO', 'SALARIO', 'INGRESO_VENTA_EXTERNA']);
+    const EXCLUIR_GASTOS = new Set(['REINVERSION', 'RETIRO DUEÑO', 'SALARIO', 'INGRESO_VENTA_EXTERNA', 'CRUCE ANTICIPO']);
     const gastosPorCat = {};
     caja
       .filter(c => c.type === 'SALIDA' && !EXCLUIR_GASTOS.has(c.category))
@@ -566,7 +566,7 @@ const TabDistribucion = ({ sales, cashFlow, startDate, endDate, token }) => {
     const totalRecaudo = totalVentasSistema + ingresoExterno;
 
     const costoMercancia = caja.filter(c => c.type === 'SALIDA' && c.category === 'REINVERSION').reduce((a, c) => a + c.amount, 0);
-    const totalGastos = caja.filter(c => c.type === 'SALIDA' && !['REINVERSION', 'RETIRO DUEÑO', 'SALARIO'].includes(c.category)).reduce((a, c) => a + c.amount, 0);
+    const totalGastos = caja.filter(c => c.type === 'SALIDA' && !['REINVERSION', 'RETIRO DUEÑO', 'SALARIO', 'CRUCE ANTICIPO'].includes(c.category)).reduce((a, c) => a + c.amount, 0);
     const totalSalarios = caja.filter(c => c.type === 'SALIDA' && c.category === 'SALARIO').reduce((a, c) => a + c.amount, 0);
     const utilidadNeta = totalRecaudo - costoMercancia - totalGastos - totalSalarios;
     return { utilidadNeta, totalSalarios, totalGastos, costoMercancia, totalRecaudo, ingresoExterno };

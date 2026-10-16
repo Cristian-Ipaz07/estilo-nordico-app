@@ -1698,13 +1698,22 @@ function ModuloCaja() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-black text-slate-800 text-sm uppercase">Registrar Gasto o Entrada</h3>
-              <button 
-                type="button" 
-                onClick={() => { setDesc('BASE INICIAL EFECTIVO'); setAmount(''); setType('ENTRADA'); setCategory('OTROS'); }}
-                className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[10px] font-black shadow-xs hover:bg-emerald-100 transition-colors cursor-pointer"
-              >
-                + Base Inicial
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button 
+                  type="button" 
+                  onClick={() => { setDesc('ANTICIPO CHAQUETA - CLIENTE: '); setAmount(''); setType('ENTRADA'); setCategory('ANTICIPO PREVENTA'); }}
+                  className="px-2.5 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-[10px] font-black shadow-xs hover:bg-teal-100 transition-colors cursor-pointer"
+                >
+                  + Anticipo
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => { setDesc('BASE INICIAL EFECTIVO'); setAmount(''); setType('ENTRADA'); setCategory('OTROS'); }}
+                  className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[10px] font-black shadow-xs hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  + Base Inicial
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2.5">
@@ -1737,7 +1746,11 @@ function ModuloCaja() {
                   <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
                   <select 
                     value={type} 
-                    onChange={e => setType(e.target.value)} 
+                    onChange={e => {
+                      const newType = e.target.value;
+                      setType(newType);
+                      setCategory(newType === 'SALIDA' ? 'GASTO' : 'ANTICIPO PREVENTA');
+                    }} 
                     className="w-full border-2 border-slate-100 rounded-xl px-2.5 py-2 font-bold text-[11px] outline-none bg-white"
                   >
                     <option value="SALIDA">SALIDA</option>
@@ -1754,6 +1767,7 @@ function ModuloCaja() {
                     {type === 'SALIDA' ? (
                       <>
                         <option value="GASTO">GASTO</option>
+                        <option value="CRUCE ANTICIPO">CRUCE ANTICIPO</option>
                         <option value="REINVERSION">REINVERSIÓN</option>
                         <option value="SALARIO">SALARIO</option>
                         <option value="ADELANTO">ADELANTO</option>
@@ -1763,6 +1777,7 @@ function ModuloCaja() {
                       </>
                     ) : (
                       <>
+                        <option value="ANTICIPO PREVENTA">ANTICIPO / PREVENTA</option>
                         <option value="GANANCIA">GANANCIA</option>
                         <option value="OTRA ENTRADA">OTRA ENTRADA</option>
                         <option value="PRESTAMO">PRÉSTAMO</option>
