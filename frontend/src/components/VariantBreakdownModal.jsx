@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag, 
-  ShieldCheck, Camera, Image as ImageIcon, UploadCloud 
+  ShieldCheck, Camera, Image as ImageIcon, UploadCloud, Pencil
 } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { 
@@ -10,6 +10,7 @@ import {
   uploadProductImage, 
   removeProductImage 
 } from '../utils/imageOptimizer';
+import EditVariantModal from './EditVariantModal';
 
 const COMMON_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '30', '32', '34', '36'];
 const COMMON_COLORS = ['NEGRO', 'AZUL', 'AZUL OSCURO', 'BLANCO', 'BEIGE', 'VERDE', 'VERDE MILITAR', 'ROJO', 'VINOTINTO', 'GRIS', 'CAMEL'];
@@ -18,7 +19,8 @@ const QUICK_BRANDS = ['THE NORTH FACE', 'COLUMBIA', 'MONCLER', 'DIESEL', 'ARMANI
 export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen, onClose, onRefresh }) {
   if (!isOpen || !baseProduct) return null;
 
-  const [brand, setBrand] = useState(baseProduct.brand || '');
+  // Estados de formulario nueva variante
+  const [brand, setBrand] = useState('');
   const [color, setColor] = useState('');
   const [size, setSize] = useState('M');
   const [quantity, setQuantity] = useState(1);
@@ -31,6 +33,13 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [pickingGalleryFor, setPickingGalleryFor] = useState(null);
   const [newVariantFile, setNewVariantFile] = useState(null);
   const [newVariantPreview, setNewVariantPreview] = useState(null);
+
+  // Estado para modal de edición completa de una variante
+  const [editingVariant, setEditingVariant] = useState(null);
+
+  // Estados para corrección en lote de variantes con 'ESTILO NÓRDICO'
+  const [targetBatchBrand, setTargetBatchBrand] = useState('THE NORTH FACE');
+  const [batchFixing, setBatchFixing] = useState(false);
 
   // Encuentra variantes existentes que pertenezcan a este producto base
   // ORDEN ESTILO NÓRDICO:
@@ -81,6 +90,110 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     });
   }, [allProducts, baseProduct]);
 
+  // Marca dominante detectada en las variantes existentes (ej: THE NORTH FACE)
+  const dominantVariantBrand = useMemo(() => {
+    const counts = {};
+    existingVariants.forEach(v => {
+      const b = (v.brand || '').trim().toUpperCase();
+      if (b && b !== 'ESTILO NÓRDICO' && b !== 'ESTILO NORDICO') {
+        counts[b] = (counts[b] || 0) + 1;
+      }
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return sorted.length > 0 ? sorted[0][0] : null;
+  }, [existingVariants]);
+
+  // Inicializar o ajustar marca sugerida para no dejar 'Estilo Nórdico' por error
+  useEffect(() => {
+    if (dominantVariantBrand) {
+      setBrand(dominantVariantBrand);
+      setTargetBatchBrand(dominantVariantBrand);
+    } else if (baseProduct.brand && baseProduct.brand !== 'Estilo Nórdico') {
+      setBrand(baseProduct.brand);
+    } else {
+      setBrand('');
+    }
+  }, [dominantVariantBrand, baseProduct.brand]);
+
+  // LISTA DINÁMICA DE COLORES:
+  // Combina:
+  // 1. Colores de variantes de este producto (ej: AZUL COBALTO, GRIS RATÓN...)
+  // 2. Colores existentes en TODO el catálogo de la tienda
+  // 3. Colores comunes base
+  const dynamicColorOptions = useMemo(() => {
+    const set = new Set();
+    
+    // Variantes de esta referencia
+    existingVariants.forEach(v => {
+      const c = (v.color || '').trim().toUpperCase();
+      if (c) set.add(c);
+    });
+
+    // Catálogo completo
+    (allProducts || []).forEach(p => {
+      const c = (p.color || '').trim().toUpperCase();
+      if (c) set.add(c);
+    });
+
+    // Colores estándar
+    COMMON_COLORS.forEach(c => {
+      const clean = c.trim().toUpperCase();
+      if (clean) set.add(clean);
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [existingVariants, allProducts]);
+
+  // Colores específicos ya creados en esta referencia (para chips de selección rápida con 1 clic)
+  const existingReferenceColors = useMemo(() => {
+    const set = new Set();
+    existingVariants.forEach(v => {
+      const c = (v.color || '').trim().toUpperCase();
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [existingVariants]);
+
+  // LISTA DINÁMICA DE TALLAS:
+  const dynamicSizeOptions = useMemo(() => {
+    const set = new Set();
+    
+    existingVariants.forEach(v => {
+      const s = (v.size || '').trim().toUpperCase();
+      if (s) set.add(s);
+    });
+
+    (allProducts || []).forEach(p => {
+      const s = (p.size || '').trim().toUpperCase();
+      if (s) set.add(s);
+    });
+
+    COMMON_SIZES.forEach(s => {
+      const clean = s.trim().toUpperCase();
+      if (clean) set.add(clean);
+    });
+
+    const sizeOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40'];
+    return Array.from(set).sort((a, b) => {
+      const idxA = sizeOrder.indexOf(a);
+      const idxB = sizeOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b, 'es', { numeric: true });
+    });
+  }, [existingVariants, allProducts]);
+
+  // Detectar variantes creadas con marca 'ESTILO NÓRDICO' o slug ESTILO-NÓRDICO para ofrecer corrección rápida
+  const variantsWithEstiloNordico = useMemo(() => {
+    return existingVariants.filter(v => 
+      (v.brand || '').trim().toUpperCase() === 'ESTILO NÓRDICO' ||
+      (v.brand || '').trim().toUpperCase() === 'ESTILO NORDICO' ||
+      (v.ref || '').toUpperCase().includes('ESTILO-NÓRDICO') ||
+      (v.ref || '').toUpperCase().includes('ESTILO-NORDICO')
+    );
+  }, [existingVariants]);
+
   const totalAssignedStock = existingVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
 
   // Selección de foto para la nueva variante en el formulario superior
@@ -105,9 +218,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     if (!file) return;
     setUploadingVariantId(variantId);
     try {
-      // 1. Optimizar en el navegador a WebP 1200px preservando transparencia
       const webpFile = await optimizeImageToWebP(file);
-      // 2. Subir a Supabase Storage via backend y fijar como foto de la variante
       await uploadProductImage(variantId, webpFile, true);
       if (onRefresh) await onRefresh();
     } catch (err) {
@@ -159,6 +270,62 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     }
   };
 
+  // Corrección en bloque de las variantes con 'ESTILO NÓRDICO' a la marca seleccionada
+  const handleBatchFixBrand = async () => {
+    if (!targetBatchBrand) return;
+    const targets = variantsWithEstiloNordico;
+    if (targets.length === 0) return;
+
+    const confirmMsg = `¿Deseas corregir las ${targets.length} variantes con 'ESTILO NÓRDICO' a '${targetBatchBrand}'?
+
+` +
+      `Esto actualizará su marca a '${targetBatchBrand}', actualizará sus SKUs (ej: ${baseProduct.ref}-${targetBatchBrand.replace(/\s+/g, '-')}-...) y sus nombres en el sistema.`;
+    
+    if (!window.confirm(confirmMsg)) return;
+
+    setBatchFixing(true);
+    try {
+      let successCount = 0;
+      for (const v of targets) {
+        const cleanColor = (v.color || '').trim().toUpperCase().replace(/\s+/g, '-');
+        const cleanSize = (v.size || '').trim().toUpperCase();
+        const brandSlug = (targetBatchBrand !== 'ESTILO NÓRDICO' && targetBatchBrand !== 'ESTILO NORDICO')
+          ? targetBatchBrand.trim().toUpperCase().replace(/\s+/g, '-')
+          : '';
+        
+        const newSku = brandSlug
+          ? `${baseProduct.ref}-${brandSlug}-${cleanColor}-${cleanSize}`
+          : `${baseProduct.ref}-${cleanColor}-${cleanSize}`;
+
+        const brandForName = brandSlug ? ` ${targetBatchBrand}` : '';
+        const newName = `${baseProduct.name.trim()}${brandForName} ${v.color || ''} ${cleanSize}`.trim();
+
+        const res = await fetch(`${API_URL}/products/${v.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            brand: targetBatchBrand,
+            ref: newSku,
+            name: newName
+          })
+        });
+
+        if (res.ok) successCount++;
+      }
+
+      alert(`✅ Se corrigieron exitosamente ${successCount} de ${targets.length} variantes a '${targetBatchBrand}'.`);
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Ocurrió un error al actualizar las variantes.');
+    } finally {
+      setBatchFixing(false);
+    }
+  };
+
   const handleAddVariant = async (e) => {
     e.preventDefault();
     const cleanColor = color.trim().toUpperCase().replace(/\s+/g, '-');
@@ -171,19 +338,22 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     }
 
     // SKU estándar: [REF]-[MARCA?]-[COLOR]-[TALLA]
-    const brandSlug = cleanBrand ? cleanBrand.replace(/\s+/g, '-') : '';
+    // Si la marca es ESTILO NÓRDICO no se inserta slug redundante
+    const brandSlug = (cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO')
+      ? cleanBrand.replace(/\s+/g, '-')
+      : '';
+
     const sku = brandSlug 
       ? `${baseProduct.ref}-${brandSlug}-${cleanColor}-${cleanSize}`
       : `${baseProduct.ref}-${cleanColor}-${cleanSize}`;
 
-    const variantName = cleanBrand 
-      ? `${baseProduct.name.trim()} ${cleanBrand} ${color.trim().toUpperCase()} ${cleanSize}`
-      : `${baseProduct.name.trim()} ${color.trim().toUpperCase()} ${cleanSize}`;
+    const brandForName = brandSlug ? ` ${cleanBrand}` : '';
+    const variantName = `${baseProduct.name.trim()}${brandForName} ${color.trim().toUpperCase()} ${cleanSize}`.trim();
 
     // Validar si ya existe por SKU exacto
     const existsBySku = allProducts.find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
     if (existsBySku) {
-      alert(`⚠️ La variante con SKU '${sku}' ya existe en el inventario. Puedes editar su stock o foto directamente en la lista inferior.`);
+      alert(`⚠️ La variante con SKU '${sku}' ya existe en el inventario. Puedes editar su stock o datos directamente en la lista inferior.`);
       return;
     }
 
@@ -195,7 +365,9 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       (cleanBrand ? (v.brand || '').trim().toUpperCase() === cleanBrand : true)
     );
     if (existsByColorSize) {
-      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${rawColor}' y Talla: '${cleanSize}' (${existsByColorSize.ref}).\n\nNo se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
+      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${rawColor}' y Talla: '${cleanSize}' (${existsByColorSize.ref}).
+
+No se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
       return;
     }
 
@@ -259,6 +431,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const handleUpdateStock = async (variantId, newStock) => {
     const val = Number(newStock);
     if (isNaN(val) || val < 0) return;
+
     try {
       const res = await fetch(`${API_URL}/products/${variantId}`, {
         method: 'PUT',
@@ -368,7 +541,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               type="text"
               placeholder="Ej: THE NORTH FACE, COLUMBIA"
               value={brand}
-              onChange={e => setBrand(e.target.value)}
+              onChange={e => setBrand(e.target.value.toUpperCase())}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -400,13 +573,34 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                 list="common-colors"
                 placeholder="Ej: NEGRO, AZUL, ROJO"
                 value={color}
-                onChange={e => setColor(e.target.value)}
+                onChange={e => setColor(e.target.value.toUpperCase())}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 required
               />
               <datalist id="common-colors">
-                {COMMON_COLORS.map(c => <option key={c} value={c} />)}
+                {dynamicColorOptions.map(c => <option key={c} value={c} />)}
               </datalist>
+
+              {/* Píldoras de colores ya existentes en esta referencia para clic directo */}
+              {existingReferenceColors.length > 0 && (
+                <div className="flex items-center gap-1 flex-wrap pt-1.5">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase mr-0.5">En esta ref:</span>
+                  {existingReferenceColors.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setColor(c)}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                        color.toUpperCase() === c
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                          : 'bg-indigo-50/70 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Talla */}
@@ -419,12 +613,12 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                 list="common-sizes"
                 placeholder="Ej: M, L, XL, XXXL"
                 value={size}
-                onChange={e => setSize(e.target.value)}
+                onChange={e => setSize(e.target.value.toUpperCase())}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 required
               />
               <datalist id="common-sizes">
-                {COMMON_SIZES.map(s => <option key={s} value={s} />)}
+                {dynamicSizeOptions.map(s => <option key={s} value={s} />)}
               </datalist>
             </div>
 
@@ -523,11 +717,55 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         </form>
 
         {/* Lista de Variantes Existentes */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-2 custom-scrollbar">
-          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+        <div className="flex-1 overflow-y-auto p-6 space-y-3 custom-scrollbar">
+          
+          {/* BANNER DE CORRECCIÓN RÁPIDA: Si hay variantes con 'ESTILO NÓRDICO' */}
+          {variantsWithEstiloNordico.length > 0 && (
+            <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <AlertCircle size={18} />
+                </div>
+                <div>
+                  <p className="font-black text-amber-950">
+                    {variantsWithEstiloNordico.length} variantes tienen asignada la marca "ESTILO NÓRDICO"
+                  </p>
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    ¿Deseas corregir su marca y actualizar sus códigos SKU automáticamente?
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <select
+                  value={targetBatchBrand}
+                  onChange={e => setTargetBatchBrand(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                >
+                  <option value="THE NORTH FACE">THE NORTH FACE</option>
+                  <option value="COLUMBIA">COLUMBIA</option>
+                  <option value="MONCLER">MONCLER</option>
+                  <option value="DIESEL">DIESEL</option>
+                  <option value="ARMANI">ARMANI</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleBatchFixBrand}
+                  disabled={batchFixing}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-xs shrink-0 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {batchFixing ? <RefreshCw className="animate-spin" size={13} /> : <ShieldCheck size={13} />}
+                  <span>Corregir {variantsWithEstiloNordico.length} Variantes</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
             <span>Variantes Actuales ({existingVariants.length})</span>
             <span className="text-[10px] font-normal text-slate-400">
-              💡 Asigna la foto exacta a cada color/talla desde tu PC o galería base
+              💡 Asigna la foto exacta o usa el lápiz para editar marca, color o talla
             </span>
           </p>
 
@@ -608,9 +846,13 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-xs font-black text-slate-800 font-mono truncate">{v.ref}</p>
-                            {v.brand && v.brand !== 'Estilo Nórdico' && (
+                            {v.brand && v.brand !== 'Estilo Nórdico' ? (
                               <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
                                 {v.brand}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                {v.brand || 'Estilo Nórdico'}
                               </span>
                             )}
                           </div>
@@ -633,7 +875,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                       </div>
 
                       {/* Stock & Acciones */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Editor Rápido de Stock Inline */}
                         {editingId === v.id ? (
                           <div className="flex items-center gap-1.5">
                             <input
@@ -661,12 +904,23 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                           <button
                             onClick={() => { setEditingId(v.id); setTempQty(v.stock); }}
                             className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-xs font-black font-mono text-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Clic para editar stock"
+                            title="Clic para editar stock rápidamente"
                           >
                             {v.stock} un.
                           </button>
                         )}
 
+                        {/* Botón Editar Completo de la Variante (Lápiz) */}
+                        <button
+                          type="button"
+                          onClick={() => setEditingVariant(v)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                          title="Editar variante (marca, color, talla, SKU, precio)"
+                        >
+                          <Pencil size={14} />
+                        </button>
+
+                        {/* Botón Eliminar Variante */}
                         <button
                           onClick={() => handleDeleteVariant(v.id, v.ref)}
                           className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -723,6 +977,22 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         </div>
 
       </div>
+
+      {/* Modal Subsidario para Editar Variante */}
+      <EditVariantModal
+        isOpen={!!editingVariant}
+        variant={editingVariant}
+        baseProduct={baseProduct}
+        allProducts={allProducts}
+        dynamicColors={dynamicColorOptions}
+        referenceColors={existingReferenceColors}
+        dynamicSizes={dynamicSizeOptions}
+        onClose={() => setEditingVariant(null)}
+        onSuccess={async () => {
+          setEditingVariant(null);
+          if (onRefresh) await onRefresh();
+        }}
+      />
     </div>
   );
 }

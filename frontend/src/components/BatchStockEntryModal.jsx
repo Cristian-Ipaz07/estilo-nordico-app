@@ -28,6 +28,7 @@ export default function BatchStockEntryModal({
   const [mode, setMode] = useState('existing'); // 'existing' o 'new'
   const [searchTerm, setSearchTerm] = useState(initialRef || '');
   const [selectedBase, setSelectedBase] = useState(null);
+  const [existingBatchBrand, setExistingBatchBrand] = useState('THE NORTH FACE');
 
   // Campos para Nueva Prenda Base
   const [newRef, setNewRef] = useState('');
@@ -92,15 +93,36 @@ export default function BatchStockEntryModal({
       setNewPriceSale(p.price_sale);
     }
 
+    // Detectar marca de variantes hijas o de la prenda base
     const children = products.filter(child => child.parent_id === p.id);
-    const existingColors = Array.from(new Set(children.map(c => c.color?.toUpperCase()).filter(Boolean)));
+    const nonEstiloNordicoBrands = children
+      .map(c => c.brand?.toUpperCase())
+      .filter(b => b && b !== 'ESTILO NÓRDICO' && b !== 'ESTILO NORDICO');
     
+    if (nonEstiloNordicoBrands.length > 0) {
+      setExistingBatchBrand(nonEstiloNordicoBrands[0]);
+    } else if (p.brand && p.brand !== 'Estilo Nórdico') {
+      setExistingBatchBrand(p.brand.toUpperCase());
+    } else {
+      setExistingBatchBrand('THE NORTH FACE');
+    }
+
+    const existingColors = Array.from(new Set(children.map(c => c.color?.toUpperCase()).filter(Boolean)));
     if (existingColors.length > 0) {
       setActiveRows(existingColors.map(c => ({ color: c, quantities: {} })));
     }
   };
 
   // 4. Cálculos en tiempo real
+  const allColorsInCatalog = useMemo(() => {
+    const set = new Set();
+    (products || []).forEach(p => {
+      if (p.color && p.color.trim()) set.add(p.color.trim().toUpperCase());
+    });
+    COMMON_COLORS.forEach(c => set.add(c.trim().toUpperCase()));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [products]);
+
   const totalUnits = useMemo(() => {
     let count = 0;
     activeRows.forEach(row => {
@@ -187,7 +209,7 @@ export default function BatchStockEntryModal({
             color: row.color,
             size: size,
             quantity: n,
-            brand: mode === 'existing' ? selectedBase?.brand : newBrand,
+            brand: mode === 'existing' ? (existingBatchBrand.trim().toUpperCase() || selectedBase?.brand || 'THE NORTH FACE') : newBrand,
             new_price_sale: newPriceSale ? Number(newPriceSale) : null
           });
         }
@@ -201,7 +223,7 @@ export default function BatchStockEntryModal({
       base_name: mode === 'new' ? newName.trim() : (selectedBase?.name || ''),
       category: mode === 'new' ? newCategory : (selectedBase?.category || 'Hombre'),
       subcategory: mode === 'new' ? newSubcategory : (selectedBase?.subcategory || ''),
-      brand: mode === 'new' ? newBrand : (selectedBase?.brand || 'Estilo Nórdico'),
+      brand: mode === 'new' ? newBrand : (existingBatchBrand.trim().toUpperCase() || selectedBase?.brand || 'THE NORTH FACE'),
       base_price_sale: newPriceSale ? Number(newPriceSale) : null,
       total_invoice: Number(totalInvoice) || 0,
       freight_cost: Number(freightCost) || 0,
@@ -547,6 +569,36 @@ export default function BatchStockEntryModal({
                         <X size={16} />
                       </button>
                     </div>
+
+                    {/* Selector de Marca para este lote */}
+                    <div className="w-full pt-2.5 mt-2 border-t border-indigo-100 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-black uppercase text-slate-500">Marca para este lote:</span>
+                        <input
+                          type="text"
+                          value={existingBatchBrand}
+                          onChange={e => setExistingBatchBrand(e.target.value.toUpperCase())}
+                          placeholder="Ej: THE NORTH FACE"
+                          className="px-2.5 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-black text-indigo-950 uppercase outline-none focus:border-indigo-500 w-44"
+                        />
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {['THE NORTH FACE', 'COLUMBIA', 'MONCLER', 'DIESEL', 'ARMANI', 'ESTILO NÓRDICO'].map(b => (
+                            <button
+                              key={b}
+                              type="button"
+                              onClick={() => setExistingBatchBrand(b)}
+                              className={`px-2 py-0.5 rounded-md text-[9px] font-bold border transition-all cursor-pointer ${
+                                existingBatchBrand === b 
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' 
+                                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                              }`}
+                            >
+                              {b}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -707,6 +759,7 @@ export default function BatchStockEntryModal({
                 <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 focus-within:bg-white focus-within:border-indigo-400">
                   <input
                     type="text"
+                    list="batch-all-colors"
                     value={customColorInput}
                     onChange={e => setCustomColorInput(e.target.value)}
                     onKeyDown={e => {
@@ -718,6 +771,9 @@ export default function BatchStockEntryModal({
                     placeholder="Otro color..."
                     className="w-24 text-[11px] font-bold text-slate-800 outline-none uppercase bg-transparent"
                   />
+                  <datalist id="batch-all-colors">
+                    {allColorsInCatalog.map(c => <option key={c} value={c} />)}
+                  </datalist>
                   <button
                     type="button"
                     onClick={() => handleAddColor(customColorInput)}
