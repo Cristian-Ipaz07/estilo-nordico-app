@@ -270,6 +270,49 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     }
   };
 
+  // Sincronizar automáticamente fotos entre variantes del mismo color
+  const handleSyncColorPhotos = async () => {
+    const colorPhotoMap = {};
+    existingVariants.forEach(v => {
+      const c = (v.color || '').trim().toUpperCase();
+      if (c && Array.isArray(v.images) && v.images.length > 0 && !colorPhotoMap[c]) {
+        colorPhotoMap[c] = v.images[0];
+      }
+    });
+
+    const toUpdate = existingVariants.filter(v => {
+      const c = (v.color || '').trim().toUpperCase();
+      const hasImg = Array.isArray(v.images) && v.images.length > 0;
+      return !hasImg && colorPhotoMap[c];
+    });
+
+    if (toUpdate.length === 0) {
+      alert('Todas las variantes con fotos disponibles para su color ya están sincronizadas.');
+      return;
+    }
+
+    if (!window.confirm(`¿Deseas sincronizar las fotos de ${toUpdate.length} variante(s) copiando la foto existente de su mismo color?`)) return;
+
+    for (const v of toUpdate) {
+      const c = (v.color || '').trim().toUpperCase();
+      try {
+        await fetch(`${API_URL}/products/${v.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ images: [colorPhotoMap[c]] })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    alert(`✅ Se sincronizaron las fotos de ${toUpdate.length} variante(s).`);
+    if (onRefresh) await onRefresh();
+  };
+
   // Corrección en bloque de las variantes con 'ESTILO NÓRDICO' a la marca seleccionada
   const handleBatchFixBrand = async () => {
     if (!targetBatchBrand) return;
@@ -373,6 +416,13 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
 
     setSubmitting(true);
     try {
+      // Si otra variante del mismo color ya tiene foto, heredarla automáticamente
+      const sameColorVariant = existingVariants.find(v => 
+        (v.color || '').trim().toUpperCase() === color.trim().toUpperCase() &&
+        Array.isArray(v.images) && v.images.length > 0
+      );
+      const inheritedImages = sameColorVariant ? sameColorVariant.images : [];
+
       const payload = {
         ref: sku,
         name: variantName,
@@ -387,7 +437,8 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
         my_cost: baseProduct.my_cost || 0,
         stock: Number(quantity) || 0,
         product_type: baseProduct.product_type || 'ROPA',
-        is_published: false
+        is_published: false,
+        images: inheritedImages
       };
 
       const res = await fetch(`${API_URL}/products/`, {
@@ -762,12 +813,24 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
             </div>
           )}
 
-          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
-            <span>Variantes Actuales ({existingVariants.length})</span>
-            <span className="text-[10px] font-normal text-slate-400">
-              💡 Asigna la foto exacta o usa el lápiz para editar marca, color o talla
-            </span>
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+              Variantes Actuales ({existingVariants.length})
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSyncColorPhotos}
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                title="Copia la foto del mismo color a todas las tallas que aún no tengan imagen"
+              >
+                <span>⚡ Heredar fotos por color</span>
+              </button>
+              <span className="text-[10px] font-normal text-slate-400 hidden sm:inline">
+                💡 Asigna la foto exacta o usa el lápiz
+              </span>
+            </div>
+          </div>
 
           {existingVariants.length === 0 ? (
             <div className="text-center py-8 text-slate-400 text-xs">
