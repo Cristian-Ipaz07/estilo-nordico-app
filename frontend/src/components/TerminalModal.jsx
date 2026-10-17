@@ -2,14 +2,60 @@ import { API_URL } from '../config/api';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { EditLayawayModal } from '../pages/LayawayPage';
+import { normalizeImageUrl } from '../utils/imageOptimizer';
 import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Package, DollarSign, Clock,
   Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
-  History, Truck, RotateCcw
+  History, Truck, RotateCcw, Image as ImageIcon
 } from 'lucide-react';
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
+
+// Helper para obtener la mejor imagen disponible de un producto o sus variantes hermanas
+const getProductImage = (p, inv) => {
+  if (!p) return null;
+  if (Array.isArray(p.images) && p.images.length > 0 && p.images[0]) {
+    return p.images[0];
+  }
+  if (p.image_url && typeof p.image_url === 'string' && p.image_url.trim()) return p.image_url.trim();
+  if (p.image && typeof p.image === 'string' && p.image.trim()) return p.image.trim();
+
+  // Fallback inteligente: buscar en el inventario otra variante con la misma referencia base y mismo color
+  if (inv && Array.isArray(inv)) {
+    const pRef = (p.ref || '').trim().toLowerCase();
+    const pColor = (p.color || '').trim().toLowerCase();
+    const pName = (p.name || p.producto || '').trim().toLowerCase();
+    const baseRef = pRef.split('-')[0];
+
+    const match = inv.find(other => {
+      if (other.id === p.id) return false;
+      const hasImg = Array.isArray(other.images) && other.images.length > 0 && other.images[0];
+      if (!hasImg) return false;
+
+      const otherRef = (other.ref || '').trim().toLowerCase();
+      const otherColor = (other.color || '').trim().toLowerCase();
+      const otherName = (other.name || other.producto || '').trim().toLowerCase();
+
+      if (baseRef && otherRef.startsWith(baseRef) && pColor && otherColor === pColor) {
+        return true;
+      }
+      if (pName && otherName === pName && pColor && otherColor === pColor) {
+        return true;
+      }
+      if (baseRef && otherRef.startsWith(baseRef) && !pColor) {
+        return true;
+      }
+      return false;
+    });
+
+    if (match && Array.isArray(match.images) && match.images[0]) {
+      return match.images[0];
+    }
+  }
+
+  return null;
+};
 
 // Helper para fecha hoy en Colombia (YYYY-MM-DD) — robusto con toLocaleString
 const getTodayCO = () => {
@@ -102,6 +148,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const [search, setSearch] = useState('');
   const [filteredResults, setFilteredResults] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState(null);
+  const [clickPreview, setClickPreview] = useState(null);
   const [cart, setCart] = useStickyState([], 'en_terminal_cart');
   const [customer, setCustomer] = useStickyState('CLIENTE FINAL', 'en_terminal_customer');
   const { user } = useAuth();
@@ -497,6 +545,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
                   const availableStock = Math.max(0, (p.stock || 0) - qtyInCart);
                   const isTotallyExhausted = availableStock <= 0;
                   const isPhysicalOutOfStock = (p.stock || 0) <= 0;
+                  const itemImg = getProductImage(p, inventory);
 
                   return (
                     <div 
@@ -510,6 +559,42 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
                           : 'hover:bg-slate-50 cursor-pointer active:bg-slate-100'
                       }`}
                     >
+                      {/* Mini Botón de Foto (Hover en PC / Clic en Celular) */}
+                      <div className="shrink-0 relative">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (itemImg) {
+                              setClickPreview(prev => prev?.id === p.id ? null : { ...p, previewImage: itemImg });
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (itemImg) {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setHoverPreview({ ...p, previewImage: itemImg, pos: { x: rect.right, y: rect.top } });
+                            }
+                          }}
+                          onMouseLeave={() => setHoverPreview(null)}
+                          className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all relative overflow-hidden ${
+                            itemImg 
+                              ? 'bg-white border-slate-200 hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 shadow-2xs cursor-pointer' 
+                              : 'bg-slate-100 border-slate-200/60 opacity-40 cursor-default'
+                          }`}
+                          title={itemImg ? "Ver foto (hover en PC o clic en celular)" : "Sin imagen asignada"}
+                        >
+                          {itemImg ? (
+                            <img 
+                              src={normalizeImageUrl(itemImg)} 
+                              alt="" 
+                              className="w-full h-full object-cover transition-transform group-hover:scale-110" 
+                            />
+                          ) : (
+                            <ImageIcon size={14} className="text-slate-400" />
+                          )}
+                        </button>
+                      </div>
+
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <p className={`font-black text-xs uppercase truncate transition-colors ${
@@ -690,8 +775,46 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
               return (
                 <tr key={item.id} className={`${item.stock <= 0 || item.qty > item.stock ? 'bg-rose-50' : 'bg-white'} border rounded-2xl shadow-sm`}>
                   <td className="py-3 pl-4 rounded-l-2xl border-y border-l">
-                    <span className="font-black text-[11px] uppercase text-slate-800">{item.name || item.producto}</span>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase italic">{item.category} • {item.subcategory} ({item.ref})</p>
+                    <div className="flex items-center gap-3">
+                      {/* Mini Botón de Foto en la fila del Carrito */}
+                      {(() => {
+                        const cartImg = getProductImage(item, inventory);
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (cartImg) {
+                                setClickPreview(prev => prev?.id === item.id ? null : { ...item, previewImage: cartImg });
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              if (cartImg) {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setHoverPreview({ ...item, previewImage: cartImg, pos: { x: rect.right, y: rect.top } });
+                              }
+                            }}
+                            onMouseLeave={() => setHoverPreview(null)}
+                            className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all shrink-0 overflow-hidden ${
+                              cartImg 
+                                ? 'bg-white border-slate-200 hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 shadow-2xs cursor-pointer' 
+                                : 'bg-slate-100 border-slate-200/60 opacity-40 cursor-default'
+                            }`}
+                            title={cartImg ? "Ver foto (hover en PC o clic en celular)" : "Sin imagen asignada"}
+                          >
+                            {cartImg ? (
+                              <img src={normalizeImageUrl(cartImg)} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <ImageIcon size={14} className="text-slate-400" />
+                            )}
+                          </button>
+                        );
+                      })()}
+                      <div className="min-w-0">
+                        <span className="font-black text-[11px] uppercase text-slate-800 block truncate">{item.name || item.producto}</span>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase italic truncate">{item.category} • {item.subcategory} ({item.ref})</p>
+                      </div>
+                    </div>
                   </td>
                   <td className={`py-3 text-center border-y font-black text-xs ${item.stock <= 0 ? 'text-rose-500' : 'text-slate-400'}`}>{item.stock}</td>
                   <td className="py-3 border-y text-center">
@@ -880,6 +1003,142 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
           </div>
         </div>
       </div>
+
+      {/* VISTA PREVIA FLOTANTE (HOVER EN PC) */}
+      {hoverPreview && !clickPreview && (
+        <div 
+          className="fixed z-[300] pointer-events-none transition-opacity duration-150 animate-in fade-in"
+          style={{
+            top: hoverPreview.pos ? `${Math.min(window.innerHeight - 360, Math.max(16, hoverPreview.pos.y - 40))}px` : '100px',
+            left: hoverPreview.pos ? `${Math.min(window.innerWidth - 290, hoverPreview.pos.x + 12)}px` : '400px',
+          }}
+        >
+          <div className="w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-indigo-500/20 overflow-hidden p-2.5">
+            <div className="relative aspect-square w-full rounded-xl bg-slate-50 overflow-hidden border border-slate-100 flex items-center justify-center">
+              <img 
+                src={normalizeImageUrl(hoverPreview.previewImage)} 
+                alt={hoverPreview.name}
+                className="w-full h-full object-contain p-1.5" 
+              />
+            </div>
+            <div className="p-2 space-y-1">
+              <p className="font-black text-xs uppercase text-slate-900 truncate">
+                {hoverPreview.name || hoverPreview.producto}
+              </p>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="font-mono font-bold text-slate-400 truncate max-w-[120px]">{hoverPreview.ref}</span>
+                <span className="font-black font-mono text-emerald-600 shrink-0">${fmt(hoverPreview.price_sale || hoverPreview.p_venta || 0)}</span>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {hoverPreview.color && (
+                  <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                    {hoverPreview.color}
+                  </span>
+                )}
+                {hoverPreview.size && (
+                  <span className="text-[9px] font-black font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
+                    Talla: {hoverPreview.size}
+                  </span>
+                )}
+                <span className="text-[9px] font-bold uppercase text-slate-400 truncate">
+                  {hoverPreview.category}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INTERACTIVO DE FOTO (CLIC EN CELULAR O PC) */}
+      {clickPreview && (
+        <div 
+          className="fixed inset-0 z-[350] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setClickPreview(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="relative aspect-square bg-slate-100 flex items-center justify-center overflow-hidden">
+              <img 
+                src={normalizeImageUrl(clickPreview.previewImage)} 
+                alt={clickPreview.name}
+                className="w-full h-full object-contain p-3" 
+              />
+              <button
+                type="button"
+                onClick={() => setClickPreview(null)}
+                className="absolute top-3 right-3 p-2 bg-slate-900/60 hover:bg-slate-900 text-white rounded-full transition-all cursor-pointer shadow-md"
+                title="Cerrar vista previa"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-black text-sm text-slate-900 uppercase truncate">
+                    {clickPreview.name || clickPreview.producto}
+                  </h4>
+                  <p className="text-[10px] font-mono font-bold text-slate-400">
+                    {clickPreview.ref}
+                  </p>
+                </div>
+                <p className="font-black text-base text-slate-900 font-mono shrink-0">
+                  ${fmt(clickPreview.price_sale || clickPreview.p_venta || 0)}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {clickPreview.color && (
+                  <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200">
+                    {clickPreview.color}
+                  </span>
+                )}
+                {clickPreview.size && (
+                  <span className="text-[10px] font-black font-mono bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-100">
+                    Talla: {clickPreview.size}
+                  </span>
+                )}
+                <span className="text-[10px] font-bold uppercase text-slate-400">
+                  {clickPreview.category} {clickPreview.subcategory ? `· ${clickPreview.subcategory}` : ''}
+                </span>
+              </div>
+
+              {(() => {
+                const inCartItem = cart.find(i => i.id === clickPreview.id);
+                const qtyInCart = inCartItem ? (Number(inCartItem.qty) || 0) : 0;
+                const availableStock = Math.max(0, (clickPreview.stock || 0) - qtyInCart);
+                const isExhausted = availableStock <= 0;
+
+                return (
+                  <div className="pt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setClickPreview(null)}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase transition-colors cursor-pointer"
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isExhausted}
+                      onClick={() => {
+                        addToCart(clickPreview);
+                        setClickPreview(null);
+                      }}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl font-black text-xs uppercase flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                    >
+                      <ShoppingCart size={15} /> 
+                      {isExhausted ? 'Sin stock disp.' : (qtyInCart > 0 ? 'Agregar otra unidad' : 'Agregar a la Caja')}
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
