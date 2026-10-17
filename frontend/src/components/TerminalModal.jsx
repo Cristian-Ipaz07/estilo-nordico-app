@@ -69,7 +69,24 @@ function useInventory(isOpen) {
       .finally(() => setTimeout(() => setRefreshing(false), 600));
   }, []);
 
-  useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
+  useEffect(() => { 
+    if (!isOpen) return;
+    load(); 
+
+    // Sincronización periódica cada 25s para reflejar ventas de otros asesores en vivo
+    const interval = setInterval(() => {
+      load();
+    }, 25000);
+
+    // Auto-actualizar al regresar a la pestaña del navegador
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isOpen, load]);
 
   // Escuchar restock desde cualquier módulo
   useEffect(() => {
@@ -84,6 +101,7 @@ function useInventory(isOpen) {
 function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const [search, setSearch] = useState('');
   const [filteredResults, setFilteredResults] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [cart, setCart] = useStickyState([], 'en_terminal_cart');
   const [customer, setCustomer] = useStickyState('CLIENTE FINAL', 'en_terminal_customer');
   const { user } = useAuth();
@@ -156,7 +174,11 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
 
   useEffect(() => {
     const raw = search.trim().toLowerCase();
-    if (!raw) { setFilteredResults([]); return; }
+    if (!raw) { 
+      setFilteredResults([]); 
+      setIsDropdownOpen(false);
+      return; 
+    }
     
     // Separar palabras clave
     const kws = raw.split(/\s+/).filter(Boolean);
@@ -191,20 +213,28 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       return true;
     });
 
-    // Ordenar resultados: Disponibles con stock primero, luego alfabético
+    // Ordenar resultados: Disponibles en stock (descontando los que ya están en el carrito) van PRIMERO
     results.sort((a, b) => {
-      const sA = (a.stock || 0) > 0 ? 1 : 0;
-      const sB = (b.stock || 0) > 0 ? 1 : 0;
+      const qA = cart.find(i => i.id === a.id)?.qty || 0;
+      const qB = cart.find(i => i.id === b.id)?.qty || 0;
+      const availA = (a.stock || 0) - qA;
+      const availB = (b.stock || 0) - qB;
+
+      const sA = availA > 0 ? 1 : 0;
+      const sB = availB > 0 ? 1 : 0;
       if (sA !== sB) return sB - sA;
       return (a.name || a.ref || '').localeCompare(b.name || b.ref || '', 'es');
     });
 
     setFilteredResults(results.slice(0, 30));
-  }, [search, inventory, KNOWN_SIZES]);
+    setIsDropdownOpen(true);
+  }, [search, inventory, cart, KNOWN_SIZES]);
 
   useEffect(() => {
     const fn = (e) => {
-      if (searchRef.current && !searchRef.current.contains(e.target)) setFilteredResults([]);
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
@@ -213,13 +243,22 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const addToCart = (p) => {
     const fixedPrice = p.price_sale || p.p_venta || 0;
     const existing = cart.find(i => i.id === p.id);
+    const currentQty = existing ? (Number(existing.qty) || 0) : 0;
+    const maxStock = p.stock || 0;
+
+    // Validación: si ya está todo el stock físico en el carrito, no permitir agregar más
+    if (currentQty >= maxStock) {
+      return;
+    }
+
     if (existing) {
       setCart(cart.map(i => i.id === p.id
         ? { ...i, qty: i.qty + 1, total_item: (i.qty + 1) * i.original_price } : i));
     } else {
       setCart([...cart, { ...p, qty: 1, p_lista_real: fixedPrice, original_price: fixedPrice, total_item: fixedPrice }]);
     }
-    setSearch(''); setFilteredResults([]);
+    // IMPORTANTE: NO limpiamos search ni cerramos el desplegable para permitir
+    // agregar múltiples productos de la misma búsqueda sin interrupción.
   };
 
   const updateCart = (id, field, value) => {
@@ -387,6 +426,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       setAmountPaid(0); 
       setSearch(''); 
       setFilteredResults([]);
+      setIsDropdownOpen(false);
       setDeliveryAddress('');
       setDeliveryNotes('');
       setIsDelivery(false);
@@ -410,73 +450,142 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       )}
 
       <div className="grid grid-cols-12 gap-3 mb-4">
-        <div className="col-span-7 relative" ref={searchRef}>
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input
-            autoFocus
-            className="w-full pl-14 pr-6 py-4 bg-slate-100 rounded-[22px] outline-none font-bold text-slate-700 text-base border-2 border-transparent focus:border-emerald-500 transition-all"
-            placeholder="Buscar producto: ref, nombre, categoría..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {filteredResults.length > 0 && (
-            <div className="absolute z-[110] w-full bg-white shadow-2xl rounded-2xl mt-2 border border-slate-200 max-h-80 overflow-y-auto divide-y divide-slate-100 py-1 animate-in fade-in duration-150">
-              {filteredResults.map(p => {
-                const isOutOfStock = (p.stock || 0) <= 0;
-                return (
-                  <div 
-                    key={p.id} 
-                    onClick={() => addToCart(p)}
-                    className="px-4 py-2.5 hover:bg-slate-50 cursor-pointer flex items-center justify-between gap-3 transition-colors group"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-black text-xs uppercase text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
-                          {p.name || p.producto}
+        <div className="col-span-7 flex items-center gap-2" ref={searchRef}>
+          <div className="relative flex-1">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+            <input
+              autoFocus
+              className="w-full pl-14 pr-11 py-4 bg-slate-100 rounded-[22px] outline-none font-bold text-slate-700 text-base border-2 border-transparent focus:border-emerald-500 transition-all placeholder:text-slate-400"
+              placeholder="Buscar producto: ref, nombre, color, categoría..."
+              value={search}
+              onFocus={() => {
+                if (filteredResults.length > 0) setIsDropdownOpen(true);
+              }}
+              onChange={e => {
+                setSearch(e.target.value);
+                setIsDropdownOpen(true);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setIsDropdownOpen(false);
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const firstAvail = filteredResults.find(p => {
+                    const q = cart.find(i => i.id === p.id)?.qty || 0;
+                    return ((p.stock || 0) - q) > 0;
+                  });
+                  if (firstAvail) addToCart(firstAvail);
+                }
+              }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setFilteredResults([]); setIsDropdownOpen(false); }}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/80 rounded-full transition-colors cursor-pointer"
+                title="Limpiar búsqueda"
+              >
+                <X size={16} />
+              </button>
+            )}
+
+            {isDropdownOpen && filteredResults.length > 0 && (
+              <div className="absolute left-0 top-full z-[110] w-full bg-white shadow-2xl rounded-2xl mt-2 border border-slate-200 max-h-80 overflow-y-auto divide-y divide-slate-100 py-1 animate-in fade-in duration-150">
+                {filteredResults.map(p => {
+                  const inCartItem = cart.find(i => i.id === p.id);
+                  const qtyInCart = inCartItem ? (Number(inCartItem.qty) || 0) : 0;
+                  const availableStock = Math.max(0, (p.stock || 0) - qtyInCart);
+                  const isTotallyExhausted = availableStock <= 0;
+                  const isPhysicalOutOfStock = (p.stock || 0) <= 0;
+
+                  return (
+                    <div 
+                      key={p.id} 
+                      onClick={() => {
+                        if (!isTotallyExhausted) addToCart(p);
+                      }}
+                      className={`px-4 py-2.5 flex items-center justify-between gap-3 transition-colors group select-none ${
+                        isTotallyExhausted 
+                          ? 'bg-slate-50/70 opacity-60 cursor-not-allowed' 
+                          : 'hover:bg-slate-50 cursor-pointer active:bg-slate-100'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className={`font-black text-xs uppercase truncate transition-colors ${
+                            isTotallyExhausted ? 'text-slate-500' : 'text-slate-900 group-hover:text-indigo-600'
+                          }`}>
+                            {p.name || p.producto}
+                          </p>
+                          {p.ref && (
+                            <span className="text-[10px] font-mono text-slate-400 font-bold shrink-0">
+                              {p.ref}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {p.color && (
+                            <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200/60">
+                              {p.color}
+                            </span>
+                          )}
+                          {p.size && (
+                            <span className="text-[9px] font-black font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
+                              Talla: {p.size}
+                            </span>
+                          )}
+                          <span className="text-[9px] text-slate-400 font-bold uppercase truncate">
+                            {p.category} {p.subcategory ? `· ${p.subcategory}` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <p className="font-black text-sm text-slate-900 font-mono">
+                          ${fmt(p.price_sale || p.p_venta || 0)}
                         </p>
-                        {p.ref && (
-                          <span className="text-[10px] font-mono text-slate-400 font-bold shrink-0">
-                            {p.ref}
+                        
+                        {qtyInCart > 0 ? (
+                          availableStock === 0 ? (
+                            <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-slate-200 text-slate-700 border border-slate-300">
+                              ✓ En caja · 0 disp.
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              En caja ({qtyInCart}) · {availableStock} disp.
+                            </span>
+                          )
+                        ) : isPhysicalOutOfStock ? (
+                          <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-rose-50 text-rose-600">
+                            Agotado
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 ${
+                            availableStock < 3 
+                              ? 'bg-amber-50 text-amber-700' 
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}>
+                            {availableStock} un.
                           </span>
                         )}
                       </div>
-
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {p.color && (
-                          <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200/60">
-                            {p.color}
-                          </span>
-                        )}
-                        {p.size && (
-                          <span className="text-[9px] font-black font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
-                            Talla: {p.size}
-                          </span>
-                        )}
-                        <span className="text-[9px] text-slate-400 font-bold uppercase truncate">
-                          {p.category} {p.subcategory ? `· ${p.subcategory}` : ''}
-                        </span>
-                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-                    <div className="text-right shrink-0">
-                      <p className="font-black text-sm text-slate-900 font-mono">
-                        ${fmt(p.price_sale || p.p_venta || 0)}
-                      </p>
-                      <span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 ${
-                        isOutOfStock 
-                          ? 'bg-rose-50 text-rose-600' 
-                          : p.stock < 3 
-                            ? 'bg-amber-50 text-amber-700' 
-                            : 'bg-emerald-50 text-emerald-700'
-                      }`}>
-                        {isOutOfStock ? 'Agotado' : `${p.stock} un.`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => reloadInventory()}
+            disabled={refreshing}
+            title="Actualizar catálogo y stock de otros asesores"
+            className="h-[56px] w-[56px] bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-[20px] transition-colors flex items-center justify-center shrink-0 disabled:opacity-50 cursor-pointer border border-slate-200/50 shadow-2xs"
+          >
+            <RefreshCw size={18} className={refreshing ? "animate-spin text-emerald-600" : ""} />
+          </button>
         </div>
         <div className="col-span-5 flex gap-2">
           <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-4">
