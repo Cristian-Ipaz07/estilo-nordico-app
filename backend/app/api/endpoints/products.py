@@ -85,13 +85,35 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
 
 # 4. ELIMINAR
 @router.delete("/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db_product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
-    db.delete(db_product)
-    db.commit()
+    # Recolectar imágenes del producto padre y de variantes hijas para limpiar Supabase Storage
+    images_to_delete = []
+    if db_product.images and isinstance(db_product.images, list):
+        images_to_delete.extend(db_product.images)
+
+    child_variants = db.query(ProductModel).filter(ProductModel.parent_id == product_id).all()
+    for child in child_variants:
+        if child.images and isinstance(child.images, list):
+            images_to_delete.extend(child.images)
+
+    try:
+        db.delete(db_product)
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Si tiene ventas asociadas y no permite hard delete, marcar como inactivo
+        db_product.is_active = False
+        db_product.is_published = False
+        db.commit()
+
+    # Eliminar físicamente los archivos de imagen de Supabase Storage
+    for img in images_to_delete:
+        await delete_supabase_storage_file(img)
+
     return {"message": "Producto eliminado correctamente"}
 
 # 5. importar excel
@@ -114,6 +136,23 @@ async def upload_inventory(file: UploadFile = File(...), db: Session = Depends(g
 
 # 5b. SUBIR IMAGEN A SUPABASE STORAGE Y VINCULAR AL PRODUCTO O VARIANTE
 SUPABASE_URL = "https://rnlvzrelpvqjamcfvoga.supabase.co"
+
+async def delete_supabase_storage_file(image_url: str):
+    """Elimina físicamente el archivo del bucket 'products' en Supabase Storage."""
+    if not image_url or "supabase.co/storage/v1/object/public/products/" not in image_url:
+        return
+    try:
+        filename = image_url.split("supabase.co/storage/v1/object/public/products/")[-1]
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+        if not supabase_key:
+            return
+        headers = {"Authorization": f"Bearer {supabase_key}"}
+        delete_url = f"{SUPABASE_URL}/storage/v1/object/products/{filename}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.delete(delete_url, headers=headers)
+    except Exception as e:
+        print(f"Error eliminando archivo de Supabase Storage: {e}")
+
 
 @router.post("/{product_id}/upload-image", tags=["Productos"])
 async def upload_product_image(
@@ -175,7 +214,7 @@ async def upload_product_image(
 
 
 @router.delete("/{product_id}/images", tags=["Productos"])
-def remove_product_image(
+async def remove_product_image(
     product_id: int,
     image_url: str = Query(...),
     db: Session = Depends(get_db)
@@ -189,6 +228,10 @@ def remove_product_image(
     product.images = new_imgs
     db.commit()
     db.refresh(product)
+
+    # Eliminar físicamente el archivo del bucket de Supabase Storage
+    await delete_supabase_storage_file(image_url)
+
     return {"message": "Imagen eliminada", "images": product.images}
 
 
