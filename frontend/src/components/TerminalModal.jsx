@@ -103,6 +103,7 @@ function useStickyState(defaultValue, key) {
 function useInventory(isOpen) {
   const [inventory, setInventory] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const lastVersionRef = useRef('');
 
   const load = useCallback(() => {
     setRefreshing(true);
@@ -115,24 +116,55 @@ function useInventory(isOpen) {
       .finally(() => setTimeout(() => setRefreshing(false), 600));
   }, []);
 
+  const checkVersionAndSync = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/products/sync-version`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.version) {
+          if (lastVersionRef.current && lastVersionRef.current !== data.version) {
+            // Detectada venta o actualización en otro dispositivo -> sincronizar
+            load();
+          }
+          lastVersionRef.current = data.version;
+          return;
+        }
+      }
+    } catch (e) {
+      // Fallback silencioso en caso de conexión intermitente
+    }
+  }, [load]);
+
   useEffect(() => { 
     if (!isOpen) return;
     load(); 
 
-    // Sincronización periódica cada 25s para reflejar ventas de otros asesores en vivo
-    const interval = setInterval(() => {
+    // Polling ultra-ligero cada 3.5 segundos para sincronización automática en vivo entre asesores
+    const versionInterval = setInterval(() => {
+      checkVersionAndSync();
+    }, 3500);
+
+    // Salvaguarda periódica completa cada 25 segundos
+    const fullInterval = setInterval(() => {
       load();
     }, 25000);
 
-    // Auto-actualizar al regresar a la pestaña del navegador
-    const onFocus = () => load();
+    const onFocus = () => {
+      checkVersionAndSync();
+      load();
+    };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
 
     return () => {
-      clearInterval(interval);
+      clearInterval(versionInterval);
+      clearInterval(fullInterval);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
     };
-  }, [isOpen, load]);
+  }, [isOpen, load, checkVersionAndSync]);
 
   // Escuchar restock desde cualquier módulo
   useEffect(() => {
@@ -218,6 +250,34 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const [successMsg, setSuccessMsg] = useState('');
   const searchRef = useRef(null);
 
+  // Identificar prendas base que tienen variantes hijas (ej. 'IMPORTADA 7647' que ya fue desglosada en variantes)
+  const parentIds = useMemo(() => {
+    const set = new Set();
+    inventory.forEach(item => {
+      if (item.parent_id) {
+        set.add(item.parent_id);
+      }
+    });
+    return set;
+  }, [inventory]);
+
+  // Sincronizar el stock del carrito en vivo cuando otro asesor venda o cambie el inventario
+  useEffect(() => {
+    if (!inventory || inventory.length === 0) return;
+    setCart(prevCart => {
+      let changed = false;
+      const nextCart = prevCart.map(item => {
+        const fresh = inventory.find(p => p.id === item.id);
+        if (fresh && fresh.stock !== item.stock) {
+          changed = true;
+          return { ...item, stock: fresh.stock };
+        }
+        return item;
+      });
+      return changed ? nextCart : prevCart;
+    });
+  }, [inventory, setCart]);
+
   const KNOWN_SIZES = useMemo(() => new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '28', '30', '32', '34', '36', '38']), []);
 
   useEffect(() => {
@@ -232,6 +292,20 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
     const kws = raw.split(/\s+/).filter(Boolean);
 
     const results = inventory.filter(item => {
+      // 1. Descartar prendas base que ya tienen variantes hijas (para no duplicar ni vender el padre sin talla/color)
+      if (parentIds.has(item.id)) {
+        return false;
+      }
+
+      // 2. Descartar productos agotados físicamente o cuyo stock disponible ya fue cargado al carrito actual
+      const inCartItem = cart.find(i => i.id === item.id);
+      const qtyInCart = inCartItem ? (Number(inCartItem.qty) || 0) : 0;
+      const availableStock = (item.stock || 0) - qtyInCart;
+
+      if (availableStock <= 0) {
+        return false;
+      }
+
       const itemSize = (item.size || '').trim().toLowerCase();
       const itemColor = (item.color || '').trim().toLowerCase();
       const itemRef = (item.ref || '').trim().toLowerCase();
@@ -261,22 +335,14 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       return true;
     });
 
-    // Ordenar resultados: Disponibles en stock (descontando los que ya están en el carrito) van PRIMERO
+    // Ordenar alfabéticamente por nombre / referencia
     results.sort((a, b) => {
-      const qA = cart.find(i => i.id === a.id)?.qty || 0;
-      const qB = cart.find(i => i.id === b.id)?.qty || 0;
-      const availA = (a.stock || 0) - qA;
-      const availB = (b.stock || 0) - qB;
-
-      const sA = availA > 0 ? 1 : 0;
-      const sB = availB > 0 ? 1 : 0;
-      if (sA !== sB) return sB - sA;
       return (a.name || a.ref || '').localeCompare(b.name || b.ref || '', 'es');
     });
 
     setFilteredResults(results.slice(0, 30));
     setIsDropdownOpen(true);
-  }, [search, inventory, cart, KNOWN_SIZES]);
+  }, [search, inventory, cart, parentIds, KNOWN_SIZES]);
 
   useEffect(() => {
     const fn = (e) => {
@@ -550,14 +616,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
                   return (
                     <div 
                       key={p.id} 
-                      onClick={() => {
-                        if (!isTotallyExhausted) addToCart(p);
-                      }}
-                      className={`px-4 py-2.5 flex items-center justify-between gap-3 transition-colors group select-none ${
-                        isTotallyExhausted 
-                          ? 'bg-slate-50/70 opacity-60 cursor-not-allowed' 
-                          : 'hover:bg-slate-50 cursor-pointer active:bg-slate-100'
-                      }`}
+                      onClick={() => addToCart(p)}
+                      className="px-4 py-2.5 flex items-center justify-between gap-3 transition-colors group select-none hover:bg-slate-50 cursor-pointer active:bg-slate-100"
                     >
                       {/* Mini Botón de Foto (Hover en PC / Clic en Celular) */}
                       <div className="shrink-0 relative">
@@ -597,9 +657,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <p className={`font-black text-xs uppercase truncate transition-colors ${
-                            isTotallyExhausted ? 'text-slate-500' : 'text-slate-900 group-hover:text-indigo-600'
-                          }`}>
+                          <p className="font-black text-xs uppercase truncate transition-colors text-slate-900 group-hover:text-indigo-600">
                             {p.name || p.producto}
                           </p>
                           {p.ref && (
@@ -632,18 +690,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
                         </p>
                         
                         {qtyInCart > 0 ? (
-                          availableStock === 0 ? (
-                            <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-slate-200 text-slate-700 border border-slate-300">
-                              ✓ En caja · 0 disp.
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              En caja ({qtyInCart}) · {availableStock} disp.
-                            </span>
-                          )
-                        ) : isPhysicalOutOfStock ? (
-                          <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-rose-50 text-rose-600">
-                            Agotado
+                          <span className="text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            En caja ({qtyInCart}) · {availableStock} disp.
                           </span>
                         ) : (
                           <span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded-full inline-block mt-0.5 ${

@@ -20,7 +20,19 @@ from app.services.excel_service import sync_from_estilo_nordico_excel
 
 router = APIRouter()
 
-# 1. VER TODOS
+# 1. VERIFICACIÓN ULTRA-RÁPIDA DE VERSIÓN PARA SINCRONIZACIÓN EN TIEMPO REAL ENTRE ASESORES
+@router.get("/sync-version")
+def get_inventory_sync_version(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    from app.models.sale import Sale
+    max_updated = db.query(func.max(ProductModel.updated_at)).scalar()
+    total_count = db.query(func.count(ProductModel.id)).scalar()
+    max_sale_id = db.query(func.max(Sale.id)).scalar()
+    return {
+        "version": f"{max_updated}_{total_count}_{max_sale_id}"
+    }
+
+# 2. VER TODOS
 @router.get("/", response_model=List[Product])
 def read_products(db: Session = Depends(get_db)):
     return db.query(ProductModel).all()
