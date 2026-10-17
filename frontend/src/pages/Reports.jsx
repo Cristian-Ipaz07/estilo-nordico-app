@@ -557,9 +557,9 @@ const TabDistribucion = ({ sales, cashFlow, startDate, endDate, token }) => {
     // Ventas registradas en el sistema
     const totalVentasSistema = ventas.reduce((a, s) => a + (s.total_sale || s.total_price || 0), 0);
 
-    // Ingresos externos (abonos manuales, base de caja, préstamos, etc.)
+    // Ingresos externos (excluyendo anticipos que ya fueron entregados en una venta para no duplicar recaudo)
     const ingresoExterno = caja
-      .filter(c => c.type === 'ENTRADA')
+      .filter(c => c.type === 'ENTRADA' && !c.description.includes('(✅ ENTREGADO'))
       .reduce((a, c) => a + c.amount, 0);
 
     // Total recaudo global (lo que cuadra con el Excel)

@@ -114,6 +114,35 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
     }
   }, [isAdmin]);
   const [amountPaid, setAmountPaid] = useState(0);
+  const [useAnticipo, setUseAnticipo] = useState(false);
+  const [anticiposList, setAnticiposList] = useState([]);
+  const [selectedAnticipoId, setSelectedAnticipoId] = useState('');
+  const [anticipoAmount, setAnticipoAmount] = useState(0);
+  const [cobroEfectivoHoy, setCobroEfectivoHoy] = useState(0);
+
+  const loadAnticipos = useCallback(() => {
+    fetch(`${API_URL}/cash/`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const pendientes = data.filter(m => 
+            m.type === 'ENTRADA' && 
+            (m.category === 'ANTICIPO PREVENTA' || m.category === 'ANTICIPO') &&
+            !m.description.includes('(✅ ENTREGADO')
+          );
+          setAnticiposList(pendientes);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    loadAnticipos();
+    window.addEventListener('refresh-cash', loadAnticipos);
+    return () => window.removeEventListener('refresh-cash', loadAnticipos);
+  }, [loadAnticipos]);
   const [saleDate, setSaleDate] = useState(getTodayCO());
   const [isDelivery, setIsDelivery] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -218,7 +247,44 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const totalVenta = cart.reduce((a, i) => a + (i.total_item || 0), 0);
   const hasStockError = cart.some(i => i.qty < 1 || i.stock <= 0 || i.qty > i.stock);
 
-  useEffect(() => { setAmountPaid(totalVenta); }, [totalVenta]);
+  useEffect(() => {
+    if (!useAnticipo) {
+      setAmountPaid(totalVenta);
+      setCobroEfectivoHoy(0);
+    } else {
+      const resto = Math.max(0, totalVenta - (anticipoAmount || 0));
+      setCobroEfectivoHoy(resto);
+    }
+  }, [totalVenta, useAnticipo, anticipoAmount]);
+
+  const handleSelectAnticipo = (id) => {
+    setSelectedAnticipoId(id);
+    if (!id) {
+      setAnticipoAmount(0);
+      setCobroEfectivoHoy(totalVenta);
+      return;
+    }
+    const found = anticiposList.find(a => String(a.id) === String(id));
+    if (found) {
+      const amt = Number(found.amount) || 0;
+      setAnticipoAmount(amt);
+
+      const descUpper = (found.description || '').toUpperCase();
+      let extractedName = '';
+      if (descUpper.includes('CLIENTE:')) {
+        extractedName = descUpper.split('CLIENTE:')[1].trim();
+      } else if (descUpper.includes(' - ')) {
+        const parts = descUpper.split(' - ');
+        extractedName = parts[parts.length - 1].trim();
+      }
+      if (extractedName && (!customer || customer === 'CLIENTE FINAL')) {
+        setCustomer(extractedName.replace(/[\(\)].*/g, '').trim());
+      }
+
+      const resto = Math.max(0, totalVenta - amt);
+      setCobroEfectivoHoy(resto);
+    }
+  };
 
   const handleFinalizar = async () => {
     if (cart.length === 0 || hasStockError || isSubmitting) return;
@@ -234,16 +300,29 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       ? "en_domicilio" 
       : (!isAdmin ? "por_confirmar" : (Number(amountPaid) < totalVenta ? "separado" : "pagado"));
 
+    let effectiveAmountPaid = Number(amountPaid || 0);
+    let effectiveDeliveryNotes = deliveryNotes ? deliveryNotes.trim() : '';
+    let appliedAnticipoVal = 0;
+
+    if (useAnticipo && anticipoAmount > 0) {
+      appliedAnticipoVal = Math.min(totalVenta, anticipoAmount);
+      const cashReceivedToday = Number(cobroEfectivoHoy || 0);
+      effectiveAmountPaid = appliedAnticipoVal + cashReceivedToday;
+
+      const tag = `[ANTICIPO_CRUZADO:${appliedAnticipoVal}${selectedAnticipoId ? '|ID:' + selectedAnticipoId : ''}]`;
+      effectiveDeliveryNotes = effectiveDeliveryNotes ? `${tag} ${effectiveDeliveryNotes}` : tag;
+    }
+
     const payload = {
       customer_name: (customer || "CLIENTE FINAL").trim(),
       total_price: totalVenta,
       sale_channel: isDelivery ? "DOMICILIO" : "LOCAL",
       user_id: chosenUserId,
-      amount_paid: Number(amountPaid || 0),
+      amount_paid: effectiveAmountPaid,
       sale_date: saleDate,
       status: saleStatus,
       delivery_address: isDelivery ? deliveryAddress.trim() : null,
-      delivery_notes: isDelivery ? deliveryNotes.trim() : null,
+      delivery_notes: effectiveDeliveryNotes || null,
       items: cart.map(i => ({
         product_id: i.id,
         quantity: i.qty,
@@ -269,7 +348,31 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
         throw new Error(msg);
       }
 
-      const isSep = Number(amountPaid) < totalVenta;
+      const createdSale = await res.json().catch(() => ({}));
+
+      // Si se usó un anticipo registrado, actualizar su nota para marcarlo como entregado
+      if (useAnticipo && selectedAnticipoId) {
+        try {
+          const ant = anticiposList.find(a => String(a.id) === String(selectedAnticipoId));
+          if (ant) {
+            await fetch(`${API_URL}/cash/${selectedAnticipoId}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({
+                description: `${ant.description} (✅ ENTREGADO EN VENTA #${createdSale.id || ''})`
+              })
+            });
+            window.dispatchEvent(new CustomEvent('refresh-cash'));
+          }
+        } catch (err) {
+          console.error("Error actualizando nota del anticipo:", err);
+        }
+      }
+
+      const isSep = effectiveAmountPaid < totalVenta;
       const successText = isDelivery 
         ? '¡Domicilio registrado con éxito!' 
         : (!isAdmin ? '¡Pedido registrado por confirmar!' : (isSep ? '¡Separado registrado!' : '¡Venta finalizada!'));
@@ -287,6 +390,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       setDeliveryAddress('');
       setDeliveryNotes('');
       setIsDelivery(false);
+      setUseAnticipo(false);
+      setSelectedAnticipoId('');
+      setAnticipoAmount(0);
+      setCobroEfectivoHoy(0);
     } catch (e) {
       alert(`Error al registrar el pedido:\n${e.message}`);
     } finally { 
@@ -541,36 +648,116 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
             <CheckCircle2 size={14} /> {successMsg}
           </div>
         )}
+
+        {/* BARRA PARA CRUZAR CON ANTICIPO PREVIO */}
+        <div className="mb-3 bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 shrink-0">
+            <input 
+              type="checkbox" 
+              id="chk-use-anticipo"
+              checked={useAnticipo}
+              onChange={e => {
+                const checked = e.target.checked;
+                setUseAnticipo(checked);
+                if (!checked) {
+                  setSelectedAnticipoId('');
+                  setAnticipoAmount(0);
+                  setAmountPaid(totalVenta);
+                  setCobroEfectivoHoy(0);
+                }
+              }}
+              className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+            />
+            <label htmlFor="chk-use-anticipo" className="text-[11px] font-black text-slate-700 uppercase cursor-pointer flex items-center gap-2">
+              <span>🔖 Cruzar con Anticipo Previo (Ya Pagado)</span>
+              {anticiposList.length > 0 && (
+                <span className="bg-teal-600 text-white text-[9px] px-2 py-0.5 rounded-full font-bold">
+                  {anticiposList.length} pendiente{anticiposList.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </label>
+          </div>
+
+          {useAnticipo && (
+            <div className="flex-1 flex items-center gap-2 w-full md:w-auto">
+              <select
+                value={selectedAnticipoId}
+                onChange={e => handleSelectAnticipo(e.target.value)}
+                className="flex-1 bg-white border border-teal-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-teal-500"
+              >
+                <option value="">-- Seleccionar Anticipo Registrado --</option>
+                {anticiposList.map(a => (
+                  <option key={a.id} value={a.id}>
+                    ${fmt(a.amount)} - {a.description} ({(a.payment_date || a.created_at || '').split('T')[0]})
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex items-center gap-1.5 bg-teal-50 border border-teal-200 px-3 py-1 rounded-xl shrink-0">
+                <span className="text-[9px] font-black text-teal-700 uppercase">Anticipo:</span>
+                <span className="text-xs font-black text-teal-800 font-mono">${fmt(anticipoAmount)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-3 bg-slate-900 p-5 rounded-[30px] text-white flex flex-col justify-center">
             <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest mb-1 text-center">Total Venta</p>
             <p className="text-2xl font-black italic text-center">${fmt(totalVenta)}</p>
           </div>
-          <div className="col-span-5 bg-emerald-50 border-2 border-emerald-100 p-5 rounded-[30px] flex flex-col justify-center">
-            <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-1 text-center">Abono Recibido</p>
-            <div className="flex items-center justify-center text-3xl font-black text-emerald-700">
-              <span className="mr-2 opacity-30 text-xl">$</span>
-              <input 
-                type="number" 
-                className="bg-transparent outline-none w-full text-center"
-                value={amountPaid === '' ? '' : amountPaid}
-                onFocus={(e) => e.target.select()}
-                onChange={e => {
-                  const v = e.target.value;
-                  if (v === '') {
-                    setAmountPaid('');
-                  } else {
-                    setAmountPaid(parseInt(v, 10) || 0);
-                  }
-                }}
-                onBlur={() => {
-                  if (amountPaid === '' || isNaN(amountPaid)) {
-                    setAmountPaid(totalVenta);
-                  }
-                }}
-              />
+          {useAnticipo && anticipoAmount > 0 ? (
+            <div className="col-span-5 bg-teal-50 border-2 border-teal-200 p-4 rounded-[30px] flex flex-col justify-center">
+              <div className="flex justify-between items-center mb-1">
+                <p className="text-[9px] font-black text-teal-700 uppercase tracking-widest">Cobro Hoy en Caja</p>
+                <span className="text-[9px] font-bold bg-teal-200/60 text-teal-800 px-2 py-0.5 rounded-md">
+                  Anticipo -${fmt(anticipoAmount)}
+                </span>
+              </div>
+              <div className="flex items-center justify-center text-3xl font-black text-teal-900">
+                <span className="mr-2 opacity-30 text-xl">$</span>
+                <input 
+                  type="number" 
+                  className="bg-transparent outline-none w-full text-center font-black"
+                  value={cobroEfectivoHoy}
+                  onFocus={(e) => e.target.select()}
+                  onChange={e => {
+                    const v = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0);
+                    setCobroEfectivoHoy(v);
+                  }}
+                />
+              </div>
+              <p className="text-[8px] font-bold text-center text-teal-600 mt-1 uppercase">
+                {cobroEfectivoHoy === 0 ? '✅ Cubierto 100% por anticipo (No suma dinero hoy)' : '⚠️ Solo se sumará a caja el saldo recibido hoy'}
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="col-span-5 bg-emerald-50 border-2 border-emerald-100 p-5 rounded-[30px] flex flex-col justify-center">
+              <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-1 text-center">Abono Recibido</p>
+              <div className="flex items-center justify-center text-3xl font-black text-emerald-700">
+                <span className="mr-2 opacity-30 text-xl">$</span>
+                <input 
+                  type="number" 
+                  className="bg-transparent outline-none w-full text-center"
+                  value={amountPaid === '' ? '' : amountPaid}
+                  onFocus={(e) => e.target.select()}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === '') {
+                      setAmountPaid('');
+                    } else {
+                      setAmountPaid(parseInt(v, 10) || 0);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (amountPaid === '' || isNaN(amountPaid)) {
+                      setAmountPaid(totalVenta);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <div className="col-span-4 flex flex-col gap-2">
             <div className="flex items-center gap-3 bg-slate-100 px-5 py-3 rounded-2xl border">
               <User size={18} className="text-slate-400" />
@@ -1208,11 +1395,17 @@ function ModuloCaja() {
       const historyTotal = history.reduce((sum, p) => sum + p.amount, 0);
       const initialPayment = (s.amount_paid || 0) - historyTotal;
 
-      if (initialPayment > 0) {
+      // Descontar anticipo previo si fue cruzado para evitar duplicar dinero
+      const notes = s.delivery_notes || '';
+      const match = notes.match(/\[ANTICIPO_CRUZADO:(\d+)/i);
+      const antCruzado = match ? Number(match[1]) : 0;
+      const freshPayment = Math.max(0, initialPayment - antCruzado);
+
+      if (freshPayment > 0) {
         list.push({
           id: "sale-" + s.id + "-init",
-          desc: "VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
-          amount: initialPayment,
+          desc: "VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL') + (antCruzado > 0 ? ' (PARCIAL ANTICIPO)' : ''),
+          amount: freshPayment,
           type: 'ENTRADA',
           cat: 'VENTA',
           date: s.created_at,

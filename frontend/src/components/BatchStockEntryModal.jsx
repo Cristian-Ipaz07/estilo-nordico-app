@@ -58,6 +58,27 @@ export default function BatchStockEntryModal({
   const [customColorInput, setCustomColorInput] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openAnticipos, setOpenAnticipos] = useState([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch(`${API_URL}/cash/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            const pendientes = data.filter(m => 
+              m.type === 'ENTRADA' && 
+              (m.category === 'ANTICIPO PREVENTA' || m.category === 'ANTICIPO') &&
+              !m.description.includes('(✅ ENTREGADO')
+            );
+            setOpenAnticipos(pendientes);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isOpen]);
   const [errorMsg, setErrorMsg] = useState('');
 
   // Pre-cargar si se pasa initialRef
@@ -298,6 +319,26 @@ export default function BatchStockEntryModal({
             <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs animate-in fade-in">
               <AlertCircle size={18} className="shrink-0" />
               <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* BANNER INFORMATIVO DE ANTICIPOS PENDIENTES */}
+          {openAnticipos.length > 0 && (
+            <div className="bg-teal-50 border border-teal-200 text-teal-800 p-3.5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔖</span>
+                <div>
+                  <p className="text-xs font-black uppercase">
+                    Hay {openAnticipos.length} anticipo{openAnticipos.length > 1 ? 's' : ''} pendiente{openAnticipos.length > 1 ? 's' : ''} de entrega
+                  </p>
+                  <p className="text-[10px] text-teal-600 font-medium">
+                    Al recibir esta mercancía, podrás cruzar la venta de inmediato en el Terminal POS sin duplicar dinero.
+                  </p>
+                </div>
+              </div>
+              <div className="text-[11px] font-bold bg-white/80 border border-teal-200 px-3 py-1 rounded-xl text-teal-900">
+                Total en anticipos: ${fmt(openAnticipos.reduce((s, a) => s + (a.amount || 0), 0))}
+              </div>
             </div>
           )}
 

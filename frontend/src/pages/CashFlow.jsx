@@ -120,11 +120,17 @@ export default function CashFlow() {
       const historyTotal = history.reduce((sum, p) => sum + (p.amount || 0), 0);
       const initialPayment = (s.amount_paid || 0) - historyTotal;
 
-      if (initialPayment > 0) {
+      // Descontar anticipo previo si fue cruzado para evitar duplicar dinero
+      const notes = s.delivery_notes || '';
+      const match = notes.match(/\[ANTICIPO_CRUZADO:(\d+)/i);
+      const antCruzado = match ? Number(match[1]) : 0;
+      const freshPayment = Math.max(0, initialPayment - antCruzado);
+
+      if (freshPayment > 0) {
         virtualSales.push({
           id: `sale-${s.id}-init`,
-          description: `VENTA #${s.id} - ${s.customer_name || 'CLIENTE FINAL'}`,
-          amount: initialPayment,
+          description: `VENTA #${s.id} - ${s.customer_name || 'CLIENTE FINAL'}${antCruzado > 0 ? ' (PARCIAL ANTICIPO)' : ''}`,
+          amount: freshPayment,
           type: 'ENTRADA',
           category: 'VENTA',
           payment_date: s.created_at,
