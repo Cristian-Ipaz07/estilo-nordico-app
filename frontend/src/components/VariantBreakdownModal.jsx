@@ -21,7 +21,11 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
 
   // Estados de formulario nueva variante
   const [brand, setBrand] = useState('');
-  const [color, setColor] = useState('');
+  const [detail, setDetail] = useState('');
+  const [selectedColors, setSelectedColors] = useState([]);
+  const [currentColorSelect, setCurrentColorSelect] = useState('');
+  const [showCustomColorInput, setShowCustomColorInput] = useState(false);
+  const [customColorInput, setCustomColorInput] = useState('');
   const [size, setSize] = useState('M');
   const [quantity, setQuantity] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +35,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   // Estados para asignación y carga de fotos de variantes
   const [uploadingVariantId, setUploadingVariantId] = useState(null);
   const [pickingGalleryFor, setPickingGalleryFor] = useState(null);
+  const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState(null);
   const [newVariantFile, setNewVariantFile] = useState(null);
   const [newVariantPreview, setNewVariantPreview] = useState(null);
 
@@ -115,24 +120,57 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     }
   }, [dominantVariantBrand, baseProduct.brand]);
 
+  // LISTA DINÁMICA DE MARCAS DE TODO EL SISTEMA:
+  const dynamicBrandOptions = useMemo(() => {
+    const set = new Set();
+    
+    // 1. Variantes de esta referencia
+    existingVariants.forEach(v => {
+      const b = (v.brand || '').trim().toUpperCase();
+      if (b && b !== 'ESTILO NÓRDICO' && b !== 'ESTILO NORDICO') set.add(b);
+    });
+
+    // 2. Catálogo completo de la tienda
+    (allProducts || []).forEach(p => {
+      const b = (p.brand || '').trim().toUpperCase();
+      if (b && b !== 'ESTILO NÓRDICO' && b !== 'ESTILO NORDICO') set.add(b);
+    });
+
+    // 3. Marcas rápidas habituales
+    QUICK_BRANDS.forEach(b => {
+      const clean = b.trim().toUpperCase();
+      if (clean && clean !== 'ESTILO NÓRDICO' && clean !== 'ESTILO NORDICO') set.add(clean);
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [existingVariants, allProducts]);
+
   // LISTA DINÁMICA DE COLORES:
-  // Combina:
-  // 1. Colores de variantes de este producto (ej: AZUL COBALTO, GRIS RATÓN...)
-  // 2. Colores existentes en TODO el catálogo de la tienda
-  // 3. Colores comunes base
   const dynamicColorOptions = useMemo(() => {
     const set = new Set();
     
     // Variantes de esta referencia
     existingVariants.forEach(v => {
       const c = (v.color || '').trim().toUpperCase();
-      if (c) set.add(c);
+      if (c) {
+        c.split(/\s*\/\s*/).forEach(subCol => {
+          const cleanSub = subCol.trim();
+          if (cleanSub) set.add(cleanSub);
+        });
+        set.add(c);
+      }
     });
 
     // Catálogo completo
     (allProducts || []).forEach(p => {
       const c = (p.color || '').trim().toUpperCase();
-      if (c) set.add(c);
+      if (c) {
+        c.split(/\s*\/\s*/).forEach(subCol => {
+          const cleanSub = subCol.trim();
+          if (cleanSub) set.add(cleanSub);
+        });
+        set.add(c);
+      }
     });
 
     // Colores estándar
@@ -153,6 +191,26 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }, [existingVariants]);
+
+  // TODAS LAS FOTOS EXISTENTES EN ESTA REFERENCIA (PRENDA BASE + VARIANTES EXISTENTES)
+  const availableReferencePhotos = useMemo(() => {
+    const set = new Set();
+    // 1. Fotos de la prenda base
+    if (Array.isArray(baseProduct.images)) {
+      baseProduct.images.forEach(img => {
+        if (img && typeof img === 'string') set.add(img);
+      });
+    }
+    // 2. Fotos de variantes ya creadas en esta referencia
+    existingVariants.forEach(v => {
+      if (Array.isArray(v.images)) {
+        v.images.forEach(img => {
+          if (img && typeof img === 'string') set.add(img);
+        });
+      }
+    });
+    return Array.from(set);
+  }, [baseProduct.images, existingVariants]);
 
   // LISTA DINÁMICA DE TALLAS:
   const dynamicSizeOptions = useMemo(() => {
@@ -196,11 +254,28 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
 
   const totalAssignedStock = existingVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
 
+  // Manejo de colores múltiples
+  const handleAddColor = (col) => {
+    const clean = (col || '').trim().toUpperCase();
+    if (!clean) return;
+    if (!selectedColors.includes(clean)) {
+      setSelectedColors(prev => [...prev, clean]);
+    }
+    setCurrentColorSelect('');
+    setCustomColorInput('');
+    setShowCustomColorInput(false);
+  };
+
+  const handleRemoveColor = (colToRemove) => {
+    setSelectedColors(prev => prev.filter(c => c !== colToRemove));
+  };
+
   // Selección de foto para la nueva variante en el formulario superior
   const handleSelectNewVariantPhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setNewVariantFile(file);
+    setSelectedGalleryPhoto(null); // Archivo local tiene prioridad sobre foto de galería
     const previewUrl = URL.createObjectURL(file);
     setNewVariantPreview(previewUrl);
   };
@@ -244,7 +319,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     }
   };
 
-  // Asignar una foto ya existente en la prenda base a la variante
+  // Asignar una foto ya existente en la referencia/galería a la variante
   const handleAssignBaseGalleryPhoto = async (variantId, photoUrl) => {
     setUploadingVariantId(variantId);
     try {
@@ -319,9 +394,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const targets = variantsWithEstiloNordico;
     if (targets.length === 0) return;
 
-    const confirmMsg = `¿Deseas corregir las ${targets.length} variantes con 'ESTILO NÓRDICO' a '${targetBatchBrand}'?
-
-` +
+    const confirmMsg = `¿Deseas corregir las ${targets.length} variantes con 'ESTILO NÓRDICO' a '${targetBatchBrand}'?\n\n` +
       `Esto actualizará su marca a '${targetBatchBrand}', actualizará sus SKUs (ej: ${baseProduct.ref}-${targetBatchBrand.replace(/\s+/g, '-')}-...) y sus nombres en el sistema.`;
     
     if (!window.confirm(confirmMsg)) return;
@@ -330,7 +403,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     try {
       let successCount = 0;
       for (const v of targets) {
-        const cleanColor = (v.color || '').trim().toUpperCase().replace(/\s+/g, '-');
+        const cleanColor = (v.color || '').trim().toUpperCase().replace(/\s*\/\s*/g, '-').replace(/\s+/g, '-');
         const cleanSize = (v.size || '').trim().toUpperCase();
         const brandSlug = (targetBatchBrand !== 'ESTILO NÓRDICO' && targetBatchBrand !== 'ESTILO NORDICO')
           ? targetBatchBrand.trim().toUpperCase().replace(/\s+/g, '-')
@@ -371,27 +444,39 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
 
   const handleAddVariant = async (e) => {
     e.preventDefault();
-    const cleanColor = color.trim().toUpperCase().replace(/\s+/g, '-');
-    const cleanSize = size.trim().toUpperCase();
-    const cleanBrand = brand ? brand.trim().toUpperCase() : '';
 
-    if (!cleanColor) {
-      alert('Por favor ingresa un color.');
+    if (selectedColors.length === 0) {
+      alert('Por favor selecciona o añade al menos un color.');
       return;
     }
 
-    // SKU estándar: [REF]-[MARCA?]-[COLOR]-[TALLA]
-    // Si la marca es ESTILO NÓRDICO no se inserta slug redundante
+    const finalColorName = selectedColors.join(' / ');
+    const cleanColorSlug = selectedColors.map(c => c.trim().toUpperCase().replace(/\s+/g, '-')).join('-');
+    const cleanSize = size.trim().toUpperCase();
+    const cleanBrand = brand ? brand.trim().toUpperCase() : '';
+    const cleanDetail = detail ? detail.trim().toUpperCase() : '';
+    const detailSlug = cleanDetail ? cleanDetail.replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '') : '';
+
+    if (!cleanSize) {
+      alert('Por favor selecciona una talla.');
+      return;
+    }
+
+    // SKU estándar: [REF]-[MARCA?]-[DETALLE?]-[COLOR]-[TALLA]
     const brandSlug = (cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO')
       ? cleanBrand.replace(/\s+/g, '-')
       : '';
 
-    const sku = brandSlug 
-      ? `${baseProduct.ref}-${brandSlug}-${cleanColor}-${cleanSize}`
-      : `${baseProduct.ref}-${cleanColor}-${cleanSize}`;
+    let skuParts = [baseProduct.ref];
+    if (brandSlug) skuParts.push(brandSlug);
+    if (detailSlug) skuParts.push(detailSlug);
+    skuParts.push(cleanColorSlug);
+    skuParts.push(cleanSize);
+    const sku = skuParts.join('-');
 
     const brandForName = brandSlug ? ` ${cleanBrand}` : '';
-    const variantName = `${baseProduct.name.trim()}${brandForName} ${color.trim().toUpperCase()} ${cleanSize}`.trim();
+    const detailForName = cleanDetail ? ` ${cleanDetail}` : '';
+    const variantName = `${baseProduct.name.trim()}${brandForName}${detailForName} ${finalColorName} ${cleanSize}`.trim();
 
     // Validar si ya existe por SKU exacto
     const existsBySku = allProducts.find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
@@ -400,37 +485,45 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       return;
     }
 
-    // Validar si ya existe por Color y Talla (para evitar duplicados como dos 'Gris M')
-    const rawColor = color.trim().toUpperCase();
-    const existsByColorSize = existingVariants.find(v => 
-      (v.color || '').trim().toUpperCase() === rawColor && 
+    // Validar duplicado exacto por Color + Talla + Marca + Detalle
+    const existsBySameSpecs = existingVariants.find(v => 
+      (v.color || '').trim().toUpperCase() === finalColorName.toUpperCase() && 
       (v.size || '').trim().toUpperCase() === cleanSize &&
-      (cleanBrand ? (v.brand || '').trim().toUpperCase() === cleanBrand : true)
+      (cleanBrand ? (v.brand || '').trim().toUpperCase() === cleanBrand : true) &&
+      (cleanDetail ? (v.description || '').trim().toUpperCase() === cleanDetail : !(v.description || '').trim())
     );
-    if (existsByColorSize) {
-      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${rawColor}' y Talla: '${cleanSize}' (${existsByColorSize.ref}).
-
-No se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
+    if (existsBySameSpecs) {
+      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${finalColorName}' y Talla: '${cleanSize}' (${existsBySameSpecs.ref}).\n\nNo se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
       return;
     }
 
     setSubmitting(true);
     try {
-      // Si otra variante del mismo color ya tiene foto, heredarla automáticamente
-      const sameColorVariant = existingVariants.find(v => 
-        (v.color || '').trim().toUpperCase() === color.trim().toUpperCase() &&
-        Array.isArray(v.images) && v.images.length > 0
-      );
-      const inheritedImages = sameColorVariant ? sameColorVariant.images : [];
+      // Determinar imágenes para la nueva variante:
+      // 1. Si el usuario seleccionó una foto de la galería de referencia
+      // 2. O si otra variante del mismo color exacto ya tiene foto, heredarla automáticamente
+      let finalImages = [];
+      if (selectedGalleryPhoto) {
+        finalImages = [selectedGalleryPhoto];
+      } else {
+        const sameColorVariant = existingVariants.find(v => 
+          (v.color || '').trim().toUpperCase() === finalColorName.toUpperCase() &&
+          Array.isArray(v.images) && v.images.length > 0
+        );
+        if (sameColorVariant) {
+          finalImages = sameColorVariant.images;
+        }
+      }
 
       const payload = {
         ref: sku,
         name: variantName,
+        description: cleanDetail || baseProduct.description || '',
         category: baseProduct.category || 'Hombre',
         subcategory: baseProduct.subcategory || '',
         brand: cleanBrand || baseProduct.brand || 'Estilo Nórdico',
         origin: baseProduct.origin || 'Propio',
-        color: color.trim().toUpperCase(),
+        color: finalColorName,
         size: cleanSize,
         parent_id: baseProduct.id,
         price_sale: baseProduct.price_sale || 0,
@@ -438,7 +531,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
         stock: Number(quantity) || 0,
         product_type: baseProduct.product_type || 'ROPA',
         is_published: baseProduct.is_published !== false,
-        images: inheritedImages
+        images: finalImages
       };
 
       const res = await fetch(`${API_URL}/products/`, {
@@ -453,7 +546,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
       if (res.ok) {
         const createdVariant = await res.json();
         
-        // Si se seleccionó una foto para esta nueva variante, optimizarla y subirla de inmediato
+        // Si se seleccionó una foto nueva desde PC para esta variante, optimizarla a WebP y subirla
         if (newVariantFile && createdVariant?.id) {
           try {
             const webpFile = await optimizeImageToWebP(newVariantFile);
@@ -463,8 +556,10 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
           }
         }
 
-        setColor('');
+        setSelectedColors([]);
+        setDetail('');
         setQuantity(1);
+        setSelectedGalleryPhoto(null);
         handleClearNewVariantPhoto();
         if (onRefresh) onRefresh();
       } else {
@@ -522,7 +617,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
@@ -572,82 +667,223 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
             <Plus size={14} className="text-indigo-600" /> Crear Nueva Variante / Talla
           </p>
 
-          {/* Fila 1: Marca opcional */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                Marca (Opcional - ej: THE NORTH FACE / COLUMBIA)
-              </label>
-              {brand && (
-                <button 
-                  type="button" 
-                  onClick={() => setBrand('')} 
-                  className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                >
-                  Limpiar marca
-                </button>
-              )}
+          {/* Fila 1: Marca & Detalle/Estampado Opcional */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Columna 1: Marca con autocompletado y filtro dinámico */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Marca (Desplegable / Búsqueda)
+                </label>
+                {brand && (
+                  <button 
+                    type="button" 
+                    onClick={() => setBrand('')} 
+                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Limpiar marca
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                list="all-system-brands"
+                placeholder="Escribe o busca marca (ej: THE NORTH FACE, PUMA)"
+                value={brand}
+                onChange={e => setBrand(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+              />
+              <datalist id="all-system-brands">
+                {dynamicBrandOptions.map(b => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Rápidas:</span>
+                {QUICK_BRANDS.map(b => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBrand(b)}
+                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+                      brand.toUpperCase() === b ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
             </div>
-            <input
-              type="text"
-              placeholder="Ej: THE NORTH FACE, COLUMBIA"
-              value={brand}
-              onChange={e => setBrand(e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
-            />
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Rápidas:</span>
-              {QUICK_BRANDS.map(b => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => setBrand(b)}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                    brand.toUpperCase() === b ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  {b}
-                </button>
-              ))}
+
+            {/* Columna 2: Estampado / Detalle / Letras (Opcional) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Estampado / Detalle / Letras (Opcional)
+                </label>
+                {detail && (
+                  <button 
+                    type="button" 
+                    onClick={() => setDetail('')} 
+                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Limpiar detalle
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder="Ej: CASUAL, LETRAS, BORDADA, LOGO PEQUEÑO"
+                value={detail}
+                onChange={e => setDetail(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+              />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Sugerencias:</span>
+                {['CASUAL', 'LETRAS', 'BORDADA', 'LOGO PEQUEÑO', 'ESTAMPADO'].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setDetail(s)}
+                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+                      detail.toUpperCase() === s ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Fila 2: Color, Talla, Stock Inicial y Foto Opcional */}
-          <div className="grid grid-cols-12 gap-3 items-end">
-            {/* Color */}
-            <div className="col-span-4">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                Color
-              </label>
-              <input
-                type="text"
-                list="common-colors"
-                placeholder="Ej: NEGRO, AZUL, ROJO"
-                value={color}
-                onChange={e => setColor(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                required
-              />
-              <datalist id="common-colors">
-                {dynamicColorOptions.map(c => <option key={c} value={c} />)}
-              </datalist>
+          {/* Fila 2: Color(es), Talla, Stock Inicial y Botón Agregar */}
+          <div className="grid grid-cols-12 gap-3 items-start pt-1">
+            {/* Color(es) - Desplegable + Botón + para Bicolor/Multicolor hacia la derecha */}
+            <div className="col-span-12 sm:col-span-5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Color(es) · Bicolor / Multicolor
+                </label>
+                {selectedColors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedColors([])}
+                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Limpiar colores
+                  </button>
+                )}
+              </div>
+
+              {/* Selector desplegable con botón + */}
+              <div className="flex items-center gap-1.5">
+                {!showCustomColorInput ? (
+                  <select
+                    value={currentColorSelect}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        setShowCustomColorInput(true);
+                        setCurrentColorSelect('');
+                      } else if (val) {
+                        handleAddColor(val);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all cursor-pointer shadow-2xs"
+                  >
+                    <option value="">-- Seleccionar Color --</option>
+                    {dynamicColorOptions.map(c => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">✍️ + Escribir otro color...</option>
+                  </select>
+                ) : (
+                  <div className="flex-1 flex items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="Escribe el color..."
+                      value={customColorInput}
+                      onChange={e => setCustomColorInput(e.target.value.toUpperCase())}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddColor(customColorInput);
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 border border-indigo-400 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:bg-white"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomColorInput(false)}
+                      className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                      title="Volver a lista"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showCustomColorInput) {
+                      handleAddColor(customColorInput);
+                    } else if (currentColorSelect) {
+                      handleAddColor(currentColorSelect);
+                    }
+                  }}
+                  className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black transition-colors cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                  title="Añadir color a la prenda"
+                >
+                  <Plus size={14} />
+                  <span>Añadir</span>
+                </button>
+              </div>
+
+              {/* Colores Seleccionados (se agregan hacia la derecha) */}
+              <div className="min-h-[30px] p-1.5 bg-slate-50/80 border border-slate-200 rounded-xl flex items-center gap-1.5 flex-wrap">
+                {selectedColors.length > 0 ? (
+                  selectedColors.map((c, idx) => (
+                    <span
+                      key={c}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-black shadow-xs animate-in fade-in"
+                    >
+                      {idx > 0 && <span className="opacity-60 text-[9px] mr-0.5">/</span>}
+                      <span>{c}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveColor(c)}
+                        className="text-indigo-200 hover:text-white ml-0.5 p-0.5 rounded cursor-pointer"
+                        title={`Quitar ${c}`}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[10px] text-slate-400 italic px-1">
+                    Elige un color arriba. Para bicolores (ej: Negro y Rojo), agrega uno y luego el otro.
+                  </span>
+                )}
+              </div>
 
               {/* Píldoras de colores ya existentes en esta referencia para clic directo */}
               {existingReferenceColors.length > 0 && (
-                <div className="flex items-center gap-1 flex-wrap pt-1.5">
+                <div className="flex items-center gap-1 flex-wrap pt-0.5">
                   <span className="text-[9px] text-slate-400 font-bold uppercase mr-0.5">En esta ref:</span>
                   {existingReferenceColors.map(c => (
                     <button
                       key={c}
                       type="button"
-                      onClick={() => setColor(c)}
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
-                        color.toUpperCase() === c
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                          : 'bg-indigo-50/70 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300'
-                      }`}
+                      onClick={() => handleAddColor(c)}
+                      className="px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer bg-indigo-50/70 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300"
+                      title={`Agregar ${c}`}
                     >
-                      {c}
+                      + {c}
                     </button>
                   ))}
                 </div>
@@ -655,115 +891,167 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
             </div>
 
             {/* Talla */}
-            <div className="col-span-3">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+            <div className="col-span-6 sm:col-span-3 space-y-1.5">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
                 Talla
               </label>
               <input
                 type="text"
                 list="common-sizes"
-                placeholder="Ej: M, L, XL, XXXL"
+                placeholder="Ej: M, L, XL"
                 value={size}
                 onChange={e => setSize(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
                 required
               />
               <datalist id="common-sizes">
                 {dynamicSizeOptions.map(s => <option key={s} value={s} />)}
               </datalist>
-            </div>
 
-            {/* Cantidad Inicial */}
-            <div className="col-span-2">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                Stock
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={quantity}
-                onChange={e => setQuantity(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                required
-              />
-            </div>
-
-            {/* Botón Adjuntar Foto Opcional para la nueva variante */}
-            <div className="col-span-3 flex items-center gap-2">
-              <div className="flex-1">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 truncate">
-                  Foto (Opcional)
-                </label>
-                {newVariantPreview ? (
-                  <div className="flex items-center gap-1.5 p-1 bg-indigo-50 border border-indigo-200 rounded-xl">
-                    <img src={newVariantPreview} alt="Preview" className="w-7 h-7 rounded-lg object-cover" />
-                    <button
-                      type="button"
-                      onClick={handleClearNewVariantPhoto}
-                      className="p-1 text-rose-500 hover:text-rose-700"
-                      title="Quitar foto"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                ) : (
-                  <label
-                    htmlFor="new-variant-file"
-                    className="w-full px-2 py-2 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl text-[10px] font-bold text-slate-500 flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                    title="Subir foto para esta nueva variante"
+              {/* Botones de selección rápida de tallas */}
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {['M', 'L', 'XL', 'XXL', 'XXXL'].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSize(s)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-black border transition-all cursor-pointer ${
+                      size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
                   >
-                    <Camera size={13} className="text-slate-400" />
-                    <span>+ Foto</span>
-                  </label>
-                )}
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cantidad Inicial & Botón Agregar */}
+            <div className="col-span-6 sm:col-span-4 flex items-end gap-2.5">
+              <div className="flex-1 space-y-1.5">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Stock
+                </label>
                 <input
-                  id="new-variant-file"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleSelectNewVariantPhoto}
+                  type="number"
+                  min="0"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                  required
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shrink-0 transition-all shadow-sm disabled:opacity-50 cursor-pointer h-[38px] mt-auto"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shrink-0 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer h-[38px]"
                 title="Agregar Variante"
               >
                 {submitting ? <RefreshCw className="animate-spin" size={14} /> : <Plus size={16} />}
+                <span>Crear Variante</span>
               </button>
             </div>
           </div>
 
-          {/* Botones de selección rápida de tallas comunes */}
-          <div className="flex items-center gap-1.5 flex-wrap pt-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Tallas Rápidas:</span>
-            {['M', 'L', 'XL', 'XXL', 'XXXL'].map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSize(s)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
-                  size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+          {/* Fila 3: Asignar Foto desde la Referencia o Subir Nueva */}
+          <div className="pt-2 border-t border-slate-100 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Camera size={13} className="text-indigo-600" />
+                <span>Foto para esta variante (Opcional) · Asigna una foto de la referencia o sube desde el PC:</span>
+              </label>
+              {(selectedGalleryPhoto || newVariantPreview) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGalleryPhoto(null);
+                    handleClearNewVariantPhoto();
+                  }}
+                  className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                >
+                  Desmarcar foto
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 custom-scrollbar">
+              {/* Opción A: Subir desde PC */}
+              <label
+                htmlFor="new-variant-file"
+                className={`relative w-14 h-14 rounded-xl border-2 border-dashed flex flex-col items-center justify-center shrink-0 cursor-pointer transition-all ${
+                  newVariantPreview 
+                    ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' 
+                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100'
                 }`}
+                title="Subir foto desde este equipo"
               >
-                {s}
-              </button>
-            ))}
-            <span className="text-slate-300 text-xs">|</span>
-            {['S', '30', '32', '34', '36'].map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSize(s)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                  size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
+                {newVariantPreview ? (
+                  <>
+                    <img src={newVariantPreview} alt="Nueva" className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleClearNewVariantPhoto(); }}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-xs"
+                      title="Quitar"
+                    >
+                      <X size={11} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Camera size={16} className="text-slate-400" />
+                    <span className="text-[8px] font-black uppercase text-slate-500 mt-0.5">Desde PC</span>
+                  </>
+                )}
+              </label>
+              <input
+                id="new-variant-file"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleSelectNewVariantPhoto}
+              />
+
+              {/* Opción B: Fotos ya existentes en la referencia / variantes */}
+              {availableReferencePhotos.map((photoUrl, idx) => {
+                const isSelected = selectedGalleryPhoto === photoUrl && !newVariantPreview;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      handleClearNewVariantPhoto();
+                      setSelectedGalleryPhoto(isSelected ? null : photoUrl);
+                    }}
+                    className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer bg-white group ${
+                      isSelected 
+                        ? 'border-indigo-600 ring-2 ring-indigo-500/50 scale-105 shadow-md' 
+                        : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
+                    }`}
+                    title={isSelected ? 'Foto seleccionada para esta variante' : 'Clic para asignar esta foto a la variante'}
+                  >
+                    <img
+                      src={normalizeImageUrl(photoUrl)}
+                      alt={`Foto ref ${idx+1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    {isSelected && (
+                      <div className="absolute inset-0 bg-indigo-900/40 flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <Check size={14} />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+
+              {availableReferencePhotos.length === 0 && !newVariantPreview && (
+                <span className="text-[10px] text-slate-400 italic px-2">
+                  La prenda base no tiene fotos cargadas aún. Puedes subir una desde el PC con el botón de la izquierda.
+                </span>
+              )}
+            </div>
           </div>
         </form>
 
@@ -918,20 +1206,25 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
                                 {v.brand || 'Estilo Nórdico'}
                               </span>
                             )}
+                            {v.description && v.description !== baseProduct.description && (
+                              <span className="text-[9px] font-bold uppercase bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                <span>✨ {v.description}</span>
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-slate-500 font-medium">
                             Color: <span className="font-bold text-slate-700">{v.color || 'N/A'}</span> · Talla: <span className="font-bold text-indigo-700 font-mono">{v.size || 'N/A'}</span>
                           </p>
 
-                          {/* Botón para asignar foto desde la galería base */}
-                          {baseProduct.images && baseProduct.images.length > 0 && !hasVariantImage && (
+                          {/* Botón para asignar foto desde las fotos disponibles de la referencia */}
+                          {availableReferencePhotos.length > 0 && !hasVariantImage && (
                             <button
                               type="button"
                               onClick={() => setPickingGalleryFor(isPickingGallery ? null : v.id)}
                               className="text-[9px] font-bold text-indigo-600 hover:underline flex items-center gap-1 mt-0.5 cursor-pointer"
                             >
                               <ImageIcon size={10} />
-                              {isPickingGallery ? 'Cerrar selector' : `Elegir de fotos base (${baseProduct.images.length})`}
+                              {isPickingGallery ? 'Cerrar selector' : `📸 Asignar de fotos de la referencia (${availableReferencePhotos.length})`}
                             </button>
                           )}
                         </div>
@@ -978,7 +1271,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
                           type="button"
                           onClick={() => setEditingVariant(v)}
                           className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                          title="Editar variante (marca, color, talla, SKU, precio)"
+                          title="Editar variante (marca, color, talla, SKU, precio, detalle)"
                         >
                           <Pencil size={14} />
                         </button>
@@ -994,26 +1287,38 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
                       </div>
                     </div>
 
-                    {/* Selector Desplegable de Fotos de la Prenda Base */}
-                    {isPickingGallery && baseProduct.images && baseProduct.images.length > 0 && (
+                    {/* Selector Desplegable de Fotos de la Referencia */}
+                    {isPickingGallery && availableReferencePhotos.length > 0 && (
                       <div className="mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in duration-150">
-                        <p className="text-[10px] font-bold text-slate-600 mb-2">
-                          Selecciona la foto de la prenda base para la variante <span className="font-mono text-indigo-600">{v.ref}</span>:
-                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold text-slate-600">
+                            Selecciona una foto para la variante <span className="font-mono text-indigo-600 font-black">{v.ref}</span>:
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setPickingGalleryFor(null)}
+                            className="text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
                         <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                          {baseProduct.images.map((imgUrl, idx) => (
+                          {availableReferencePhotos.map((imgUrl, idx) => (
                             <button
                               key={idx}
                               type="button"
                               onClick={() => handleAssignBaseGalleryPhoto(v.id, imgUrl)}
-                              className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-slate-200 hover:border-indigo-600 shrink-0 transition-all hover:scale-105 cursor-pointer bg-white"
-                              title="Asignar esta foto"
+                              className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-slate-200 hover:border-indigo-600 shrink-0 transition-all hover:scale-105 cursor-pointer bg-white group shadow-2xs"
+                              title="Clic para asignar esta foto a la variante"
                             >
                               <img
                                 src={normalizeImageUrl(imgUrl)}
-                                alt={`Foto base ${idx+1}`}
+                                alt={`Foto ref ${idx+1}`}
                                 className="w-full h-full object-cover"
                               />
+                              <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Check size={16} className="text-white drop-shadow" />
+                              </div>
                             </button>
                           ))}
                         </div>
@@ -1050,6 +1355,7 @@ No se permite duplicar la misma prenda. Puedes editar sus unidades directamente 
         dynamicColors={dynamicColorOptions}
         referenceColors={existingReferenceColors}
         dynamicSizes={dynamicSizeOptions}
+        dynamicBrands={dynamicBrandOptions}
         onClose={() => setEditingVariant(null)}
         onSuccess={async () => {
           setEditingVariant(null);

@@ -12,6 +12,7 @@ export default function EditVariantModal({
   dynamicColors = [],
   referenceColors = [],
   dynamicSizes = [],
+  dynamicBrands = [],
   isOpen,
   onClose,
   onSuccess
@@ -19,6 +20,9 @@ export default function EditVariantModal({
   if (!isOpen || !variant || !baseProduct) return null;
 
   const [brand, setBrand] = useState(variant.brand || '');
+  const [detail, setDetail] = useState(
+    variant.description && variant.description !== baseProduct.description ? variant.description : ''
+  );
   const [color, setColor] = useState(variant.color || '');
   const [size, setSize] = useState(variant.size || '');
   const [sku, setSku] = useState(variant.ref || '');
@@ -28,28 +32,28 @@ export default function EditVariantModal({
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Sincronizar SKU automáticamente cuando cambie Marca, Color o Talla si autoSyncSku está activo
+  // Sincronizar SKU automáticamente cuando cambie Marca, Detalle, Color o Talla si autoSyncSku está activo
   useEffect(() => {
     if (!autoSyncSku) return;
 
-    const cleanColor = (color || '').trim().toUpperCase().replace(/\s+/g, '-');
+    const cleanColor = (color || '').trim().toUpperCase().replace(/\s*\/\s*/g, '-').replace(/\s+/g, '-');
     const cleanSize = (size || '').trim().toUpperCase();
     const cleanBrand = (brand || '').trim().toUpperCase();
+    const cleanDetail = (detail || '').trim().toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
 
     // Si la marca es ESTILO NÓRDICO o está vacía, no agregamos slug de marca al SKU estándar
     const brandSlug = (cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO')
       ? cleanBrand.replace(/\s+/g, '-')
       : '';
 
-    let generatedSku = '';
-    if (brandSlug) {
-      generatedSku = `${baseProduct.ref}-${brandSlug}-${cleanColor || 'COLOR'}-${cleanSize || 'TALLA'}`;
-    } else {
-      generatedSku = `${baseProduct.ref}-${cleanColor || 'COLOR'}-${cleanSize || 'TALLA'}`;
-    }
+    let parts = [baseProduct.ref];
+    if (brandSlug) parts.push(brandSlug);
+    if (cleanDetail) parts.push(cleanDetail);
+    parts.push(cleanColor || 'COLOR');
+    parts.push(cleanSize || 'TALLA');
 
-    setSku(generatedSku);
-  }, [brand, color, size, autoSyncSku, baseProduct.ref]);
+    setSku(parts.join('-'));
+  }, [brand, detail, color, size, autoSyncSku, baseProduct.ref]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -58,6 +62,7 @@ export default function EditVariantModal({
     const cleanColor = (color || '').trim().toUpperCase();
     const cleanSize = (size || '').trim().toUpperCase();
     const cleanBrand = (brand || '').trim().toUpperCase();
+    const cleanDetail = (detail || '').trim().toUpperCase();
     const cleanSku = (sku || '').trim().toUpperCase();
 
     if (!cleanColor) {
@@ -82,16 +87,17 @@ export default function EditVariantModal({
       return;
     }
 
-    // Validar duplicado por Color + Talla + Marca en esta misma prenda base (excluyendo a sí misma)
+    // Validar duplicado por Color + Talla + Marca + Detalle en esta misma prenda base (excluyendo a sí misma)
     const duplicateVariant = allProducts.find(
       p => p.id !== variant.id &&
            p.parent_id === baseProduct.id &&
            (p.color || '').trim().toUpperCase() === cleanColor &&
            (p.size || '').trim().toUpperCase() === cleanSize &&
-           (cleanBrand ? (p.brand || '').trim().toUpperCase() === cleanBrand : true)
+           (cleanBrand ? (p.brand || '').trim().toUpperCase() === cleanBrand : true) &&
+           (cleanDetail ? (p.description || '').trim().toUpperCase() === cleanDetail : !(p.description || '').trim())
     );
     if (duplicateVariant) {
-      setErrorMsg(`⚠️ Ya existe otra variante con Color '${cleanColor}' y Talla '${cleanSize}' (${duplicateVariant.ref}). Evita duplicar prendas iguales.`);
+      setErrorMsg(`⚠️ Ya existe otra variante con Color '${cleanColor}', Talla '${cleanSize}' y detalle idéntico (${duplicateVariant.ref}).`);
       return;
     }
 
@@ -100,11 +106,13 @@ export default function EditVariantModal({
       const brandForName = cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO'
         ? ` ${cleanBrand}`
         : '';
-      const updatedName = `${baseProduct.name.trim()}${brandForName} ${cleanColor} ${cleanSize}`.trim();
+      const detailForName = cleanDetail ? ` ${cleanDetail}` : '';
+      const updatedName = `${baseProduct.name.trim()}${brandForName}${detailForName} ${cleanColor} ${cleanSize}`.trim();
 
       const payload = {
         ref: cleanSku,
         name: updatedName,
+        description: cleanDetail || baseProduct.description || '',
         brand: cleanBrand || baseProduct.brand || 'Estilo Nórdico',
         color: cleanColor,
         size: cleanSize,
@@ -170,11 +178,11 @@ export default function EditVariantModal({
             </div>
           )}
 
-          {/* Marca */}
+          {/* Marca con datalist dinámico */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                Marca (ej: THE NORTH FACE / COLUMBIA)
+                Marca (ej: THE NORTH FACE / PUMA)
               </label>
               {brand && (
                 <button
@@ -188,11 +196,15 @@ export default function EditVariantModal({
             </div>
             <input
               type="text"
+              list="edit-modal-brands"
               value={brand}
               onChange={e => setBrand(e.target.value.toUpperCase())}
-              placeholder="Ej: THE NORTH FACE"
+              placeholder="Ej: THE NORTH FACE, COLUMBIA"
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
             />
+            <datalist id="edit-modal-brands">
+              {dynamicBrands.map(b => <option key={b} value={b} />)}
+            </datalist>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Rápidas:</span>
               {QUICK_BRANDS.map(b => (
@@ -212,6 +224,48 @@ export default function EditVariantModal({
             </div>
           </div>
 
+          {/* Estampado / Detalle / Subdiseño (Opcional) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                Estampado / Detalle / Letras (Opcional)
+              </label>
+              {detail && (
+                <button
+                  type="button"
+                  onClick={() => setDetail('')}
+                  className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                >
+                  Limpiar detalle
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={detail}
+              onChange={e => setDetail(e.target.value.toUpperCase())}
+              placeholder="Ej: CASUAL, LETRAS, BORDADA, LOGO PEQUEÑO"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
+            />
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Sugerencias:</span>
+              {['CASUAL', 'LETRAS', 'BORDADA', 'LOGO PEQUEÑO', 'ESTAMPADO'].map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setDetail(s)}
+                  className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+                    detail.toUpperCase() === s
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Color & Talla */}
           <div className="grid grid-cols-2 gap-3">
             {/* Color */}
@@ -224,7 +278,7 @@ export default function EditVariantModal({
                 list="edit-modal-colors"
                 value={color}
                 onChange={e => setColor(e.target.value.toUpperCase())}
-                placeholder="Ej: AZUL COBALTO"
+                placeholder="Ej: AZUL COBALTO o NEGRO / ROJO"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 required
               />
@@ -319,7 +373,7 @@ export default function EditVariantModal({
             />
             <p className="text-[10px] text-slate-400">
               {autoSyncSku 
-                ? '⚡ El SKU se actualiza automáticamente al cambiar Marca, Color o Talla.' 
+                ? '⚡ El SKU se actualiza automáticamente al cambiar Marca, Detalle, Color o Talla.' 
                 : '✏️ Modo manual activo. Puedes escribir un SKU personalizado.'}
             </p>
           </div>
