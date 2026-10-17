@@ -42,6 +42,10 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
   - El dinero cobrado en Efectivo entra a la caja del turno activo.
   - **REGLA DE CAJA MOSTRADOR**: Solo los egresos físicos pagados desde la gaveta del local (ej. adelanto de viáticos, tintos, compras menores de tienda) deben descontar del Arqueo Diario del Terminal.
   - **Filtro de exclusión obligatorio**: Movimientos de `(EFECTIVO EN CASA)`, `(CAJA MAYOR)` o transferencias bancarias directas **NO** deben restar de la gaveta física del mostrador (de lo contrario la caja física da valores negativos absurdos como -$473.000).
+* ⚠️ **Impacto en Buscador y Carrito del Terminal (Stock en Vivo)**:
+  - **Buscador Persistente**: Al agregar un ítem al carrito (ddToCart), jamás se debe limpiar search ni cerrar el dropdown automáticamente. Esto permite agregar 2 o más prendas de una misma búsqueda sin interrupción.
+  - **Descuento de Stock en Carrito**: El buscador calcula stockDisponible = stockFisico - unidadesEnCarrito. Si una prenda tiene 1 unidad y ya pasó al carrito, se muestra ✓ En caja · 0 disp. y se deshabilita para evitar sobreventas accidentales.
+  - **Sincronización Multi-Asesor**: Polling periódico cada 25s, actualización automática al retomar el foco del navegador (window.onfocus) y botón manual de sincronización para refrescar el stock vendido por otros asesores.
 * ⚠️ **Impacto en Anticipos / Preventas (`ANTICIPO PREVENTA` vs `CRUCE ANTICIPO`)**:
   - Al recibir un anticipo: Se registra el ingreso de dinero en `cash_movements` (Categoría `ANTICIPO PREVENTA`).
   - Al entregar la prenda y cruzar el anticipo en el checkout: Se utiliza la categoría `CRUCE ANTICIPO` con tag `[ANTICIPO_CRUZADO:X]`. 

@@ -42,6 +42,13 @@
 * **SKU y Nombres Limpios**: Se generan sin sufijos de talla si no aplica (ej. `15265-BOSS-NEGRO`).
 * **Pestaña 'ÚNICA' en Entrada en Lote**: Integrada en `BatchStockEntryModal.jsx` para recepción masiva de accesorios.
 
+### 6. UX de Venta Rápida y Stock en Vivo en Buscador del Terminal (TerminalModal.jsx)
+* **Buscador Persistente Multi-Producto**: Al hacer clic en un producto para agregarlo al carrito, ya no se borra la búsqueda ni se cierra el menú desplegable. Permite agregar dos o más prendas de una misma búsqueda seguidas sin tener que volver a escribir el texto.
+* **Cálculo de Stock Disponible en Tiempo Real**: El buscador descuenta en vivo las unidades que ya se encuentran en el carrito (stockDisponible = stockFisico - unidadesEnCarrito). Si un producto de 1 unidad ya pasó a la caja, se muestra como ✓ En caja · 0 disp. y se deshabilita para evitar sobreventas accidentales.
+* **Priorización de Disponibles**: Los productos que todavía tienen stock disponible se ordenan automáticamente en las primeras posiciones del desplegable.
+* **Sincronización Multi-Asesor y Multi-Dispositivo**: Polling automático cada 25s, recarga instantánea al regresar a la pestaña del navegador (window.onfocus), y botón visual de refresco rápido (RefreshCw) al lado del buscador para consultar el stock más reciente vendido por otros asesores.
+* **Ergonomía de Teclado y Lectores de Barras**: Tecla Enter añade el primer producto disponible con stock, tecla Escape cierra el desplegable, y botón X permite limpiar el buscador en 1 clic.
+
 ---
 
 ## 📌 PRÓXIMOS PASOS
