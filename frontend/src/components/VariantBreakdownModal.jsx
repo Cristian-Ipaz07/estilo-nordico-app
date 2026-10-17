@@ -26,7 +26,19 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [currentColorSelect, setCurrentColorSelect] = useState('');
   const [showCustomColorInput, setShowCustomColorInput] = useState(false);
   const [customColorInput, setCustomColorInput] = useState('');
-  const [size, setSize] = useState('M');
+  // Detectar si la referencia base es un accesorio o prenda que habitualmente no usa talla
+  const isNonSizedProduct = useMemo(() => {
+    const text = `${baseProduct.subcategory || ''} ${baseProduct.name || ''} ${baseProduct.category || ''} ${baseProduct.product_type || ''}`.toUpperCase();
+    return ['CORREA', 'CORREAS', 'CINTURON', 'CINTURONES', 'GORRA', 'GORRAS', 'RELOJ', 'RELOJES', 'PERFUME', 'PERFUMES', 'LOCION', 'LOCIONES', 'GAFAS', 'BILLETERA', 'BILLETERAS', 'ACCESORIO', 'ACCESORIOS', 'PULSERA', 'CADENA', 'EVILLA', 'HEBILLA'].some(k => text.includes(k));
+  }, [baseProduct]);
+
+  const [size, setSize] = useState(() => (isNonSizedProduct ? '' : 'M'));
+
+  useEffect(() => {
+    if (isNonSizedProduct) {
+      setSize('');
+    }
+  }, [isNonSizedProduct]);
   const [quantity, setQuantity] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -457,10 +469,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const cleanDetail = detail ? detail.trim().toUpperCase() : '';
     const detailSlug = cleanDetail ? cleanDetail.replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '') : '';
 
-    if (!cleanSize) {
-      alert('Por favor selecciona una talla.');
-      return;
-    }
+    // La talla es completamente opcional (ej: correas, gorras, relojes, perfumes o talla única)
 
     // SKU estándar: [REF]-[MARCA?]-[DETALLE?]-[COLOR]-[TALLA]
     const brandSlug = (cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO')
@@ -470,13 +479,15 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     let skuParts = [baseProduct.ref];
     if (brandSlug) skuParts.push(brandSlug);
     if (detailSlug) skuParts.push(detailSlug);
-    skuParts.push(cleanColorSlug);
-    skuParts.push(cleanSize);
+    if (cleanColorSlug) skuParts.push(cleanColorSlug);
+    if (cleanSize) skuParts.push(cleanSize);
     const sku = skuParts.join('-');
 
     const brandForName = brandSlug ? ` ${cleanBrand}` : '';
     const detailForName = cleanDetail ? ` ${cleanDetail}` : '';
-    const variantName = `${baseProduct.name.trim()}${brandForName}${detailForName} ${finalColorName} ${cleanSize}`.trim();
+    const colorForName = finalColorName ? ` ${finalColorName}` : '';
+    const sizeForName = cleanSize ? ` ${cleanSize}` : '';
+    const variantName = `${baseProduct.name.trim()}${brandForName}${detailForName}${colorForName}${sizeForName}`.trim();
 
     // Validar si ya existe por SKU exacto
     const existsBySku = allProducts.find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
@@ -493,7 +504,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       (cleanDetail ? (v.description || '').trim().toUpperCase() === cleanDetail : !(v.description || '').trim())
     );
     if (existsBySameSpecs) {
-      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${finalColorName}' y Talla: '${cleanSize}' (${existsBySameSpecs.ref}).\n\nNo se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
+      const sizeMsg = cleanSize ? ` y Talla: '${cleanSize}'` : '';
+      alert(`⚠️ ¡ATENCIÓN! Ya existe la variante con Color: '${finalColorName}'${sizeMsg} (${existsBySameSpecs.ref}).\n\nNo se permite duplicar la misma prenda. Puedes editar sus unidades directamente en la lista de abajo.`);
       return;
     }
 
@@ -524,7 +536,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         brand: cleanBrand || baseProduct.brand || 'Estilo Nórdico',
         origin: baseProduct.origin || 'Propio',
         color: finalColorName,
-        size: cleanSize,
+        size: cleanSize || null,
         parent_id: baseProduct.id,
         price_sale: baseProduct.price_sale || 0,
         my_cost: baseProduct.my_cost || 0,
@@ -890,19 +902,29 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               )}
             </div>
 
-            {/* Talla */}
+            {/* Talla (Opcional - para correas, gorras, etc. se deja vacío) */}
             <div className="col-span-6 sm:col-span-3 space-y-1.5">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                Talla
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Talla (Opcional)
+                </label>
+                {size && (
+                  <button
+                    type="button"
+                    onClick={() => setSize('')}
+                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Sin talla
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 list="common-sizes"
-                placeholder="Ej: M, L, XL"
+                placeholder={isNonSizedProduct ? "Sin talla (Opcional)" : "Ej: M, L, XL o ÚNICA"}
                 value={size}
                 onChange={e => setSize(e.target.value.toUpperCase())}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
-                required
               />
               <datalist id="common-sizes">
                 {dynamicSizeOptions.map(s => <option key={s} value={s} />)}
@@ -922,6 +944,25 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                     {s}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setSize('ÚNICA')}
+                  className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                    size === 'ÚNICA' ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  ÚNICA
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSize('')}
+                  className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                    !size ? 'bg-slate-800 text-white border-slate-800 shadow-2xs' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                  }`}
+                  title="Para prendas o accesorios sin talla"
+                >
+                  Sin talla
+                </button>
               </div>
             </div>
 
@@ -1213,7 +1254,12 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                             )}
                           </div>
                           <p className="text-[10px] text-slate-500 font-medium">
-                            Color: <span className="font-bold text-slate-700">{v.color || 'N/A'}</span> · Talla: <span className="font-bold text-indigo-700 font-mono">{v.size || 'N/A'}</span>
+                            Color: <span className="font-bold text-slate-700">{v.color || 'N/A'}</span>
+                            {v.size ? (
+                              <> · Talla: <span className="font-bold text-indigo-700 font-mono">{v.size}</span></>
+                            ) : (
+                              <> · <span className="text-slate-400 font-semibold italic text-[9px] bg-slate-100 px-1.5 py-0.5 rounded">Sin Talla</span></>
+                            )}
                           </p>
 
                           {/* Botón para asignar foto desde las fotos disponibles de la referencia */}

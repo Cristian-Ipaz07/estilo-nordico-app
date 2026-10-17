@@ -38,7 +38,7 @@ class CancelEntryRequest(BaseModel):
 
 class BatchEntryItem(BaseModel):
     color: str
-    size: str
+    size: Optional[str] = 'ÚNICA'
     quantity: int
     brand: Optional[str] = None
     new_price_sale: Optional[float] = None

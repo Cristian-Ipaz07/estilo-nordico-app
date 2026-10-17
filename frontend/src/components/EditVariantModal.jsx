@@ -49,8 +49,8 @@ export default function EditVariantModal({
     let parts = [baseProduct.ref];
     if (brandSlug) parts.push(brandSlug);
     if (cleanDetail) parts.push(cleanDetail);
-    parts.push(cleanColor || 'COLOR');
-    parts.push(cleanSize || 'TALLA');
+    if (cleanColor) parts.push(cleanColor);
+    if (cleanSize) parts.push(cleanSize);
 
     setSku(parts.join('-'));
   }, [brand, detail, color, size, autoSyncSku, baseProduct.ref]);
@@ -69,10 +69,7 @@ export default function EditVariantModal({
       setErrorMsg('El color no puede estar vacío.');
       return;
     }
-    if (!cleanSize) {
-      setErrorMsg('La talla no puede estar vacía.');
-      return;
-    }
+    // La talla es opcional para accesorios/correas
     if (!cleanSku) {
       setErrorMsg('El código SKU no puede estar vacío.');
       return;
@@ -115,7 +112,7 @@ export default function EditVariantModal({
         description: cleanDetail || baseProduct.description || '',
         brand: cleanBrand || baseProduct.brand || 'Estilo Nórdico',
         color: cleanColor,
-        size: cleanSize,
+        size: cleanSize || null,
         stock: Math.max(0, parseInt(stock, 10) || 0),
         price_sale: Math.max(0, parseFloat(priceSale) || 0)
       };
@@ -307,19 +304,29 @@ export default function EditVariantModal({
               )}
             </div>
 
-            {/* Talla */}
+            {/* Talla (Opcional) */}
             <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                Talla
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Talla (Opcional)
+                </label>
+                {size && (
+                  <button
+                    type="button"
+                    onClick={() => setSize('')}
+                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Sin talla
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 list="edit-modal-sizes"
                 value={size}
                 onChange={e => setSize(e.target.value.toUpperCase())}
-                placeholder="Ej: M, L, XL"
+                placeholder="Ej: M, L, XL o ÚNICA"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                required
               />
               <datalist id="edit-modal-sizes">
                 {dynamicSizes.map(s => <option key={s} value={s} />)}
@@ -341,6 +348,28 @@ export default function EditVariantModal({
                     {s}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setSize('ÚNICA')}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                    size.toUpperCase() === 'ÚNICA'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  ÚNICA
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSize('')}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                    !size
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-slate-100 text-slate-400 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  Sin talla
+                </button>
               </div>
             </div>
           </div>

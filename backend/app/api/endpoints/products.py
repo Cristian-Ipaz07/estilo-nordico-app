@@ -511,26 +511,37 @@ def create_batch_stock_entries(data: BatchStockEntryRequest, db: Session = Depen
         if qty <= 0:
             continue
 
-        clean_color = item.color.strip().upper()
-        clean_size = item.size.strip().upper()
+        clean_color = (item.color or "").strip().upper()
+        clean_size = (item.size or "").strip().upper()
         item_brand = item.brand.strip().upper() if item.brand else (base_product.brand or "Estilo Nórdico")
         
-        # Generar SKU estándar: [REF]-[COLOR]-[TALLA] o [REF]-[MARCA]-[COLOR]-[TALLA]
+        # Generar SKU estándar: [REF]-[MARCA?]-[COLOR]-[TALLA?]
         color_slug = clean_color.replace(" ", "-")
         brand_slug = item_brand.replace(" ", "-") if item_brand and item_brand not in ["ESTILO NÓRDICO", "ESTILO NORDICO"] else ""
         
+        sku_parts = [base_product.ref]
         if brand_slug:
-            sku = f"{base_product.ref}-{brand_slug}-{color_slug}-{clean_size}"
-            variant_name = f"{base_product.name.strip()} {item_brand} {clean_color} {clean_size}"
-        else:
-            sku = f"{base_product.ref}-{color_slug}-{clean_size}"
-            variant_name = f"{base_product.name.strip()} {clean_color} {clean_size}"
+            sku_parts.append(brand_slug)
+        if color_slug:
+            sku_parts.append(color_slug)
+        if clean_size:
+            sku_parts.append(clean_size)
+        sku = "-".join(sku_parts)
+
+        name_parts = [base_product.name.strip()]
+        if brand_slug:
+            name_parts.append(item_brand)
+        if clean_color:
+            name_parts.append(clean_color)
+        if clean_size:
+            name_parts.append(clean_size)
+        variant_name = " ".join(name_parts)
 
         # Buscar si ya existe la variante
         variant = db.query(ProductModel).filter(
             ProductModel.parent_id == base_product.id,
             ProductModel.color == clean_color,
-            ProductModel.size == clean_size
+            ProductModel.size == (clean_size if clean_size else None)
         ).first()
 
         if not variant:
@@ -547,7 +558,7 @@ def create_batch_stock_entries(data: BatchStockEntryRequest, db: Session = Depen
                 brand=item_brand,
                 origin=base_product.origin or "Propio",
                 color=clean_color,
-                size=clean_size,
+                size=clean_size if clean_size else None,
                 parent_id=base_product.id,
                 price_sale=item.new_price_sale or base_product.price_sale or 0.0,
                 my_cost=round(unit_cost, 2),

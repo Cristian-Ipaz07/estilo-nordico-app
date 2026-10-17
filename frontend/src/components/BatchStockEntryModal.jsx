@@ -8,6 +8,7 @@ import { API_URL } from '../config/api';
 
 const COMMON_SIZES_LETTER = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
 const COMMON_SIZES_NUMBER = ['28', '30', '32', '34', '36', '38'];
+const COMMON_SIZES_UNICA = ['ÚNICA'];
 const COMMON_COLORS = [
   'BEIGE', 'NEGRO', 'AZUL', 'AZUL OSCURO', 'VERDE MILITAR', 
   'GRIS CLARO', 'GRIS RATON', 'ROJO', 'CAMEL', 'BLANCO', 'VINOTINTO'
@@ -49,7 +50,7 @@ export default function BatchStockEntryModal({
 
   // 3. Matriz de Colores y Tallas
   const [sizeType, setSizeType] = useState('letter'); // 'letter' o 'number'
-  const sizes = sizeType === 'letter' ? COMMON_SIZES_LETTER : COMMON_SIZES_NUMBER;
+  const sizes = sizeType === 'letter' ? COMMON_SIZES_LETTER : (sizeType === 'number' ? COMMON_SIZES_NUMBER : COMMON_SIZES_UNICA);
 
   // Lista de colores activos en la matriz
   const [activeRows, setActiveRows] = useState([
@@ -766,6 +767,16 @@ export default function BatchStockEntryModal({
                     }`}
                   >
                     28 - 38
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSizeType('unica')}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                      sizeType === 'unica' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500'
+                    }`}
+                    title="Para accesorios, correas, gorras, perfumes, etc."
+                  >
+                    ÚNICA
                   </button>
                 </div>
               </div>
