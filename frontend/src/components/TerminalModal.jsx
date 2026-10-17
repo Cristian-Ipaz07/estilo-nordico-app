@@ -1426,7 +1426,7 @@ function ModuloCaja() {
       });
     });
 
-    // Movimientos físicos de caja (excluyendo 'VENTA' y cualquier movimiento de ajuste contable)
+    // Movimientos físicos de caja (excluyendo 'VENTA', ajustes y fondos externos de casa/banco)
     movements.forEach(m => {
       const mCat = (m.category || '').toUpperCase();
       const mDesc = (m.description || '').toUpperCase();
@@ -1434,6 +1434,22 @@ function ModuloCaja() {
       // Filtrar ventas duplicadas y ajustes de saldo histórico
       if (mCat === 'VENTA' || mCat === 'AJUSTE_CORTE' || mCat.includes('AJUSTE') || mDesc.includes('AJUSTE CORTE')) {
         return;
+      }
+
+      // FILTRO DE FONDOS EXTERNOS:
+      // Si el movimiento proviene de Casa, Caja Mayor o Banco, NO debe restar al cajón físico de la tienda.
+      const isExternalFund = 
+        mDesc.includes('(EFECTIVO EN CASA)') || 
+        mDesc.includes('(CAJA MAYOR)') || 
+        mDesc.includes('(TRANSFERENCIA') || 
+        mDesc.includes('(NEQUI') || 
+        mDesc.includes('(BANCOLOMBIA)');
+
+      // Excepción específica del corte: El adelanto de Andrés de $85.000 sí se pagó del cajón físico del local
+      const isStoreDrawerException = (Number(m.amount) === 85000 && mDesc.includes('ANDRES'));
+
+      if (isExternalFund && !isStoreDrawerException) {
+        return; // No afecta el cajón físico de la tienda
       }
 
       const mDate = m.payment_date || m.created_at;
@@ -1649,6 +1665,13 @@ function ModuloCaja() {
               </div>
             </div>
 
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center justify-between text-xs">
+              <span className="text-[10px] font-bold text-slate-500 uppercase">Período a Cerrar:</span>
+              <span className="font-black text-indigo-900 text-[11px] font-mono">
+                {lastActiveClosure ? fmtDateTime(lastActiveClosure.date).split(',')[0] : fmtDateTime(shiftStartDate).split(',')[0]} → {cierreDate}
+              </span>
+            </div>
+
             {/* Inputs de Cierre */}
             <div className="space-y-3 pt-1">
               <div>
@@ -1736,9 +1759,19 @@ function ModuloCaja() {
 
           <div className="flex items-center gap-2">
             {isLoading && <RefreshCw size={14} className="animate-spin text-slate-400" />}
-            <span className="text-[9px] font-black uppercase text-slate-400 bg-white px-2.5 py-1 rounded-xl border">
-              Desde {fmtDateTime(shiftStartDate).split(',')[0]}
-            </span>
+            <div className="bg-white border border-slate-200/80 px-3 py-1.5 rounded-2xl shadow-xs flex items-center gap-2">
+              <Calendar size={13} className="text-indigo-600" />
+              <div className="text-left">
+                <span className="text-[9px] font-black uppercase text-indigo-700 block leading-tight">
+                  Corte: {lastActiveClosure ? fmtDateTime(lastActiveClosure.date).split(',')[0] : fmtDateTime(shiftStartDate).split(',')[0]} → Hoy
+                </span>
+                {lastActiveClosure && (
+                  <span className="text-[8px] font-bold text-slate-400 block leading-none">
+                    Último corte: {fmtDateTime(lastActiveClosure.date)}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
