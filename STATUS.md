@@ -47,6 +47,11 @@
 * **Cálculo de Stock Disponible en Tiempo Real**: El buscador descuenta en vivo las unidades que ya se encuentran en el carrito (stockDisponible = stockFisico - unidadesEnCarrito). Si un producto de 1 unidad ya pasó a la caja, se muestra como ✓ En caja · 0 disp. y se deshabilita para evitar sobreventas accidentales.
 * **Priorización de Disponibles**: Los productos que todavía tienen stock disponible se ordenan automáticamente en las primeras posiciones del desplegable.
 * **Sincronización Multi-Asesor y Multi-Dispositivo**: Polling automático cada 25s, recarga instantánea al regresar a la pestaña del navegador (window.onfocus), y botón visual de refresco rápido (RefreshCw) al lado del buscador para consultar el stock más reciente vendido por otros asesores.
+* **Botón de Previsualización Visual Rápida (Hover en PC / Clic en Celular)**: Se integró un botón miniatura inteligente en cada fila del buscador y del carrito.
+  - **En PC / Mouse (Hover)**: Al pasar el cursor por encima, despliega una tarjeta flotante ultra nítida al lado del cursor con la foto ampliada, nombre, SKU, color, talla y precio sin estorbar la pantalla.
+  - **En Celular / Táctil (Clic)**: Al tocar el botón miniatura, abre un modal emergente interactivo con la foto en alta resolución y un botón para confirmar y 'Agregar a la Caja'.
+  - **Aislamiento de Clic**: Usa e.stopPropagation() para que inspeccionar la foto no añada la prenda por error al carrito.
+  - **Resolución Inteligente de Foto**: Si una talla específica aún no tiene foto asignada, busca automáticamente en el inventario la foto de su variante hermana con el mismo color o referencia base.
 * **Ergonomía de Teclado y Lectores de Barras**: Tecla Enter añade el primer producto disponible con stock, tecla Escape cierra el desplegable, y botón X permite limpiar el buscador en 1 clic.
 
 ---

@@ -45,6 +45,7 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
 * ⚠️ **Impacto en Buscador y Carrito del Terminal (Stock en Vivo)**:
   - **Buscador Persistente**: Al agregar un ítem al carrito (ddToCart), jamás se debe limpiar search ni cerrar el dropdown automáticamente. Esto permite agregar 2 o más prendas de una misma búsqueda sin interrupción.
   - **Descuento de Stock en Carrito**: El buscador calcula stockDisponible = stockFisico - unidadesEnCarrito. Si una prenda tiene 1 unidad y ya pasó al carrito, se muestra ✓ En caja · 0 disp. y se deshabilita para evitar sobreventas accidentales.
+  - **Botón de Previsualización de Imagen**: Miniatura en buscador y carrito con hover en PC (tarjeta flotante sin clics) y clic/tap en móvil (modal interactivo con confirmación de compra y e.stopPropagation()).
   - **Sincronización Multi-Asesor**: Polling periódico cada 25s, actualización automática al retomar el foco del navegador (window.onfocus) y botón manual de sincronización para refrescar el stock vendido por otros asesores.
 * ⚠️ **Impacto en Anticipos / Preventas (`ANTICIPO PREVENTA` vs `CRUCE ANTICIPO`)**:
   - Al recibir un anticipo: Se registra el ingreso de dinero en `cash_movements` (Categoría `ANTICIPO PREVENTA`).
