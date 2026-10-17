@@ -42,7 +42,16 @@
 * **SKU y Nombres Limpios**: Se generan sin sufijos de talla si no aplica (ej. `15265-BOSS-NEGRO`).
 * **Pestaña 'ÚNICA' en Entrada en Lote**: Integrada en `BatchStockEntryModal.jsx` para recepción masiva de accesorios.
 
-### 6. UX de Venta Rápida y Stock en Vivo en Buscador del Terminal (TerminalModal.jsx)
+### 6. UX de Venta Rápida, Depuración del Catálogo y Sincronización Automática en Vivo (`TerminalModal.jsx`)
+* **Sincronización Automática Ultraligera en Tiempo Real (Multi-Asesor)**:
+  - Nuevo endpoint backend `GET /products/sync-version` que entrega la versión compuesta (último `updated_at`, conteo y max `sale_id`) en ~20ms y solo 40 bytes.
+  - El Terminal sondea automáticamente cada 3.5 segundos en segundo plano. Si otro asesor en cualquier celular o computador registra una venta o restock, el terminal se actualiza solo en vivo.
+  - **Blindaje de Carrito**: Si otro asesor vende la última unidad de una prenda que tenías en tu carrito, el stock de esa fila en tu pantalla pasa inmediatamente a `0`, la fila se tiñe de rojo y el botón de 'Finalizar Venta' se bloquea para impedir sobreventas.
+* **Exclusión de Prendas Base / Agrupadoras con Variantes (ej. `IMPORTADA 7647 con 11 un.`)**:
+  - Se detectan los IDs de prendas base que ya fueron desglosadas en variantes hijas (`parentIds`).
+  - La prenda matriz padre se descarta del buscador del Terminal para evitar confusiones y ventas sin talla o color. Solo se ofrecen las variantes reales vendibles.
+* **Exclusión Total de Productos Agotados en Caja**:
+  - Todos los productos con stock físico `0` (como `ESTAMPADO N.N 3706` o `HILO LANA 9004`) o cuyo stock disponible ya fue cargado por completo al carrito actual son omitidos del buscador de ventas para no saturar la pantalla.
 * **Buscador Persistente Multi-Producto**: Al hacer clic en un producto para agregarlo al carrito, ya no se borra la búsqueda ni se cierra el menú desplegable. Permite agregar dos o más prendas de una misma búsqueda seguidas sin tener que volver a escribir el texto.
 * **Cálculo de Stock Disponible en Tiempo Real**: El buscador descuenta en vivo las unidades que ya se encuentran en el carrito (stockDisponible = stockFisico - unidadesEnCarrito). Si un producto de 1 unidad ya pasó a la caja, se muestra como ✓ En caja · 0 disp. y se deshabilita para evitar sobreventas accidentales.
 * **Priorización de Disponibles**: Los productos que todavía tienen stock disponible se ordenan automáticamente en las primeras posiciones del desplegable.
