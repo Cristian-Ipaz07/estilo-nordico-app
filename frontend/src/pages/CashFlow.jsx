@@ -161,8 +161,28 @@ export default function CashFlow() {
     return [...realMovements, ...virtualSales].sort((a, b) => {
       const dateA = toDateKey(a.payment_date || a.created_at);
       const dateB = toDateKey(b.payment_date || b.created_at);
+      
+      // 1. Si son fechas distintas, ordenar cronológicamente por fecha YYYY-MM-DD
       if (dateA !== dateB) return dateA.localeCompare(dateB);
-      return (a.id || 0) - (b.id || 0);
+
+      // 2. En la misma fecha, si uno es CIERRE DE CAJA, el cierre siempre representa la culminación del día
+      // Por ende cronológicamente ocurre AL FINAL (después de todas las ventas y egresos de esa fecha)
+      const isCierreA = (a.category || '').toUpperCase() === 'CIERRE CAJA' || (a.description || '').toUpperCase().startsWith('CIERRE DE CAJA');
+      const isCierreB = (b.category || '').toUpperCase() === 'CIERRE CAJA' || (b.description || '').toUpperCase().startsWith('CIERRE DE CAJA');
+      if (isCierreA && !isCierreB) return 1;  // 'a' (cierre) va después de las ventas del día
+      if (!isCierreA && isCierreB) return -1; // 'b' (cierre) va después de las ventas del día
+
+      // 3. Ordenar por timestamp real dentro del mismo día si ambos o ninguno son cierre
+      const rawA = a.payment_date || a.created_at;
+      const rawB = b.payment_date || b.created_at;
+      const timeA = rawA ? new Date(rawA).getTime() : 0;
+      const timeB = rawB ? new Date(rawB).getTime() : 0;
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeA - timeB;
+
+      // 4. Desempate seguro por ID numérico (extrayendo dígitos para IDs como 'sale-296-init')
+      const idA = typeof a.id === 'number' ? a.id : (parseInt(String(a.id).replace(/\D+/g, ''), 10) || 0);
+      const idB = typeof b.id === 'number' ? b.id : (parseInt(String(b.id).replace(/\D+/g, ''), 10) || 0);
+      return idA - idB;
     });
   }, [movements, sales]);
 
