@@ -1,34 +1,20 @@
 import { normalizeImageUrl } from './imageOptimizer.js';
 
 /**
- * Copia una imagen directamente al portapapeles del sistema (formato PNG Blob).
- * Diseñado específicamente para que el asesor pueda presionar el botón y luego
- * ir a WhatsApp (Web, Desktop o Móvil) y darle "Pegar" (Ctrl + V).
- * 
- * Regla de oro: NUNCA abre ventanas, pestañas ni descarga archivos molestos.
- *
- * @param {string} imageUrl - URL relativa o absoluta de la imagen
- * @returns {Promise<{success: boolean, message: string}>}
+ * Obtiene la imagen vía fetch o Image() y la convierte a un Blob PNG puro.
  */
-export async function copyImageToClipboard(imageUrl) {
-  if (!imageUrl) {
-    throw new Error('No hay imagen para copiar');
-  }
-
-  const fullUrl = normalizeImageUrl(imageUrl);
-
-  // 1. Obtener la imagen mediante fetch (evita problemas de crossOrigin en canvas directo)
+async function fetchPngBlob(fullUrl) {
   let blob;
   try {
     const res = await fetch(fullUrl, { mode: 'cors' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    blob = await res.blob();
+    if (res.ok) {
+      blob = await res.blob();
+    }
   } catch (fetchErr) {
     console.warn('Fetch directo de imagen falló, intentando carga vía Image:', fetchErr);
   }
 
-  // 2. Convertir a PNG Blob (los navegadores requieren obligatoriamente image/png en ClipboardItem)
-  const pngBlob = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
@@ -62,21 +48,73 @@ export async function copyImageToClipboard(imageUrl) {
       img.src = fullUrl;
     }
   });
+}
 
-  // 3. Escribir PNG en el portapapeles del sistema
+/**
+ * Copia una imagen directamente al portapapeles del sistema (formato PNG Blob).
+ * Compatible con PC, Mac, iPad, iPhone, tablets y celulares Android.
+ * 
+ * Regla de oro: En iPad/Safari es vital pasar la promesa al constructor de ClipboardItem
+ * para no perder la activación del usuario (user activation gesture).
+ *
+ * @param {string} imageUrl - URL relativa o absoluta de la imagen
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function copyImageToClipboard(imageUrl) {
+  if (!imageUrl) {
+    throw new Error('No hay imagen para copiar');
+  }
+
+  const fullUrl = normalizeImageUrl(imageUrl);
+
+  // 1. Intentar copia de imagen binaria al portapapeles
+  // En Safari / iPadOS es CRÍTICO pasar la Promesa directamente a new ClipboardItem
+  // sin hacer 'await' antes, para no perder el 'user activation' gesture.
   if (navigator.clipboard && window.ClipboardItem) {
     try {
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': pngBlob })
-      ]);
-      return { success: true, message: 'Foto copiada al portapapeles (Ctrl + V en WhatsApp)' };
+      const blobPromise = fetchPngBlob(fullUrl);
+      let item;
+      try {
+        // Estándar moderno de Safari / iPadOS y Chromium reciente:
+        item = new ClipboardItem({ 'image/png': blobPromise });
+      } catch (ctorErr) {
+        // En navegadores que no aceptan Promise en el constructor, resolvemos el Blob primero:
+        const resolvedBlob = await blobPromise;
+        item = new ClipboardItem({ 'image/png': resolvedBlob });
+      }
+
+      if (item) {
+        await navigator.clipboard.write([item]);
+        return { success: true, message: 'Foto copiada al portapapeles (lista para pegar)' };
+      }
     } catch (clipErr) {
-      console.warn('navigator.clipboard.write con imagen no soportado en este dispositivo:', clipErr);
+      console.warn('Copia directa de imagen al portapapeles no permitida o no soportada:', clipErr);
     }
   }
 
-  // 4. Si el navegador no permite escribir imágenes binarias (ej: ciertos móviles):
-  // Guardamos el enlace limpio al portapapeles sin abrir ninguna ventana
+  // 2. Soporte nativo para tablets y celulares móviles vía Web Share API
+  // En iPads/Tablets/Celulares donde el portapapeles de imagen está restringido por el sistema,
+  // Web Share permite enviar la imagen directamente a WhatsApp / Telegram con 1 toque.
+  if (navigator.share) {
+    try {
+      const blob = await fetchPngBlob(fullUrl);
+      const file = new File([blob], 'foto-prenda.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Foto Prenda Estilo Nórdico'
+        });
+        return { success: true, message: 'Foto compartida con éxito' };
+      }
+    } catch (shareErr) {
+      if (shareErr.name === 'AbortError') {
+        return { success: true, message: 'Listo' };
+      }
+      console.warn('Web Share falló:', shareErr);
+    }
+  }
+
+  // 3. Fallback universal: Copiar URL limpia de la foto al portapapeles
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(fullUrl);
@@ -86,5 +124,5 @@ export async function copyImageToClipboard(imageUrl) {
     console.error('Error al copiar texto:', textErr);
   }
 
-  return { success: true, message: 'Foto lista' };
+  return { success: true, message: 'Foto procesada' };
 }

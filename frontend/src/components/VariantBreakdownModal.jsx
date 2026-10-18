@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag, 
-  ShieldCheck, Camera, Image as ImageIcon, UploadCloud, Pencil
+  ShieldCheck, Camera, Image as ImageIcon, UploadCloud, Pencil,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { 
@@ -20,12 +21,14 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   if (!isOpen || !baseProduct) return null;
 
   // Estados de formulario nueva variante
+  const [showCreateForm, setShowCreateForm] = useState(true);
   const [brand, setBrand] = useState('');
   const [detail, setDetail] = useState('');
   const [selectedColors, setSelectedColors] = useState([]);
   const [currentColorSelect, setCurrentColorSelect] = useState('');
   const [showCustomColorInput, setShowCustomColorInput] = useState(false);
   const [customColorInput, setCustomColorInput] = useState('');
+  
   // Detectar si la referencia base es un accesorio o prenda que habitualmente no usa talla
   const isNonSizedProduct = useMemo(() => {
     const text = `${baseProduct.subcategory || ''} ${baseProduct.name || ''} ${baseProduct.category || ''} ${baseProduct.product_type || ''}`.toUpperCase();
@@ -39,6 +42,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       setSize('');
     }
   }, [isNonSizedProduct]);
+
   const [quantity, setQuantity] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -46,7 +50,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
 
   // Estados para asignación y carga de fotos de variantes
   const [uploadingVariantId, setUploadingVariantId] = useState(null);
-  const [pickingGalleryFor, setPickingGalleryFor] = useState(null);
+  const [pickingPhotoForVariant, setPickingPhotoForVariant] = useState(null);
+  const [showNewFormPhotoPicker, setShowNewFormPhotoPicker] = useState(false);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState(null);
   const [newVariantFile, setNewVariantFile] = useState(null);
   const [newVariantPreview, setNewVariantPreview] = useState(null);
@@ -58,6 +63,11 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [targetBatchBrand, setTargetBatchBrand] = useState('THE NORTH FACE');
   const [batchFixing, setBatchFixing] = useState(false);
 
+  // Obtener producto base más actualizado desde el catálogo general
+  const currentBaseProduct = useMemo(() => {
+    return (allProducts || []).find(p => p.id === baseProduct.id) || baseProduct;
+  }, [allProducts, baseProduct]);
+
   // Encuentra variantes existentes que pertenezcan a este producto base
   // ORDEN ESTILO NÓRDICO:
   // 1. Por COLOR estricto en orden alfabético (A -> Z). Así todas las Azules van seguidas, luego Azul Cobalto, Beige, etc.
@@ -65,7 +75,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   // 3. Por MARCA / Submodelo
   const existingVariants = useMemo(() => {
     const prefix = `${baseProduct.ref}-`.toLowerCase();
-    const list = allProducts.filter(p => 
+    const list = (allProducts || []).filter(p => 
       p.id !== baseProduct.id && 
       (p.parent_id === baseProduct.id || (p.ref && p.ref.toLowerCase().startsWith(prefix)))
     );
@@ -194,7 +204,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }, [existingVariants, allProducts]);
 
-  // Colores específicos ya creados en esta referencia (para chips de selección rápida con 1 clic)
+  // Colores específicos ya creados en esta referencia (para chips de selección rápida)
   const existingReferenceColors = useMemo(() => {
     const set = new Set();
     existingVariants.forEach(v => {
@@ -208,6 +218,11 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const availableReferencePhotos = useMemo(() => {
     const set = new Set();
     // 1. Fotos de la prenda base
+    if (Array.isArray(currentBaseProduct.images)) {
+      currentBaseProduct.images.forEach(img => {
+        if (img && typeof img === 'string') set.add(img);
+      });
+    }
     if (Array.isArray(baseProduct.images)) {
       baseProduct.images.forEach(img => {
         if (img && typeof img === 'string') set.add(img);
@@ -222,7 +237,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       }
     });
     return Array.from(set);
-  }, [baseProduct.images, existingVariants]);
+  }, [currentBaseProduct.images, baseProduct.images, existingVariants]);
 
   // LISTA DINÁMICA DE TALLAS:
   const dynamicSizeOptions = useMemo(() => {
@@ -287,7 +302,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const file = e.target.files?.[0];
     if (!file) return;
     setNewVariantFile(file);
-    setSelectedGalleryPhoto(null); // Archivo local tiene prioridad sobre foto de galería
+    setSelectedGalleryPhoto(null);
     const previewUrl = URL.createObjectURL(file);
     setNewVariantPreview(previewUrl);
   };
@@ -307,6 +322,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     try {
       const webpFile = await optimizeImageToWebP(file);
       await uploadProductImage(variantId, webpFile, true);
+      setPickingPhotoForVariant(null);
       if (onRefresh) await onRefresh();
     } catch (err) {
       console.error(err);
@@ -322,6 +338,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     setUploadingVariantId(variantId);
     try {
       await removeProductImage(variantId, imgUrl);
+      setPickingPhotoForVariant(null);
       if (onRefresh) await onRefresh();
     } catch (err) {
       console.error(err);
@@ -344,7 +361,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         body: JSON.stringify({ images: [photoUrl] })
       });
       if (res.ok) {
-        setPickingGalleryFor(null);
+        setPickingPhotoForVariant(null);
         if (onRefresh) await onRefresh();
       } else {
         alert('No se pudo asignar la foto a la variante');
@@ -469,8 +486,6 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const cleanDetail = detail ? detail.trim().toUpperCase() : '';
     const detailSlug = cleanDetail ? cleanDetail.replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '') : '';
 
-    // La talla es completamente opcional (ej: correas, gorras, relojes, perfumes o talla única)
-
     // SKU estándar: [REF]-[MARCA?]-[DETALLE?]-[COLOR]-[TALLA]
     const brandSlug = (cleanBrand && cleanBrand !== 'ESTILO NÓRDICO' && cleanBrand !== 'ESTILO NORDICO')
       ? cleanBrand.replace(/\s+/g, '-')
@@ -490,7 +505,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     const variantName = `${baseProduct.name.trim()}${brandForName}${detailForName}${colorForName}${sizeForName}`.trim();
 
     // Validar si ya existe por SKU exacto
-    const existsBySku = allProducts.find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
+    const existsBySku = (allProducts || []).find(p => p.ref && p.ref.toUpperCase() === sku.toUpperCase());
     if (existsBySku) {
       alert(`⚠️ La variante con SKU '${sku}' ya existe en el inventario. Puedes editar su stock o datos directamente en la lista inferior.`);
       return;
@@ -573,6 +588,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         setQuantity(1);
         setSelectedGalleryPhoto(null);
         handleClearNewVariantPhoto();
+        setShowNewFormPhotoPicker(false);
         if (onRefresh) onRefresh();
       } else {
         const err = await res.json();
@@ -628,11 +644,11 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
       <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+        {/* Header Superior */}
+        <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
               <Layers size={20} />
@@ -658,7 +674,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         </div>
 
         {/* Resumen de Stock Base vs Variantes */}
-        <div className="px-6 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between text-xs">
+        <div className="px-5 sm:px-6 py-2 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between text-xs shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-slate-500 font-medium">Stock Total Desglosado:</span>
             <span className="font-black text-indigo-700 font-mono text-sm bg-white px-2.5 py-0.5 rounded-md border border-indigo-200 shadow-2xs">
@@ -673,431 +689,410 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
           </div>
         </div>
 
-        {/* Formulario de Nueva Variante */}
-        <form onSubmit={handleAddVariant} className="p-6 border-b border-slate-100 bg-white space-y-4 shrink-0">
-          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <Plus size={14} className="text-indigo-600" /> Crear Nueva Variante / Talla
-          </p>
-
-          {/* Fila 1: Marca & Detalle/Estampado Opcional */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Columna 1: Marca con autocompletado y filtro dinámico */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Marca (Desplegable / Búsqueda)
-                </label>
-                {brand && (
-                  <button 
-                    type="button" 
-                    onClick={() => setBrand('')} 
-                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                  >
-                    Limpiar marca
-                  </button>
-                )}
-              </div>
-              <input
-                type="text"
-                list="all-system-brands"
-                placeholder="Escribe o busca marca (ej: THE NORTH FACE, PUMA)"
-                value={brand}
-                onChange={e => setBrand(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <datalist id="all-system-brands">
-                {dynamicBrandOptions.map(b => (
-                  <option key={b} value={b} />
-                ))}
-              </datalist>
-
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Rápidas:</span>
-                {QUICK_BRANDS.map(b => (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => setBrand(b)}
-                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
-                      brand.toUpperCase() === b ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {b}
-                  </button>
-                ))}
-              </div>
+        {/* Barra Toggle para Formulario de Nueva Variante */}
+        <div className="px-5 sm:px-6 py-2 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowCreateForm(prev => !prev)}
+            className="text-[11px] font-black uppercase tracking-wider text-slate-600 hover:text-indigo-600 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <div className="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              {showCreateForm ? <ChevronUp size={13} /> : <Plus size={13} />}
             </div>
+            <span>Crear Nueva Variante / Talla</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateForm(prev => !prev)}
+            className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+          >
+            {showCreateForm ? 'Ocultar formulario' : '+ Mostrar formulario'}
+          </button>
+        </div>
 
-            {/* Columna 2: Estampado / Detalle / Letras (Opcional) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Estampado / Detalle / Letras (Opcional)
-                </label>
-                {detail && (
-                  <button 
-                    type="button" 
-                    onClick={() => setDetail('')} 
-                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                  >
-                    Limpiar detalle
-                  </button>
-                )}
-              </div>
-              <input
-                type="text"
-                placeholder="Ej: CASUAL, LETRAS, BORDADA, LOGO PEQUEÑO"
-                value={detail}
-                onChange={e => setDetail(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Sugerencias:</span>
-                {['CASUAL', 'LETRAS', 'BORDADA', 'LOGO PEQUEÑO', 'ESTAMPADO'].map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setDetail(s)}
-                    className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
-                      detail.toUpperCase() === s ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Fila 2: Color(es), Talla, Stock Inicial y Botón Agregar */}
-          <div className="grid grid-cols-12 gap-3 items-start pt-1">
-            {/* Color(es) - Desplegable + Botón + para Bicolor/Multicolor hacia la derecha */}
-            <div className="col-span-12 sm:col-span-5 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Color(es) · Bicolor / Multicolor
-                </label>
-                {selectedColors.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedColors([])}
-                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                  >
-                    Limpiar colores
-                  </button>
-                )}
-              </div>
-
-              {/* Selector desplegable con botón + */}
-              <div className="flex items-center gap-1.5">
-                {!showCustomColorInput ? (
-                  <select
-                    value={currentColorSelect}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '__CUSTOM__') {
-                        setShowCustomColorInput(true);
-                        setCurrentColorSelect('');
-                      } else if (val) {
-                        handleAddColor(val);
-                      }
-                    }}
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all cursor-pointer shadow-2xs"
-                  >
-                    <option value="">-- Seleccionar Color --</option>
-                    {dynamicColorOptions.map(c => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                    <option value="__CUSTOM__">✍️ + Escribir otro color...</option>
-                  </select>
-                ) : (
-                  <div className="flex-1 flex items-center gap-1">
-                    <input
-                      type="text"
-                      placeholder="Escribe el color..."
-                      value={customColorInput}
-                      onChange={e => setCustomColorInput(e.target.value.toUpperCase())}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddColor(customColorInput);
-                        }
-                      }}
-                      className="w-full px-3 py-2 bg-slate-50 border border-indigo-400 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:bg-white"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomColorInput(false)}
-                      className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-                      title="Volver a lista"
+        {/* Formulario de Nueva Variante (Compacto) */}
+        {showCreateForm && (
+          <form onSubmit={handleAddVariant} className="p-4 sm:p-5 border-b border-slate-100 bg-white space-y-3 shrink-0 animate-in fade-in duration-150">
+            {/* Fila 1: Marca & Detalle/Estampado Opcional */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Columna 1: Marca con autocompletado y filtro dinámico */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Marca (Desplegable / Búsqueda)
+                  </label>
+                  {brand && (
+                    <button 
+                      type="button" 
+                      onClick={() => setBrand('')} 
+                      className="text-[10px] text-rose-500 hover:underline cursor-pointer"
                     >
-                      <X size={14} />
+                      Limpiar marca
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
+                <input
+                  type="text"
+                  list="all-system-brands"
+                  placeholder="Escribe o busca marca (ej: THE NORTH FACE)"
+                  value={brand}
+                  onChange={e => setBrand(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                />
+                <datalist id="all-system-brands">
+                  {dynamicBrandOptions.map(b => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showCustomColorInput) {
-                      handleAddColor(customColorInput);
-                    } else if (currentColorSelect) {
-                      handleAddColor(currentColorSelect);
-                    }
-                  }}
-                  className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black transition-colors cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
-                  title="Añadir color a la prenda"
-                >
-                  <Plus size={14} />
-                  <span>Añadir</span>
-                </button>
-              </div>
-
-              {/* Colores Seleccionados (se agregan hacia la derecha) */}
-              <div className="min-h-[30px] p-1.5 bg-slate-50/80 border border-slate-200 rounded-xl flex items-center gap-1.5 flex-wrap">
-                {selectedColors.length > 0 ? (
-                  selectedColors.map((c, idx) => (
-                    <span
-                      key={c}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-black shadow-xs animate-in fade-in"
-                    >
-                      {idx > 0 && <span className="opacity-60 text-[9px] mr-0.5">/</span>}
-                      <span>{c}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveColor(c)}
-                        className="text-indigo-200 hover:text-white ml-0.5 p-0.5 rounded cursor-pointer"
-                        title={`Quitar ${c}`}
-                      >
-                        <X size={11} />
-                      </button>
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[10px] text-slate-400 italic px-1">
-                    Elige un color arriba. Para bicolores (ej: Negro y Rojo), agrega uno y luego el otro.
-                  </span>
-                )}
-              </div>
-
-              {/* Píldoras de colores ya existentes en esta referencia para clic directo */}
-              {existingReferenceColors.length > 0 && (
-                <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase mr-0.5">En esta ref:</span>
-                  {existingReferenceColors.map(c => (
+                <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pt-0.5 scrollbar-thin">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase shrink-0 mr-0.5">Rápidas:</span>
+                  {QUICK_BRANDS.map(b => (
                     <button
-                      key={c}
+                      key={b}
                       type="button"
-                      onClick={() => handleAddColor(c)}
-                      className="px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer bg-indigo-50/70 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300"
-                      title={`Agregar ${c}`}
+                      onClick={() => setBrand(b)}
+                      className={`shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+                        brand.toUpperCase() === b ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
                     >
-                      + {c}
+                      {b}
                     </button>
                   ))}
                 </div>
-              )}
+              </div>
+
+              {/* Columna 2: Estampado / Detalle / Letras (Opcional) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Estampado / Detalle / Letras (Opcional)
+                  </label>
+                  {detail && (
+                    <button 
+                      type="button" 
+                      onClick={() => setDetail('')} 
+                      className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Limpiar detalle
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Ej: CASUAL, LETRAS, BORDADA, LOGO PEQUEÑO"
+                  value={detail}
+                  onChange={e => setDetail(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                />
+                <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pt-0.5 scrollbar-thin">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase shrink-0 mr-0.5">Sugerencias:</span>
+                  {['CASUAL', 'LETRAS', 'BORDADA', 'LOGO PEQUEÑO', 'ESTAMPADO'].map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDetail(s)}
+                      className={`shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+                        detail.toUpperCase() === s ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Talla (Opcional - para correas, gorras, etc. se deja vacío) */}
-            <div className="col-span-6 sm:col-span-3 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Talla (Opcional)
-                </label>
-                {size && (
+            {/* Fila 2: Color(es), Talla, Stock Inicial y Botón Agregar */}
+            <div className="grid grid-cols-12 gap-3 items-start pt-1">
+              {/* Color(es) */}
+              <div className="col-span-12 sm:col-span-5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Color(es) · Bicolor / Multicolor
+                  </label>
+                  {selectedColors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedColors([])}
+                      className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Limpiar colores
+                    </button>
+                  )}
+                </div>
+
+                {/* Selector desplegable con botón + */}
+                <div className="flex items-center gap-1.5">
+                  {!showCustomColorInput ? (
+                    <select
+                      value={currentColorSelect}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '__CUSTOM__') {
+                          setShowCustomColorInput(true);
+                          setCurrentColorSelect('');
+                        } else if (val) {
+                          handleAddColor(val);
+                        }
+                      }}
+                      className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all cursor-pointer shadow-2xs"
+                    >
+                      <option value="">-- Seleccionar Color --</option>
+                      {dynamicColorOptions.map(c => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__">✍️ + Escribir otro color...</option>
+                    </select>
+                  ) : (
+                    <div className="flex-1 flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Escribe el color..."
+                        value={customColorInput}
+                        onChange={e => setCustomColorInput(e.target.value.toUpperCase())}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddColor(customColorInput);
+                          }
+                        }}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-indigo-400 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:bg-white"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomColorInput(false)}
+                        className="p-1 text-slate-400 hover:text-slate-600"
+                        title="Volver a lista"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showCustomColorInput) {
+                        handleAddColor(customColorInput);
+                      } else if (currentColorSelect) {
+                        handleAddColor(currentColorSelect);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black transition-colors cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                    title="Añadir color a la prenda"
+                  >
+                    <Plus size={14} />
+                    <span>Añadir</span>
+                  </button>
+                </div>
+
+                {/* Colores Seleccionados para la prenda */}
+                <div className="min-h-[26px] p-1 bg-slate-50/80 border border-slate-200 rounded-xl flex items-center gap-1.5 flex-wrap">
+                  {selectedColors.length > 0 ? (
+                    selectedColors.map((c, idx) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black shadow-xs animate-in fade-in"
+                      >
+                        {idx > 0 && <span className="opacity-60 text-[9px] mr-0.5">/</span>}
+                        <span>{c}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColor(c)}
+                          className="text-indigo-200 hover:text-white ml-0.5 p-0.5 rounded cursor-pointer"
+                          title={`Quitar ${c}`}
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-slate-400 italic px-1">
+                      Elige un color arriba. Para bicolores (ej: Negro y Rojo), agrega uno y luego el otro.
+                    </span>
+                  )}
+                </div>
+
+                {/* Píldoras de colores ya existentes en esta referencia: SCROLL HORIZONTAL EN UNA FILA */}
+                {existingReferenceColors.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap pt-1 pb-1 scrollbar-thin">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase shrink-0">En esta ref:</span>
+                    {existingReferenceColors.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => handleAddColor(c)}
+                        className="shrink-0 px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer bg-indigo-50/70 text-indigo-700 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300"
+                        title={`Agregar ${c}`}
+                      >
+                        + {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Talla */}
+              <div className="col-span-6 sm:col-span-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Talla (Opcional)
+                  </label>
+                  {size && (
+                    <button
+                      type="button"
+                      onClick={() => setSize('')}
+                      className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Sin talla
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  list="common-sizes"
+                  placeholder={isNonSizedProduct ? "Sin talla (Opcional)" : "Ej: M, L, XL"}
+                  value={size}
+                  onChange={e => setSize(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                />
+                <datalist id="common-sizes">
+                  {dynamicSizeOptions.map(s => <option key={s} value={s} />)}
+                </datalist>
+
+                {/* Botones de selección rápida de tallas */}
+                <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pt-0.5 scrollbar-thin">
+                  {['M', 'L', 'XL', 'XXL', 'XXXL'].map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSize(s)}
+                      className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-black border transition-all cursor-pointer ${
+                        size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSize('ÚNICA')}
+                    className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                      size === 'ÚNICA' ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    ÚNICA
+                  </button>
                   <button
                     type="button"
                     onClick={() => setSize('')}
-                    className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                    className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                      !size ? 'bg-slate-800 text-white border-slate-800 shadow-2xs' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                    }`}
+                    title="Para prendas o accesorios sin talla"
                   >
                     Sin talla
                   </button>
-                )}
-              </div>
-              <input
-                type="text"
-                list="common-sizes"
-                placeholder={isNonSizedProduct ? "Sin talla (Opcional)" : "Ej: M, L, XL o ÚNICA"}
-                value={size}
-                onChange={e => setSize(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 uppercase outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
-              />
-              <datalist id="common-sizes">
-                {dynamicSizeOptions.map(s => <option key={s} value={s} />)}
-              </datalist>
-
-              {/* Botones de selección rápida de tallas */}
-              <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                {['M', 'L', 'XL', 'XXL', 'XXXL'].map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSize(s)}
-                    className={`px-2 py-0.5 rounded text-[9px] font-black border transition-all cursor-pointer ${
-                      size === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSize('ÚNICA')}
-                  className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
-                    size === 'ÚNICA' ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  ÚNICA
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSize('')}
-                  className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
-                    !size ? 'bg-slate-800 text-white border-slate-800 shadow-2xs' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
-                  }`}
-                  title="Para prendas o accesorios sin talla"
-                >
-                  Sin talla
-                </button>
-              </div>
-            </div>
-
-            {/* Cantidad Inicial & Botón Agregar */}
-            <div className="col-span-6 sm:col-span-4 flex items-end gap-2.5">
-              <div className="flex-1 space-y-1.5">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Stock
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={quantity}
-                  onChange={e => setQuantity(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
-                  required
-                />
+                </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shrink-0 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer h-[38px]"
-                title="Agregar Variante"
-              >
-                {submitting ? <RefreshCw className="animate-spin" size={14} /> : <Plus size={16} />}
-                <span>Crear Variante</span>
-              </button>
-            </div>
-          </div>
+              {/* Cantidad Inicial & Botón Agregar & Foto Opcional Compacta */}
+              <div className="col-span-6 sm:col-span-4 flex items-end gap-2">
+                <div className="w-20 space-y-1">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Stock
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quantity}
+                    onChange={e => setQuantity(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                    required
+                  />
+                </div>
 
-          {/* Fila 3: Asignar Foto desde la Referencia o Subir Nueva */}
-          <div className="pt-2 border-t border-slate-100 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <Camera size={13} className="text-indigo-600" />
-                <span>Foto para esta variante (Opcional) · Asigna una foto de la referencia o sube desde el PC:</span>
-              </label>
-              {(selectedGalleryPhoto || newVariantPreview) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGalleryPhoto(null);
-                    handleClearNewVariantPhoto();
-                  }}
-                  className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                >
-                  Desmarcar foto
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 custom-scrollbar">
-              {/* Opción A: Subir desde PC */}
-              <label
-                htmlFor="new-variant-file"
-                className={`relative w-14 h-14 rounded-xl border-2 border-dashed flex flex-col items-center justify-center shrink-0 cursor-pointer transition-all ${
-                  newVariantPreview 
-                    ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' 
-                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100'
-                }`}
-                title="Subir foto desde este equipo"
-              >
-                {newVariantPreview ? (
-                  <>
-                    <img src={newVariantPreview} alt="Nueva" className="w-full h-full object-cover rounded-lg" />
+                {/* Selector Opcional de Foto en Formulario (Chip Compacto) */}
+                {(selectedGalleryPhoto || newVariantPreview) ? (
+                  <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-xl h-[34px] shrink-0">
+                    <img
+                      src={newVariantPreview || normalizeImageUrl(selectedGalleryPhoto)}
+                      alt=""
+                      className="w-6 h-6 object-cover rounded-lg border border-indigo-300"
+                    />
                     <button
                       type="button"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleClearNewVariantPhoto(); }}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-xs"
-                      title="Quitar"
+                      onClick={() => { setSelectedGalleryPhoto(null); handleClearNewVariantPhoto(); }}
+                      className="p-0.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                      title="Quitar foto preseleccionada"
                     >
-                      <X size={11} />
+                      <X size={12} />
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <Camera size={16} className="text-slate-400" />
-                    <span className="text-[8px] font-black uppercase text-slate-500 mt-0.5">Desde PC</span>
-                  </>
-                )}
-              </label>
-              <input
-                id="new-variant-file"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleSelectNewVariantPhoto}
-              />
-
-              {/* Opción B: Fotos ya existentes en la referencia / variantes */}
-              {availableReferencePhotos.map((photoUrl, idx) => {
-                const isSelected = selectedGalleryPhoto === photoUrl && !newVariantPreview;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      handleClearNewVariantPhoto();
-                      setSelectedGalleryPhoto(isSelected ? null : photoUrl);
-                    }}
-                    className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer bg-white group ${
-                      isSelected 
-                        ? 'border-indigo-600 ring-2 ring-indigo-500/50 scale-105 shadow-md' 
-                        : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
-                    }`}
-                    title={isSelected ? 'Foto seleccionada para esta variante' : 'Clic para asignar esta foto a la variante'}
-                  >
-                    <img
-                      src={normalizeImageUrl(photoUrl)}
-                      alt={`Foto ref ${idx+1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    {isSelected && (
-                      <div className="absolute inset-0 bg-indigo-900/40 flex items-center justify-center">
-                        <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-                          <Check size={14} />
+                  </div>
+                ) : availableReferencePhotos.length > 0 ? (
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowNewFormPhotoPicker(prev => !prev)}
+                      className="h-[34px] px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-indigo-300 text-slate-600 hover:text-indigo-600 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Asignar foto a esta variante al crear"
+                    >
+                      <Camera size={13} className="text-slate-400" />
+                      <span className="hidden sm:inline">+ Foto</span>
+                    </button>
+                    {showNewFormPhotoPicker && (
+                      <div className="absolute right-0 bottom-full mb-1 z-30 bg-white p-2.5 rounded-2xl shadow-xl border border-slate-200 w-64 animate-in fade-in">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[9px] font-black uppercase text-slate-400">Fotos de la referencia:</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewFormPhotoPicker(false)}
+                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                          {availableReferencePhotos.map((imgUrl, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => {
+                                setSelectedGalleryPhoto(imgUrl);
+                                handleClearNewVariantPhoto();
+                                setShowNewFormPhotoPicker(false);
+                              }}
+                              className="aspect-square rounded-lg overflow-hidden border border-slate-200 hover:border-indigo-600 transition-all cursor-pointer"
+                            >
+                              <img src={normalizeImageUrl(imgUrl)} alt="" className="w-full h-full object-cover" />
+                            </button>
+                          ))}
                         </div>
                       </div>
                     )}
-                  </button>
-                );
-              })}
+                  </div>
+                ) : null}
 
-              {availableReferencePhotos.length === 0 && !newVariantPreview && (
-                <span className="text-[10px] text-slate-400 italic px-2">
-                  La prenda base no tiene fotos cargadas aún. Puedes subir una desde el PC con el botón de la izquierda.
-                </span>
-              )}
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer h-[34px]"
+                  title="Agregar Variante"
+                >
+                  {submitting ? <RefreshCw className="animate-spin" size={13} /> : <Plus size={15} />}
+                  <span className="truncate">Crear Variante</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        )}
 
-        {/* Lista de Variantes Existentes */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3 custom-scrollbar">
+        {/* Lista de Variantes Existentes con Scroll Propio y Máximo Espacio */}
+        <div className="flex-1 min-h-[350px] overflow-y-auto p-4 sm:p-6 space-y-3 custom-scrollbar">
           
           {/* BANNER DE CORRECCIÓN RÁPIDA: Si hay variantes con 'ESTILO NÓRDICO' */}
           {variantsWithEstiloNordico.length > 0 && (
@@ -1156,14 +1151,14 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                 <span>⚡ Heredar fotos por color</span>
               </button>
               <span className="text-[10px] font-normal text-slate-400 hidden sm:inline">
-                💡 Asigna la foto exacta o usa el lápiz
+                💡 Clic en la foto de la variante para elegir de la referencia
               </span>
             </div>
           </div>
 
           {existingVariants.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 text-xs">
-              <AlertCircle size={24} className="mx-auto mb-2 opacity-40 text-slate-400" />
+            <div className="text-center py-12 text-slate-400 text-xs">
+              <AlertCircle size={28} className="mx-auto mb-2 opacity-40 text-slate-400" />
               Esta referencia no tiene variantes desglosadas aún.<br />
               Agrega los colores, marcas y tallas arriba para desglosarla.
             </div>
@@ -1172,14 +1167,18 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               {existingVariants.map(v => {
                 const hasVariantImage = Array.isArray(v.images) && v.images.length > 0;
                 const isUploadingThis = uploadingVariantId === v.id;
-                const isPickingGallery = pickingGalleryFor === v.id;
 
                 return (
                   <div key={v.id} className="p-3 bg-white hover:bg-slate-50/80 flex flex-col gap-2 transition-colors">
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
                         {/* Thumbnail / Asignador de Foto de la Variante */}
-                        <div className="relative group w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setPickingPhotoForVariant(v)}
+                          className="relative group w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer hover:border-indigo-500 hover:ring-2 hover:ring-indigo-200 transition-all shadow-2xs"
+                          title="Clic para ver, asignar o cambiar foto de esta variante"
+                        >
                           {isUploadingThis ? (
                             <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center">
                               <RefreshCw className="animate-spin text-indigo-600" size={16} />
@@ -1190,49 +1189,22 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                               <img
                                 src={normalizeImageUrl(v.images[0])}
                                 alt={v.ref}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                 onError={(e) => { e.target.style.display = 'none'; }}
                               />
-                              {/* Overlay de acciones sobre la foto */}
-                              <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                                <label
-                                  htmlFor={`variant-img-${v.id}`}
-                                  className="p-1 bg-white text-slate-900 rounded-md cursor-pointer hover:scale-110 transition-transform shadow-sm"
-                                  title="Cambiar foto de esta variante"
-                                >
-                                  <Camera size={12} />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveVariantPhoto(v.id, v.images[0])}
-                                  className="p-1 bg-rose-600 text-white rounded-md cursor-pointer hover:scale-110 transition-transform shadow-sm"
-                                  title="Quitar foto de esta variante"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
+                              <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Camera size={14} className="text-white drop-shadow" />
                               </div>
                             </>
                           ) : (
-                            <label
-                              htmlFor={`variant-img-${v.id}`}
-                              className="w-full h-full flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50/50 cursor-pointer transition-colors p-1 text-center"
-                              title="Asignar foto exacta a esta variante"
-                            >
-                              <Camera size={16} className="mb-0.5 text-slate-400 group-hover:text-indigo-600" />
-                              <span className="text-[8px] font-black uppercase text-slate-400 group-hover:text-indigo-600 leading-none">
+                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 group-hover:text-indigo-600 group-hover:bg-indigo-50/50 transition-colors p-1 text-center">
+                              <Camera size={16} className="mb-0.5" />
+                              <span className="text-[7px] font-black uppercase leading-none">
                                 + Foto
                               </span>
-                            </label>
+                            </div>
                           )}
-
-                          <input
-                            id={`variant-img-${v.id}`}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => handleUploadVariantPhoto(v.id, e.target.files?.[0])}
-                          />
-                        </div>
+                        </button>
 
                         {/* Datos de la variante */}
                         <div className="min-w-0">
@@ -1262,17 +1234,19 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                             )}
                           </p>
 
-                          {/* Botón para asignar foto desde las fotos disponibles de la referencia */}
-                          {availableReferencePhotos.length > 0 && !hasVariantImage && (
-                            <button
-                              type="button"
-                              onClick={() => setPickingGalleryFor(isPickingGallery ? null : v.id)}
-                              className="text-[9px] font-bold text-indigo-600 hover:underline flex items-center gap-1 mt-0.5 cursor-pointer"
-                            >
-                              <ImageIcon size={10} />
-                              {isPickingGallery ? 'Cerrar selector' : `📸 Asignar de fotos de la referencia (${availableReferencePhotos.length})`}
-                            </button>
-                          )}
+                          {/* Botón directo para abrir el selector de fotos */}
+                          <button
+                            type="button"
+                            onClick={() => setPickingPhotoForVariant(v)}
+                            className={`inline-flex items-center gap-1 mt-1 text-[10px] font-bold rounded-md px-1.5 py-0.5 transition-colors cursor-pointer w-fit ${
+                              hasVariantImage
+                                ? 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                                : 'text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+                            }`}
+                          >
+                            <Camera size={11} />
+                            <span>{hasVariantImage ? 'Cambiar foto' : `📸 Elegir foto de la ref (${availableReferencePhotos.length})`}</span>
+                          </button>
                         </div>
                       </div>
 
@@ -1332,44 +1306,6 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                         </button>
                       </div>
                     </div>
-
-                    {/* Selector Desplegable de Fotos de la Referencia */}
-                    {isPickingGallery && availableReferencePhotos.length > 0 && (
-                      <div className="mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in duration-150">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[10px] font-bold text-slate-600">
-                            Selecciona una foto para la variante <span className="font-mono text-indigo-600 font-black">{v.ref}</span>:
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setPickingGalleryFor(null)}
-                            className="text-[10px] text-slate-400 hover:text-slate-600 font-bold"
-                          >
-                            Cerrar
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                          {availableReferencePhotos.map((imgUrl, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleAssignBaseGalleryPhoto(v.id, imgUrl)}
-                              className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-slate-200 hover:border-indigo-600 shrink-0 transition-all hover:scale-105 cursor-pointer bg-white group shadow-2xs"
-                              title="Clic para asignar esta foto a la variante"
-                            >
-                              <img
-                                src={normalizeImageUrl(imgUrl)}
-                                alt={`Foto ref ${idx+1}`}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <Check size={16} className="text-white drop-shadow" />
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -1378,7 +1314,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
+        <div className="px-5 sm:px-6 py-3 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between shrink-0">
           <p className="text-[11px] text-slate-400 font-medium">
             💡 Las fotos asignadas a variantes se sincronizan con el Catálogo de Asesores y la Tienda Web.
           </p>
@@ -1391,6 +1327,157 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         </div>
 
       </div>
+
+      {/* Modal / Selector de Fotos para Variante Específica */}
+      {pickingPhotoForVariant && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-150">
+            {/* Header Modal Selector de Fotos */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                    {pickingPhotoForVariant.ref}
+                  </span>
+                  <span className="text-xs font-bold text-slate-700">
+                    Color: <span className="text-indigo-600 uppercase font-black">{pickingPhotoForVariant.color || 'N/A'}</span>
+                  </span>
+                  {pickingPhotoForVariant.size && (
+                    <span className="text-xs font-bold text-slate-500">
+                      · Talla: <span className="font-mono text-slate-800 font-black">{pickingPhotoForVariant.size}</span>
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-xs font-black text-slate-800 mt-1">
+                  Elegir Foto para esta Variante
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickingPhotoForVariant(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Cuerpo del Selector: Cuadrícula de Fotos de la Referencia */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Fotos de la Referencia #{baseProduct.ref} ({availableReferencePhotos.length})
+                </p>
+                <span className="text-[10px] text-slate-400">
+                  Haz clic para asignarla
+                </span>
+              </div>
+
+              {availableReferencePhotos.length > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                  {availableReferencePhotos.map((photoUrl, idx) => {
+                    const isAssigned = Array.isArray(pickingPhotoForVariant.images) && pickingPhotoForVariant.images.includes(photoUrl);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        disabled={uploadingVariantId === pickingPhotoForVariant.id}
+                        onClick={() => handleAssignBaseGalleryPhoto(pickingPhotoForVariant.id, photoUrl)}
+                        className={`relative aspect-square rounded-2xl overflow-hidden border-2 transition-all cursor-pointer group bg-slate-50 ${
+                          isAssigned 
+                            ? 'border-emerald-500 ring-4 ring-emerald-100 shadow-md scale-95' 
+                            : 'border-slate-200 hover:border-indigo-600 hover:shadow-md hover:scale-102'
+                        }`}
+                        title={isAssigned ? 'Foto actualmente asignada' : 'Clic para asignar esta foto'}
+                      >
+                        <img
+                          src={normalizeImageUrl(photoUrl)}
+                          alt={`Foto ref ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {isAssigned ? (
+                          <div className="absolute inset-0 bg-emerald-900/40 flex flex-col items-center justify-center p-1 text-center">
+                            <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                              <Check size={16} />
+                            </div>
+                            <span className="text-[9px] font-black text-white mt-1 drop-shadow">
+                              Asignada
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="absolute inset-0 bg-indigo-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="text-[10px] font-black text-white bg-indigo-600/90 px-2 py-1 rounded-lg shadow-sm">
+                              Elegir
+                            </span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">
+                  No hay fotos cargadas en la referencia base #{baseProduct.ref}.<br />
+                  Sube una con el botón de abajo.
+                </div>
+              )}
+
+              {/* Botón para subir foto nueva desde PC */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                <label
+                  htmlFor="modal-variant-upload-file"
+                  className="w-full py-2.5 px-4 bg-slate-50 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-300 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-slate-700 hover:text-indigo-700 cursor-pointer transition-all shadow-2xs"
+                >
+                  {uploadingVariantId === pickingPhotoForVariant.id ? (
+                    <RefreshCw className="animate-spin text-indigo-600" size={15} />
+                  ) : (
+                    <UploadCloud size={16} className="text-indigo-600" />
+                  )}
+                  <span>Subir foto nueva desde este equipo (PC / Celular)</span>
+                </label>
+                <input
+                  id="modal-variant-upload-file"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      await handleUploadVariantPhoto(pickingPhotoForVariant.id, file);
+                    }
+                  }}
+                />
+
+                {Array.isArray(pickingPhotoForVariant.images) && pickingPhotoForVariant.images.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleRemoveVariantPhoto(pickingPhotoForVariant.id, pickingPhotoForVariant.images[0]);
+                    }}
+                    className="w-full py-2 px-4 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 size={13} />
+                    <span>Quitar foto de esta variante</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Footer Modal Selector */}
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs shrink-0">
+              <span className="text-[10px] text-slate-400">
+                💡 Al elegir la foto, se sincroniza en el catálogo de ventas y tienda.
+              </span>
+              <button
+                type="button"
+                onClick={() => setPickingPhotoForVariant(null)}
+                className="px-4 py-1.5 bg-slate-800 text-white font-bold rounded-xl text-xs hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Subsidario para Editar Variante */}
       <EditVariantModal

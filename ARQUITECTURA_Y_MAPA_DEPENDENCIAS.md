@@ -69,6 +69,10 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
 * ⚠️ **Fotos de Variantes & Supabase Storage**:
   - Toda imagen subida se procesa primero en el cliente mediante `optimizeImageToWebP` (máx 1200px, WebP ~40KB, fondo transparente preservado).
   - Al borrar un producto (`DELETE /products/{id}`) o una imagen (`DELETE /products/{id}/images`), el backend ejecuta el **borrado físico automático** en el bucket de Supabase Storage para no acumular basura ni costos de almacenamiento.
+  - **Selector Focalizado por Referencia**: Las fotos se cargan a nivel de producto base (Ficha Web). En `VariantBreakdownModal`, no se satura el panel con galerías gigantescas; cada variante cuenta con su miniatura y botón `📸 Elegir foto de la ref`, abriendo un modal enfocado donde un toque asigna la foto de inmediato (`PUT /products/{id}`).
+  - **Herencia Automática de Fotos por Color**: El botón `⚡ Heredar fotos por color` propaga la foto existente de un color a todas las tallas restantes del mismo color en un solo clic.
+  - **Scroll Horizontal de Colores Existentes**: La fila `En esta ref: + COLOR...` ocupa estrictamente una sola fila horizontal con `overflow-x-auto whitespace-nowrap` para no restar espacio a las variantes.
+  - **Formulario Colapsable**: El formulario de creación de variantes es colapsable para otorgar el 100% de la altura visual (`min-h-[350px]`) a la lista de variantes desglosadas.
 * ⚠️ **Productos sin Talla**:
   - Accesorios, correas, hebillas, gorras, relojes, perfumes, billeteras, lociones y gafas **no deben tener el atributo `required` en talla**.
   - Al crear o editar, el SKU y el nombre deben omitir la talla limpiamente si el usuario la deja vacía.
@@ -92,6 +96,10 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
   - El catálogo de asesores solo muestra: Precio de Venta, Fotos dinámicas por color, Tallas disponibles con stock real, y enlaces de venta.
 * ⚠️ **Interacción Foto - Color**:
   - Al hacer clic en un color de la tarjeta, la foto principal debe cambiar de inmediato a la foto asociada a esa variante específica.
+* ⚠️ **Copia de Fotos en Tablets y Celulares (`clipboardHelper.js`)**:
+  - **Safari / iPadOS User Activation**: `navigator.clipboard.write` requiere pasar una `Promise<Blob>` síncrona a `new ClipboardItem({ 'image/png': blobPromise })` dentro del evento de clic para no perder el gesto de usuario.
+  - **Fallback Nativo Web Share API**: En tablets y dispositivos móviles donde el portapapeles binario esté restringido por el SO, se activa `navigator.share({ files: [file] })` para compartir directamente a WhatsApp con 1 toque.
+  - **Fallback Universal**: Si el dispositivo no soporta imagen binaria ni share, copia el enlace HTTPS limpio mediante `navigator.clipboard.writeText`.
 * ⚠️ **Generador de Mensajes WhatsApp**:
   - El texto generado debe ser persuasivo, listar las tallas reales en stock y contener el enlace a la foto o tienda web.
 
