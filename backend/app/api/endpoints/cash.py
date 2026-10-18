@@ -29,6 +29,7 @@ class CashMovementCreate(BaseModel):
     amount: float
     type: str  # 'ENTRADA' or 'SALIDA'
     category: str
+    account: Optional[str] = "EFECTIVO_TIENDA"
     payment_date: Optional[str] = None  # Allow client to specify or default
 
 class CashMovementResponse(BaseModel):
@@ -37,6 +38,7 @@ class CashMovementResponse(BaseModel):
     amount: float
     type: str
     category: str
+    account: Optional[str] = "EFECTIVO_TIENDA"
     payment_date: datetime
     created_at: datetime
 
@@ -53,6 +55,7 @@ def create_movement(movement: CashMovementCreate, db: Session = Depends(get_db))
         amount=movement.amount,
         type=movement.type,
         category=categoria_normalizada,
+        account=movement.account or "EFECTIVO_TIENDA",
     )
     if movement.payment_date:
         try:
@@ -89,6 +92,7 @@ class CashMovementUpdate(BaseModel):
     amount: Optional[float] = None
     type: Optional[str] = None
     category: Optional[str] = None
+    account: Optional[str] = None
     payment_date: Optional[str] = None
 
 @router.put("/{movement_id}", response_model=CashMovementResponse)
@@ -105,6 +109,8 @@ def update_movement(movement_id: int, movement: CashMovementUpdate, db: Session 
         mov.type = movement.type
     if movement.category is not None:
         mov.category = normalizar_categoria(movement.category)
+    if movement.account is not None:
+        mov.account = movement.account
     if movement.payment_date is not None:
         try:
             mov.payment_date = datetime.fromisoformat(movement.payment_date)
@@ -115,3 +121,71 @@ def update_movement(movement_id: int, movement: CashMovementUpdate, db: Session 
     db.refresh(mov)
     return mov
 
+
+ACCOUNT_LABELS = {
+    "EFECTIVO_TIENDA": "Efectivo Tienda (Gaveta)",
+    "NEQUI_CRISTIAN": "Nequi Cristian",
+    "NEQUI_DAVID": "Nequi David",
+    "EFECTIVO_CASA": "Efectivo en Casa (Caja Mayor)",
+    "BANCOLOMBIA": "Bancolombia / Cuenta",
+}
+
+class CashTransferCreate(BaseModel):
+    source_account: str
+    destination_account: str
+    amount: float
+    description: Optional[str] = None
+    transfer_date: Optional[str] = None
+
+@router.post("/transfer")
+def transfer_funds(data: CashTransferCreate, db: Session = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto a trasladar debe ser mayor a 0")
+    if data.source_account == data.destination_account:
+        raise HTTPException(status_code=400, detail="La cuenta de origen y destino deben ser diferentes")
+
+    src_label = ACCOUNT_LABELS.get(data.source_account, data.source_account)
+    dst_label = ACCOUNT_LABELS.get(data.destination_account, data.destination_account)
+    user_note = f" - {data.description.strip()}" if data.description and data.description.strip() else ""
+
+    p_date = get_colombia_time()
+    if data.transfer_date:
+        try:
+            if "T" in data.transfer_date:
+                p_date = datetime.fromisoformat(data.transfer_date)
+            else:
+                p_date = datetime.strptime(data.transfer_date, "%Y-%m-%d").replace(hour=12, minute=0, second=0, tzinfo=timezone(timedelta(hours=-5)))
+        except Exception:
+            pass
+
+    out_mov = CashMovement(
+        description=f"Traslado enviado a {dst_label}{user_note}",
+        amount=data.amount,
+        type="SALIDA",
+        category="TRASLADO_INTERNO",
+        account=data.source_account,
+        payment_date=p_date,
+        created_at=p_date
+    )
+
+    in_mov = CashMovement(
+        description=f"Traslado recibido desde {src_label}{user_note}",
+        amount=data.amount,
+        type="ENTRADA",
+        category="TRASLADO_INTERNO",
+        account=data.destination_account,
+        payment_date=p_date,
+        created_at=p_date
+    )
+
+    db.add(out_mov)
+    db.add(in_mov)
+    db.commit()
+    db.refresh(out_mov)
+    db.refresh(in_mov)
+
+    return {
+        "message": f"Traslado de ${data.amount:,.0f} registrado con éxito de {src_label} a {dst_label}",
+        "out_movement_id": out_mov.id,
+        "in_movement_id": in_mov.id
+    }

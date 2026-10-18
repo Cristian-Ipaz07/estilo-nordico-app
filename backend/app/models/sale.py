@@ -19,6 +19,7 @@ class Sale(Base):
     delivery_address = Column(String, nullable=True)
     delivery_notes = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    payment_method = Column(String, default="EFECTIVO_TIENDA", nullable=True)
     created_at = Column(DateTime, default=get_colombia_time)
 
     # Relaciones

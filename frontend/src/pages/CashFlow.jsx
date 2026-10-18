@@ -19,8 +19,12 @@ import {
   ArrowDownRight,
   RefreshCw,
   CheckCircle2,
-  Tag
+  Tag,
+  ArrowLeftRight,
+  Landmark
 } from 'lucide-react';
+import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
+import TransferModal from '../components/TransferModal';
 import { API_URL } from '../config/api';
 import { useDateRange, getTodayCO } from '../context/DateRangeContext';
 
@@ -61,9 +65,11 @@ export default function CashFlow() {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('TODAS');
   const [selectedType, setSelectedType] = useState('TODOS'); // 'TODOS' | 'ENTRADA' | 'SALIDA'
+  const [selectedAccountFilter, setSelectedAccountFilter] = useState('TODAS'); // 'TODAS' | accountId
 
   // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState(null);
 
   // Formulario de nuevo movimiento de caja mayor / contable
@@ -73,6 +79,7 @@ export default function CashFlow() {
     category: 'GASTO',
     description: '',
     payment_date: getTodayCO(),
+    account: 'EFECTIVO_CASA',
     origin: 'Efectivo en Casa'
   });
   const [submitting, setSubmitting] = useState(false);
@@ -133,6 +140,7 @@ export default function CashFlow() {
           amount: freshPayment,
           type: 'ENTRADA',
           category: 'VENTA',
+          account: s.payment_method || 'EFECTIVO_TIENDA',
           payment_date: s.created_at,
           created_at: s.created_at,
           isVirtual: true,
@@ -147,6 +155,7 @@ export default function CashFlow() {
           amount: p.amount || 0,
           type: 'ENTRADA',
           category: 'VENTA',
+          account: p.account || s.payment_method || 'EFECTIVO_TIENDA',
           payment_date: p.payment_date || p.created_at,
           created_at: p.payment_date || p.created_at,
           isVirtual: true,
@@ -156,7 +165,13 @@ export default function CashFlow() {
     });
 
     // Filtramos registros manuales que el usuario haya hecho usando 'VENTA' para evitar duplicidad
-    const realMovements = movements.filter(m => m.category !== 'VENTA');
+    const realMovements = movements.filter(m => m.category !== 'VENTA').map(m => {
+      let acc = m.account;
+      if (!acc || acc === 'EFECTIVO_TIENDA') {
+        acc = inferAccountFromDesc(m.description, acc || 'EFECTIVO_TIENDA');
+      }
+      return { ...m, account: acc };
+    });
 
     return [...realMovements, ...virtualSales].sort((a, b) => {
       const dateA = toDateKey(a.payment_date || a.created_at);
@@ -185,6 +200,27 @@ export default function CashFlow() {
       return idA - idB;
     });
   }, [movements, sales]);
+
+  // Arqueo global de bolsas / cuentas en tiempo real (Histórico total)
+  const treasuryBalances = useMemo(() => {
+    const b = {
+      EFECTIVO_TIENDA: 0,
+      NEQUI_CRISTIAN: 0,
+      NEQUI_DAVID: 0,
+      EFECTIVO_CASA: 0,
+      BANCOLOMBIA: 0
+    };
+    allMovements.forEach(m => {
+      const acc = m.account || 'EFECTIVO_TIENDA';
+      const amt = Number(m.amount) || 0;
+      if (b[acc] !== undefined) {
+        if (m.type === 'ENTRADA') b[acc] += amt;
+        else b[acc] -= amt;
+      }
+    });
+    const total = Object.values(b).reduce((sum, v) => sum + v, 0);
+    return { balances: b, total };
+  }, [allMovements]);
 
   // Procesar saldo arrastrado y filtrado por fecha
   const processedByDate = useMemo(() => {
@@ -230,6 +266,11 @@ export default function CashFlow() {
     // Filtro por Categoría
     if (selectedCategory !== 'TODAS') {
       list = list.filter(m => (m.category || '').toUpperCase() === selectedCategory);
+    }
+
+    // Filtro por Cuenta / Bolsa
+    if (selectedAccountFilter !== 'TODAS') {
+      list = list.filter(m => (m.account || 'EFECTIVO_TIENDA') === selectedAccountFilter);
     }
 
     // Buscador en vivo
@@ -339,6 +380,7 @@ export default function CashFlow() {
         amount: amt,
         type: newMovement.type,
         category: newMovement.category.toUpperCase(),
+        account: newMovement.account || 'EFECTIVO_CASA',
         payment_date: newMovement.payment_date ? `${newMovement.payment_date}T12:00:00` : undefined
       };
 
@@ -359,6 +401,7 @@ export default function CashFlow() {
           category: 'GASTO',
           description: '',
           payment_date: getTodayCO(),
+          account: 'EFECTIVO_CASA',
           origin: 'Efectivo en Casa'
         });
         await loadData();
@@ -391,6 +434,7 @@ export default function CashFlow() {
           amount: Number(editingMovement.amount),
           type: editingMovement.type,
           category: editingMovement.category.toUpperCase(),
+          account: editingMovement.account || 'EFECTIVO_TIENDA',
           payment_date: editingMovement.payment_date ? `${editingMovement.payment_date}T12:00:00` : undefined
         })
       });
@@ -498,7 +542,17 @@ export default function CashFlow() {
 
         {/* Botones de Acción Claramente Separados */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Botón 1: Registrar Movimiento de Caja Mayor / Flujo */}
+          {/* Botón 1: Traslado entre Cuentas */}
+          <button
+            onClick={() => setIsTransferModalOpen(true)}
+            className="px-4 py-2.5 bg-slate-900 hover:bg-black active:scale-95 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md cursor-pointer"
+            title="Trasladar fondos entre Nequi Cristian, Nequi David, Efectivo Tienda, Casa o Banco"
+          >
+            <ArrowLeftRight size={15} />
+            <span>Traslado entre Cuentas</span>
+          </button>
+
+          {/* Botón 2: Registrar Movimiento de Caja Mayor / Flujo */}
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-indigo-100 cursor-pointer"
@@ -526,6 +580,87 @@ export default function CashFlow() {
           >
             <Download size={16} />
           </button>
+        </div>
+      </div>
+
+      {/* ARQUEO GLOBAL DE BOLSAS DE DINERO (5 Cuentas + Patrimonio Total) */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Wallet size={18} className="text-indigo-600" />
+            <h3 className="font-black text-slate-900 text-sm uppercase tracking-wide">
+              Arqueo Global de Cuentas & Bolsas
+            </h3>
+            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-black border border-indigo-100">
+              En Vivo
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-bold text-[10px] uppercase">Filtrar tabla por cuenta:</span>
+            {selectedAccountFilter !== 'TODAS' && (
+              <button
+                onClick={() => setSelectedAccountFilter('TODAS')}
+                className="text-[10px] font-black text-indigo-600 hover:underline uppercase"
+              >
+                Ver Todas
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {FINANCIAL_ACCOUNTS.map(acc => {
+            const bal = treasuryBalances.balances[acc.id] || 0;
+            const isSelected = selectedAccountFilter === acc.id;
+
+            return (
+              <div
+                key={acc.id}
+                onClick={() => setSelectedAccountFilter(prev => prev === acc.id ? 'TODAS' : acc.id)}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden select-none ${
+                  isSelected 
+                    ? 'border-indigo-600 ring-2 ring-indigo-500/20 bg-indigo-50/40 shadow-xs' 
+                    : 'border-slate-200/80 bg-slate-50/60 hover:bg-slate-50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-base">{acc.icon}</span>
+                  {isSelected && (
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-indigo-600 text-white rounded-md">
+                      Filtro
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] font-black uppercase text-slate-500 truncate leading-tight">
+                  {acc.label}
+                </p>
+                <p className={`text-base font-black font-mono tracking-tight mt-0.5 ${bal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                  ${fmt(bal)}
+                </p>
+              </div>
+            );
+          })}
+
+          {/* Tarjeta Patrimonio Total */}
+          <div 
+            onClick={() => setSelectedAccountFilter('TODAS')}
+            className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none bg-slate-900 text-white border-slate-800 shadow-sm ${
+              selectedAccountFilter === 'TODAS' ? 'ring-2 ring-emerald-400/40' : ''
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-base">💎</span>
+              <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-emerald-500/30 text-emerald-300 rounded-md">
+                Total
+              </span>
+            </div>
+            <p className="text-[10px] font-black uppercase text-slate-300 truncate leading-tight">
+              Patrimonio Disponible
+            </p>
+            <p className="text-base font-black font-mono text-emerald-400 tracking-tight mt-0.5">
+              ${fmt(treasuryBalances.total)}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -762,7 +897,8 @@ export default function CashFlow() {
               <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider">
                 <th className="px-4 py-3.5 text-center w-28">Fecha</th>
                 <th className="px-4 py-3.5">Concepto / Descripción</th>
-                <th className="px-4 py-3.5 text-center w-36">Categoría</th>
+                <th className="px-4 py-3.5 text-center w-36">Cuenta / Bolsa</th>
+                <th className="px-4 py-3.5 text-center w-32">Categoría</th>
                 <th className="px-4 py-3.5 text-right w-36">Entradas (+)</th>
                 <th className="px-4 py-3.5 text-right w-36">Salidas (-)</th>
                 <th className="px-4 py-3.5 text-right w-36">Saldo Resultante</th>
@@ -805,10 +941,26 @@ export default function CashFlow() {
                       </div>
                     </td>
 
+                    {/* Cuenta / Bolsa */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      {row.isInitial ? (
+                        <span className="text-[10px] text-slate-400 font-bold">-</span>
+                      ) : (() => {
+                        const accInfo = getAccountInfo(row.account);
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${accInfo.badgeClass}`}>
+                            <span>{accInfo.icon}</span>
+                            <span>{accInfo.label}</span>
+                          </span>
+                        );
+                      })()}
+                    </td>
+
                     {/* Categoría */}
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <span className={`inline-block px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
                         row.category === 'VENTA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        row.category === 'TRASLADO_INTERNO' ? 'bg-sky-50 text-sky-700 border border-sky-300 font-black' :
                         row.category === 'ANTICIPO PREVENTA' || row.category === 'ANTICIPO' ? 'bg-teal-50 text-teal-800 border border-teal-200' :
                         row.category === 'CRUCE ANTICIPO' ? 'bg-orange-50 text-orange-800 border border-orange-200' :
                         row.category === 'CIERRE CAJA' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
@@ -818,7 +970,7 @@ export default function CashFlow() {
                         row.category === 'SALARIO' ? 'bg-cyan-50 text-cyan-800 border border-cyan-200' :
                         'bg-slate-100 text-slate-600 border border-slate-200'
                       }`}>
-                        {row.category}
+                        {row.category === 'TRASLADO_INTERNO' ? '🔀 TRASLADO' : row.category}
                       </span>
                     </td>
 
@@ -848,6 +1000,7 @@ export default function CashFlow() {
                               amount: row.amount,
                               type: row.type,
                               category: row.category,
+                              account: row.account || 'EFECTIVO_TIENDA',
                               payment_date: toDateKey(row.payment_date || row.created_at)
                             })}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
@@ -1087,20 +1240,25 @@ export default function CashFlow() {
                 </div>
               </div>
 
-              {/* Origen / Fondo */}
+              {/* Cuenta / Bolsa Afectada */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                  Origen / Fondo del Dinero
+                  Cuenta / Bolsa de Fondos Afectada
                 </label>
                 <select
-                  value={newMovement.origin}
-                  onChange={e => setNewMovement({ ...newMovement, origin: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                  value={newMovement.account}
+                  onChange={e => {
+                    const acc = e.target.value;
+                    const info = getAccountInfo(acc);
+                    setNewMovement({ ...newMovement, account: acc, origin: info.label });
+                  }}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
                 >
-                  <option value="Efectivo en Casa">🏠 Efectivo en Casa / Caja Mayor</option>
-                  <option value="Nequi / Bancolombia">📱 Transferencia (Nequi / Bancolombia)</option>
-                  <option value="Caja Tienda">🏪 Efectivo de la Tienda Física</option>
-                  <option value="Otro">Otro</option>
+                  {FINANCIAL_ACCOUNTS.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon} {a.fullLabel}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1208,6 +1366,21 @@ export default function CashFlow() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Cuenta / Bolsa</label>
+                <select
+                  value={editingMovement.account || 'EFECTIVO_TIENDA'}
+                  onChange={e => setEditingMovement({ ...editingMovement, account: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl font-bold text-xs outline-none"
+                >
+                  {FINANCIAL_ACCOUNTS.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon} {a.fullLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="pt-2 flex gap-2">
                 <button
                   type="button"
@@ -1227,6 +1400,13 @@ export default function CashFlow() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE TRASLADO ENTRE CUENTAS */}
+      <TransferModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        onTransferSuccess={loadData}
+      />
 
     </div>
   );

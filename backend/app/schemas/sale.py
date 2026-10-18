@@ -29,6 +29,7 @@ class UserInSale(BaseModel):
 class PaymentHistoryInSale(BaseModel):
     id: int
     amount: float
+    account: Optional[str] = "EFECTIVO_TIENDA"
     payment_date: datetime
     notes: Optional[str] = None
 
@@ -38,6 +39,7 @@ class PaymentHistoryInSale(BaseModel):
 
 class PaymentUpdate(BaseModel):
     amount: Optional[float] = None
+    account: Optional[str] = None
     payment_date: Optional[str] = None
     notes: Optional[str] = None
 
@@ -75,6 +77,7 @@ class SaleBase(BaseModel):
     amount_paid: float = 0.0
     status: str = "pagado"
     sale_channel: Optional[str] = "LOCAL"
+    payment_method: Optional[str] = "EFECTIVO_TIENDA"
     delivery_address: Optional[str] = None
     delivery_notes: Optional[str] = None
 
@@ -84,6 +87,7 @@ class SaleCreate(SaleBase):
     # Fecha retroactiva opcional (YYYY-MM-DD). Si se omite, se usa la hora actual de Colombia.
     sale_date: Optional[str] = None
     user_id: Optional[int] = None
+    payments: Optional[List[dict]] = None
 
 
 # ── Actualización parcial de venta (PUT) ──────────────────────────────────────
@@ -91,6 +95,7 @@ class SaleUpdate(BaseModel):
     customer_name: Optional[str] = None
     seller: Optional[str] = None      # nombre de vendedor (se guarda en sale_channel)
     amount_paid: Optional[float] = None
+    payment_method: Optional[str] = None
     sale_date: Optional[str] = None   # YYYY-MM-DD para corregir la fecha
     status: Optional[str] = None
     delivery_address: Optional[str] = None
@@ -108,6 +113,7 @@ class SaleResponse(BaseModel):
     sale_channel: Optional[str] = "LOCAL"
     delivery_address: Optional[str] = None
     delivery_notes: Optional[str] = None
+    payment_method: Optional[str] = "EFECTIVO_TIENDA"
     created_at: datetime
     items: List[SaleItemResponse]
     user: Optional[UserInSale] = None

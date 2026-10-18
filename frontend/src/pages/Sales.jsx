@@ -1,4 +1,5 @@
 import { API_URL } from '../config/api';
+import { FINANCIAL_ACCOUNTS, getAccountInfo } from '../utils/accounts';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Download, Search, CheckCircle2, Clock, ShoppingCart,
@@ -93,9 +94,11 @@ const DeleteConfirmModal = ({ sale, onConfirm, onCancel }) => (
 // ── Modal de Abono ────────────────────────────────────────────────────────────
 const PaymentModal = ({ sale, onPay, onClose }) => {
   const [amount, setAmount] = useState('');
+  const [account, setAccount] = useState('EFECTIVO_TIENDA');
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-[380px]">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 w-[390px]">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-black text-slate-900">Registrar Abono</h3>
           <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-800" /></button>
@@ -111,6 +114,22 @@ const PaymentModal = ({ sale, onPay, onClose }) => {
             <span>Saldo pendiente</span><span>${fmt(sale.balance_due)}</span>
           </div>
         </div>
+
+        <div className="mb-3">
+          <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Cuenta de cobro</label>
+          <select
+            value={account}
+            onChange={e => setAccount(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+          >
+            {FINANCIAL_ACCOUNTS.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.icon} {a.fullLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="flex items-center border-2 border-emerald-400 rounded-2xl px-4 py-3 mt-1 mb-6 bg-emerald-50">
           <span className="text-emerald-400 font-black mr-2">$</span>
           <input
@@ -123,8 +142,8 @@ const PaymentModal = ({ sale, onPay, onClose }) => {
         </div>
         <button
           disabled={!amount || Number(amount) <= 0}
-          onClick={() => onPay(Number(amount))}
-          className="w-full bg-slate-900 text-white rounded-2xl py-3 font-black text-sm hover:bg-black transition-all disabled:opacity-20"
+          onClick={() => onPay(Number(amount), account)}
+          className="w-full bg-slate-900 text-white rounded-2xl py-3 font-black text-sm hover:bg-black transition-all disabled:opacity-20 cursor-pointer"
         >
           Registrar ${amount ? Number(amount).toLocaleString() : '0'}
         </button>
@@ -284,8 +303,13 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
           </div>
         </td>
         <td className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase italic">
-          {sale.user ? sale.user.full_name : (sale.sale_channel || 'LOCAL')}
+          <div>{sale.user ? sale.user.full_name : (sale.sale_channel || 'LOCAL')}</div>
           {sale.sale_channel !== 'LOCAL' && sale.user && <span className="block text-[9px] text-slate-400 mt-0.5">{sale.sale_channel}</span>}
+          {sale.payment_method && (
+            <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border mt-1 font-mono ${getAccountInfo(sale.payment_method).badgeClass}`}>
+              {getAccountInfo(sale.payment_method).icon} {getAccountInfo(sale.payment_method).label}
+            </span>
+          )}
         </td>
         <td className="px-6 py-4 text-sm text-slate-700 font-medium">
           {sale.customer_name || 'Cliente Final'}
@@ -475,7 +499,16 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
                             hour:'numeric', minute:'2-digit', hour12: true 
                           })}
                         </td>
-                        <td className="py-1.5 text-xs text-slate-400 italic">{p.notes || '—'}</td>
+                        <td className="py-1.5 text-xs text-slate-400 italic">
+                          <span className="inline-flex items-center gap-1.5">
+                            {p.account && (
+                              <span className={`font-mono font-bold text-[9px] px-1.5 py-0.2 rounded border ${getAccountInfo(p.account).badgeClass}`}>
+                                {getAccountInfo(p.account).icon} {getAccountInfo(p.account).label}
+                              </span>
+                            )}
+                            <span>{p.notes || '—'}</span>
+                          </span>
+                        </td>
                         <td className="py-1.5 text-right text-sm font-black text-emerald-600">${fmt(p.amount)}</td>
                       </tr>
                     ))}
@@ -535,9 +568,9 @@ const Sales = () => {
   };
 
   // ── Abonar ────────────────────────────────────────────────────────────────
-  const handlePayment = async (sale, amount) => {
+  const handlePayment = async (sale, amount, account = 'EFECTIVO_TIENDA') => {
     const res = await fetch(
-      `${API_URL}/sales/${sale.id}/payment?amount=${amount}`,
+      `${API_URL}/sales/${sale.id}/payment?amount=${amount}&account=${account}`,
       { method: 'PATCH' }
     );
     if (res.ok) {
@@ -788,7 +821,7 @@ const Sales = () => {
       {payTarget && (
         <PaymentModal
           sale={payTarget}
-          onPay={(amount) => handlePayment(payTarget, amount)}
+          onPay={(amount, account) => handlePayment(payTarget, amount, account)}
           onClose={() => setPayTarget(null)}
         />
       )}

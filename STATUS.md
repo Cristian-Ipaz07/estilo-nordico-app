@@ -65,6 +65,30 @@
 
 ---
 
+### 7. Sistema Integral de Tesorería Multi-Cuenta y Traslados Internos de Dinero
+* **5 Cuentas / Bolsas Canónicas**:
+  - `EFECTIVO_TIENDA`: Efectivo Mostrador (Gaveta Local / Tienda)
+  - `NEQUI_CRISTIAN`: Nequi Cristian
+  - `NEQUI_DAVID`: Nequi David (Hermano)
+  - `EFECTIVO_CASA`: Efectivo en Casa (Caja Mayor)
+  - `BANCOLOMBIA`: Bancolombia / Cuenta Bancaria
+* **Arqueo y Reconciliación del Turno en Terminal POS (`TerminalModal.jsx`)**:
+  - El cajón físico de la tienda (`EFECTIVO_TIENDA`) ahora calcula estrictamente billetes y monedas que entran y salen del mostrador, logrando que el dinero contado cuadre al 100%.
+  - Se añade un panel dedicado de **Resumen de Cobros Digitales del Turno** (Nequi Cristian, Nequi David, Bancolombia) para que el cajero sepa exactamente cuánto entró en digital sin alterar el efectivo físico del cajón.
+* **Cobro Multi-Cuenta y Pagos Divididos en Checkout**:
+  - Selector rápido de píldoras para marcar la cuenta de cobro en 1 clic.
+  - Soporte de **Pago Dividido / Mixto**: permite fraccionar una venta entre varias cuentas (ej. $50.000 Efectivo + $30.000 Nequi Cristian) con validación automática y desglose detallado en el historial de pagos.
+* **Módulo y Endpoint Atómico de Traslados Internos (`POST /cash/transfer` & `TransferModal.jsx`)**:
+  - Permite trasladar dinero entre cualquier cuenta (ej. Retiro de cajero Nequi -> Efectivo Tienda o Efectivo Tienda -> Casa).
+  - Genera automáticamente un par sincronizado (Salida en origen y Entrada en destino) bajo la categoría `TRASLADO_INTERNO`.
+  - Mantiene el patrimonio total del negocio intacto y no distorsiona las ganancias ni gastos operativos de la empresa.
+* **Dashboard Global de Tesorería (`CashFlow.jsx`)**:
+  - Tira interactiva superior con 6 tarjetas de saldo en tiempo real (las 5 cuentas + Patrimonio Total Disponible).
+  - Filtro instantáneo por cuenta con un clic.
+  - Columnas enriquecidas con insignias visuales por cuenta y modal de traslados integrado.
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.

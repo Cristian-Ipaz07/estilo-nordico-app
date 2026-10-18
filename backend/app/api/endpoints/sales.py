@@ -89,6 +89,7 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
         balance_due=max(0.0, sale_data.total_price - sale_data.amount_paid),
         status=status,
         sale_channel=sale_data.sale_channel or "LOCAL",
+        payment_method=sale_data.payment_method or "EFECTIVO_TIENDA",
         user_id=sale_data.user_id,
         created_at=created_at_val,
         delivery_address=sale_data.delivery_address,
@@ -97,6 +98,29 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
 
     db.add(new_sale)
     db.flush()
+
+    # Registrar historial de abonos / pagos iniciales
+    if sale_data.payments and len(sale_data.payments) > 0:
+        for p in sale_data.payments:
+            p_amt = float(p.get("amount") or 0.0)
+            if p_amt > 0:
+                p_acc = p.get("account") or sale_data.payment_method or "EFECTIVO_TIENDA"
+                p_notes = p.get("notes") or f"Pago inicial ({p_acc})"
+                db.add(PaymentHistory(
+                    sale_id=new_sale.id,
+                    amount=p_amt,
+                    account=p_acc,
+                    payment_date=created_at_val,
+                    notes=p_notes
+                ))
+    elif sale_data.amount_paid > 0:
+        db.add(PaymentHistory(
+            sale_id=new_sale.id,
+            amount=sale_data.amount_paid,
+            account=sale_data.payment_method or "EFECTIVO_TIENDA",
+            payment_date=created_at_val,
+            notes=f"Pago inicial ({sale_data.payment_method or 'EFECTIVO_TIENDA'})"
+        ))
 
     # Procesar cada producto del carrito
     for item in sale_data.items:
@@ -160,6 +184,8 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
     # El "vendedor" se guarda en sale_channel para compatibilidad con el modelo actual
     if sale_data.seller is not None:
         db_sale.sale_channel = sale_data.seller
+    if sale_data.payment_method is not None:
+        db_sale.payment_method = sale_data.payment_method
 
     if sale_data.amount_paid is not None:
         db_sale.amount_paid = sale_data.amount_paid
@@ -191,7 +217,9 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
 @router.patch("/{sale_id}/payment")
 def register_payment(
     sale_id: int, amount: float,
+    account: Optional[str] = "EFECTIVO_TIENDA",
     payment_date: Optional[str] = None,
+    notes: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     db_sale = db.query(Sale).filter(Sale.id == sale_id).first()
@@ -208,7 +236,8 @@ def register_payment(
     payment = PaymentHistory(
         sale_id=db_sale.id,
         amount=amount,
-        notes="Abono registrado desde POS"
+        account=account or "EFECTIVO_TIENDA",
+        notes=notes or f"Abono registrado ({account or 'EFECTIVO_TIENDA'})"
     )
     if payment_date:
         try:
@@ -267,6 +296,8 @@ def update_payment(sale_id: int, payment_id: int, payment_data: PaymentUpdate, d
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
 
+    if payment_data.account is not None:
+        payment.account = payment_data.account
     if payment_data.notes is not None:
         payment.notes = payment_data.notes
 
@@ -344,7 +375,7 @@ def get_sale(sale_id: int, db: Session = Depends(get_db)):
 
 # ?? POST /{sale_id}/confirm-delivery ? asentar cobro y entrega ??????????????
 @router.post("/{sale_id}/confirm-delivery", response_model=SaleResponse)
-def confirm_delivery(sale_id: int, register_cash: bool = True, db: Session = Depends(get_db)):
+def confirm_delivery(sale_id: int, account: Optional[str] = "EFECTIVO_TIENDA", register_cash: bool = True, db: Session = Depends(get_db)):
     db_sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not db_sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
@@ -355,10 +386,12 @@ def confirm_delivery(sale_id: int, register_cash: bool = True, db: Session = Dep
     db_sale.status = "pagado"
 
     if amount_to_pay > 0:
+        acc = account or "EFECTIVO_TIENDA"
         db.add(PaymentHistory(
             sale_id=db_sale.id,
             amount=amount_to_pay,
-            notes="Cobro contraentrega domicilio confirmado",
+            account=acc,
+            notes=f"Cobro contraentrega domicilio confirmado ({acc})",
             payment_date=get_colombia_now()
         ))
 
@@ -367,7 +400,8 @@ def confirm_delivery(sale_id: int, register_cash: bool = True, db: Session = Dep
                 description=f"Cobro Domicilio Venta #{db_sale.id} - {db_sale.customer_name}",
                 amount=amount_to_pay,
                 type="ENTRADA",
-                category="VENTA"
+                category="VENTA",
+                account=acc
             ))
 
     db.commit()

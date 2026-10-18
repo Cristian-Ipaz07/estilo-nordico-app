@@ -12,6 +12,7 @@ class PaymentHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Float, nullable=False)
+    account = Column(String, default="EFECTIVO_TIENDA", nullable=True)
     payment_date = Column(DateTime, default=get_colombia_time)
 
     notes = Column(String, nullable=True)

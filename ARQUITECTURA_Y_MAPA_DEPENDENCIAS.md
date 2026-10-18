@@ -120,3 +120,28 @@ Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
 
 ---
 *Este documento es el estándar maestro de ingeniería de Estilo Nórdico. Consúltalo siempre antes de tocar cualquier lógica central.*
+
+---
+
+## 8. CONTROL DE TESORERÍA, MULTI-CUENTAS Y TRASLADOS DE DINERO (BOLSA POR CUENTA)
+
+### 8.1 Las 5 Bolsas Canónicas de Dinero
+Toda entrada, salida, venta, abono o transferencia en Estilo Nórdico queda asignada a una cuenta contable canónica:
+1. `EFECTIVO_TIENDA`: Billetes y monedas físicas dentro de la gaveta / cajón del local comercial.
+2. `NEQUI_CRISTIAN`: Dinero digital recaudado en la cuenta de Nequi de Cristian.
+3. `NEQUI_DAVID`: Dinero digital recaudado en la cuenta de Nequi de David (hermano).
+4. `EFECTIVO_CASA`: Efectivo guardado en casa (Caja Mayor para pagos grandes o reinversión).
+5. `BANCOLOMBIA`: Cuentas corrientes/ahorros o transferencias bancarias de Bancolombia.
+
+### 8.2 Principio de No-Distorsión en Traslados Internos (`POST /cash/transfer`)
+* Cuando se hace un retiro de Nequi para meter dinero físico a la gaveta (`NEQUI_CRISTIAN -> EFECTIVO_TIENDA`), o cuando se lleva dinero de la tienda a la casa (`EFECTIVO_TIENDA -> EFECTIVO_CASA`):
+  - Se genera un registro de `SALIDA` en la cuenta origen.
+  - Se genera un registro de `ENTRADA` en la cuenta destino.
+  - Ambas transacciones llevan la categoría `TRASLADO_INTERNO`.
+  - El patrimonio neto del negocio tiene una variación neta de `$0`.
+  - En los informes de pérdidas y ganancias (P&L), los traslados están excluidos de las ventas operativas y de los gastos operativos.
+
+### 8.3 Aislamiento del Turno del Terminal (`ModuloCaja`):
+* El cálculo de `totalEnCajon` del turno físico:
+  $$	ext{Total en Cajón} = 	ext{Base Fija} + (	ext{Entradas EFECTIVO\_TIENDA} - 	ext{Salidas EFECTIVO\_TIENDA})$$
+* Los cobros recibidos por Nequi Cristian, Nequi David o Bancolombia se listan en el bloque "Cobros Digitales del Turno" y **NO** se suman a los billetes físicos del mostrador, garantizando un arqueo físico 100% exacto al contar la gaveta al final del día.

@@ -7,8 +7,10 @@ import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Package, DollarSign, Clock,
   Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
-  History, Truck, RotateCcw, Image as ImageIcon
+  History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight
 } from 'lucide-react';
+import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
+import TransferModal from './TransferModal';
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
 
@@ -212,6 +214,26 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
     }
   }, [isAdmin]);
   const [amountPaid, setAmountPaid] = useState(0);
+  const [paymentAccount, setPaymentAccount] = useState('EFECTIVO_TIENDA');
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [splitAmounts, setSplitAmounts] = useState({
+    EFECTIVO_TIENDA: '',
+    NEQUI_CRISTIAN: '',
+    NEQUI_DAVID: '',
+    EFECTIVO_CASA: '',
+    BANCOLOMBIA: ''
+  });
+
+  const splitTotal = useMemo(() => {
+    return Object.values(splitAmounts).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  }, [splitAmounts]);
+
+  useEffect(() => {
+    if (isSplitPayment) {
+      setAmountPaid(splitTotal);
+    }
+  }, [isSplitPayment, splitTotal]);
+
   const [useAnticipo, setUseAnticipo] = useState(false);
   const [anticiposList, setAnticiposList] = useState([]);
   const [selectedAnticipoId, setSelectedAnticipoId] = useState('');
@@ -466,12 +488,20 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       effectiveDeliveryNotes = effectiveDeliveryNotes ? `${tag} ${effectiveDeliveryNotes}` : tag;
     }
 
+    const effectivePayments = isSplitPayment
+      ? Object.entries(splitAmounts)
+          .filter(([_, v]) => Number(v) > 0)
+          .map(([acc, v]) => ({ account: acc, amount: Number(v) }))
+      : (effectiveAmountPaid > 0 ? [{ account: paymentAccount, amount: effectiveAmountPaid }] : []);
+
     const payload = {
       customer_name: (customer || "CLIENTE FINAL").trim(),
       total_price: totalVenta,
       sale_channel: isDelivery ? "DOMICILIO" : "LOCAL",
       user_id: chosenUserId,
       amount_paid: effectiveAmountPaid,
+      payment_method: isSplitPayment ? "DIVIDIDO" : paymentAccount,
+      payments: effectivePayments,
       sale_date: saleDate,
       status: saleStatus,
       delivery_address: isDelivery ? deliveryAddress.trim() : null,
@@ -538,6 +568,9 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       setCustomer('CLIENTE FINAL'); 
       setVendedorId(user?.id || ''); 
       setAmountPaid(0); 
+      setPaymentAccount('EFECTIVO_TIENDA');
+      setIsSplitPayment(false);
+      setSplitAmounts({ EFECTIVO_TIENDA: '', NEQUI_CRISTIAN: '', NEQUI_DAVID: '', EFECTIVO_CASA: '', BANCOLOMBIA: '' });
       setSearch(''); 
       setFilteredResults([]);
       setIsDropdownOpen(false);
@@ -981,6 +1014,87 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
           )}
         </div>
 
+        {/* SELECTOR DE CUENTA / MÉTODO DE PAGO */}
+        <div className="mb-2.5 bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 flex flex-col gap-2 shadow-2xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+              <span>💳 Cuenta / Método de Pago:</span>
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {FINANCIAL_ACCOUNTS.map(acc => {
+                const isSelected = !isSplitPayment && paymentAccount === acc.id;
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => {
+                      setIsSplitPayment(false);
+                      setPaymentAccount(acc.id);
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-900/10'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{acc.icon}</span>
+                    <span>{acc.label}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setIsSplitPayment(!isSplitPayment)}
+                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1 ${
+                  isSplitPayment
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-300'
+                    : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                }`}
+              >
+                <span>🔀</span>
+                <span>Pago Dividido / Mixto</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Panel Desplegable para Pago Dividido */}
+          {isSplitPayment && (
+            <div className="pt-2 border-t border-slate-200/60 animate-in fade-in duration-150">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
+                {FINANCIAL_ACCOUNTS.map(acc => (
+                  <div key={acc.id} className="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[9px] font-black uppercase text-slate-500 block truncate mb-1">
+                      {acc.icon} {acc.label}
+                    </span>
+                    <div className="flex items-center">
+                      <span className="text-[10px] text-slate-400 font-bold mr-1">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={splitAmounts[acc.id] || ''}
+                        onChange={e => {
+                          const v = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setSplitAmounts({ ...splitAmounts, [acc.id]: v });
+                        }}
+                        className="w-full bg-transparent outline-none font-black text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between text-[11px] px-1 font-bold">
+                <span className="text-slate-500">
+                  Total Asignado: <strong className="font-mono text-slate-900">${fmt(splitTotal)}</strong>
+                </span>
+                <span className={splitTotal >= totalVenta ? 'text-emerald-600' : 'text-amber-600'}>
+                  {splitTotal >= totalVenta ? '✅ Total cubierto' : `Faltan: $${fmt(Math.max(0, totalVenta - splitTotal))}`}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-3 bg-slate-900 p-5 rounded-[30px] text-white flex flex-col justify-center">
             <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest mb-1 text-center">Total Venta</p>
@@ -1199,6 +1313,7 @@ function ModuloSeparados() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useStickyState(null, 'en_terminal_selected_layaway');
   const [abonoAmount, setAbonoAmount] = useState('');
+  const [abonoAccount, setAbonoAccount] = useState('EFECTIVO_TIENDA');
   const [msg, setMsg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [abonoDate, setAbonoDate] = useState(getTodayCO());
@@ -1238,7 +1353,7 @@ function ModuloSeparados() {
       const isToday = abonoDate === getTodayCO();
       const dateParam = isToday ? '' : `&payment_date=${abonoDate}`;
       
-      const res = await fetch(`${API_URL}/sales/${selected.id}/payment?amount=${Number(abonoAmount)}${dateParam}`, {
+      const res = await fetch(`${API_URL}/sales/${selected.id}/payment?amount=${Number(abonoAmount)}${dateParam}&account=${abonoAccount}`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -1396,7 +1511,7 @@ function ModuloSeparados() {
             </div>}
 
             <div className="grid grid-cols-12 gap-2">
-              <div className="col-span-8">
+              <div className="col-span-7">
                 <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Valor del abono</p>
                 <div className="flex items-center bg-emerald-50 border-2 border-emerald-300 rounded-2xl px-4 py-3 h-[52px]">
                   <span className="text-emerald-500 font-black mr-2">$</span>
@@ -1404,13 +1519,26 @@ function ModuloSeparados() {
                     placeholder="0" value={abonoAmount} onChange={e => setAbonoAmount(e.target.value)} />
                 </div>
               </div>
-              <div className="col-span-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fecha</p>
-                <div className="flex items-center bg-slate-50 border-2 border-slate-200 rounded-2xl px-2 h-[52px]">
-                  <input type="date" className="bg-transparent outline-none w-full font-black text-[10px] text-slate-600"
-                    value={abonoDate} onChange={e => setAbonoDate(e.target.value)} />
-                </div>
+              <div className="col-span-5">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Cuenta de cobro</p>
+                <select
+                  value={abonoAccount}
+                  onChange={e => setAbonoAccount(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-2.5 h-[52px] text-xs font-black text-slate-800 outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  {FINANCIAL_ACCOUNTS.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon} {a.label}
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase">Fecha:</span>
+              <input type="date" className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 font-black text-[10px] text-slate-600 outline-none"
+                value={abonoDate} onChange={e => setAbonoDate(e.target.value)} />
             </div>
 
             <button disabled={!abonoAmount || Number(abonoAmount) <= 0 || isSaving} onClick={handleAbono}
@@ -1765,7 +1893,9 @@ function ModuloCaja() {
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('SALIDA');
   const [category, setCategory] = useState('GASTO');
+  const [manualAccount, setManualAccount] = useState('EFECTIVO_TIENDA');
   const [manualDate, setManualDate] = useState(getTodayCO());
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
 
   // Modal Cierre de caja
   const [cierreModalOpen, setCierreModalOpen] = useState(false);
@@ -1817,6 +1947,8 @@ function ModuloCaja() {
       const antCruzado = match ? Number(match[1]) : 0;
       const freshPayment = Math.max(0, initialPayment - antCruzado);
 
+      const sAcc = s.payment_method || 'EFECTIVO_TIENDA';
+
       if (freshPayment > 0) {
         list.push({
           id: "sale-" + s.id + "-init",
@@ -1824,6 +1956,7 @@ function ModuloCaja() {
           amount: freshPayment,
           type: 'ENTRADA',
           cat: 'VENTA',
+          account: sAcc,
           date: s.created_at,
           isSale: true
         });
@@ -1836,13 +1969,14 @@ function ModuloCaja() {
           amount: p.amount,
           type: 'ENTRADA',
           cat: 'ABONO',
+          account: p.account || sAcc,
           date: p.payment_date,
           isSale: true
         });
       });
     });
 
-    // Movimientos físicos de caja (excluyendo 'VENTA', ajustes y fondos externos de casa/banco)
+    // Movimientos de caja (incluyendo traslados y gastos)
     movements.forEach(m => {
       const mCat = (m.category || '').toUpperCase();
       const mDesc = (m.description || '').toUpperCase();
@@ -1852,20 +1986,9 @@ function ModuloCaja() {
         return;
       }
 
-      // FILTRO DE FONDOS EXTERNOS:
-      // Si el movimiento proviene de Casa, Caja Mayor o Banco, NO debe restar al cajón físico de la tienda.
-      const isExternalFund = 
-        mDesc.includes('(EFECTIVO EN CASA)') || 
-        mDesc.includes('(CAJA MAYOR)') || 
-        mDesc.includes('(TRANSFERENCIA') || 
-        mDesc.includes('(NEQUI') || 
-        mDesc.includes('(BANCOLOMBIA)');
-
-      // Excepción específica del corte: El adelanto de Andrés de $85.000 sí se pagó del cajón físico del local
-      const isStoreDrawerException = (Number(m.amount) === 85000 && mDesc.includes('ANDRES'));
-
-      if (isExternalFund && !isStoreDrawerException) {
-        return; // No afecta el cajón físico de la tienda
+      let acc = m.account;
+      if (!acc || acc === 'EFECTIVO_TIENDA') {
+        acc = inferAccountFromDesc(m.description, acc || 'EFECTIVO_TIENDA');
       }
 
       const mDate = m.payment_date || m.created_at;
@@ -1875,6 +1998,7 @@ function ModuloCaja() {
         amount: m.amount,
         type: m.type,
         cat: m.category,
+        account: acc,
         date: mDate,
         rawId: m.id
       });
@@ -1916,17 +2040,35 @@ function ModuloCaja() {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [unifiedFlow, lastActiveClosure]);
 
-  // Cálculos del turno activo
-  const shiftTotalIn = useMemo(() => {
-    return activeShiftFlow.filter(e => e.type === 'ENTRADA').reduce((sum, e) => sum + e.amount, 0);
+  // Cálculos del turno activo - EXCLUSIVAMENTE EFECTIVO FÍSICO DE TIENDA
+  const physicalShiftFlow = useMemo(() => {
+    return activeShiftFlow.filter(f => (f.account || 'EFECTIVO_TIENDA') === 'EFECTIVO_TIENDA');
   }, [activeShiftFlow]);
+
+  const shiftTotalIn = useMemo(() => {
+    return physicalShiftFlow.filter(e => e.type === 'ENTRADA').reduce((sum, e) => sum + e.amount, 0);
+  }, [physicalShiftFlow]);
 
   const shiftTotalOut = useMemo(() => {
-    return activeShiftFlow.filter(e => e.type === 'SALIDA').reduce((sum, e) => sum + e.amount, 0);
-  }, [activeShiftFlow]);
+    return physicalShiftFlow.filter(e => e.type === 'SALIDA').reduce((sum, e) => sum + e.amount, 0);
+  }, [physicalShiftFlow]);
 
-  const shiftNetVentas = shiftTotalIn - shiftTotalOut; // Ganancia neta del periodo
-  const totalEnCajon = (Number(baseCaja) || 0) + shiftNetVentas; // Efectivo total esperado en caja
+  const shiftNetVentas = shiftTotalIn - shiftTotalOut; // Dinero físico neto del cajón
+  const totalEnCajon = (Number(baseCaja) || 0) + shiftNetVentas; // Efectivo físico real en caja
+
+  // Desglose de cobros digitales en este turno (Nequi Cristian, Nequi David, Bancolombia, etc.)
+  const digitalShiftSummary = useMemo(() => {
+    const digitals = activeShiftFlow.filter(f => (f.account || 'EFECTIVO_TIENDA') !== 'EFECTIVO_TIENDA');
+    const byAccount = {};
+    digitals.forEach(d => {
+      const acc = d.account;
+      if (!byAccount[acc]) byAccount[acc] = 0;
+      if (d.type === 'ENTRADA') byAccount[acc] += d.amount;
+      else byAccount[acc] -= d.amount;
+    });
+    const totalDigital = Object.values(byAccount).reduce((s, v) => s + v, 0);
+    return { byAccount, totalDigital, count: digitals.length };
+  }, [activeShiftFlow]);
 
   // Abrir modal de cierre
   const handleOpenCierreModal = () => {
@@ -2013,7 +2155,8 @@ function ModuloCaja() {
         description: desc.toUpperCase(),
         amount: Number(amount),
         type,
-        category
+        category,
+        account: manualAccount
       };
       if (manualDate) payload.payment_date = manualDate + "T12:00:00";
       const res = await fetch(`${API_URL}/cash/`, {
@@ -2174,6 +2317,15 @@ function ModuloCaja() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsTransferOpen(true)}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              title="Trasladar fondos entre Nequi, Caja Tienda, Casa o Bancolombia"
+            >
+              <ArrowLeftRight size={12} />
+              <span>Traslado / Retiro</span>
+            </button>
             {isLoading && <RefreshCw size={14} className="animate-spin text-slate-400" />}
             <div className="bg-white border border-slate-200/80 px-3 py-1.5 rounded-2xl shadow-xs flex items-center gap-2">
               <Calendar size={13} className="text-indigo-600" />
@@ -2191,7 +2343,35 @@ function ModuloCaja() {
           </div>
         </div>
 
-        {/* METRICS RESUMEN DEL TURNO ACTIVO */}
+        {/* RESUMEN DE COBROS DIGITALES DEL TURNO */}
+        {subTab === 'turno' && digitalShiftSummary.totalDigital > 0 && (
+          <div className="mb-2 px-2">
+            <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-2.5 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">📱</span>
+                <span className="text-[10px] font-black uppercase text-indigo-900 tracking-wider">
+                  Cobros Digitales en este Turno:
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[10px] font-black">
+                {Object.entries(digitalShiftSummary.byAccount).map(([accId, amt]) => {
+                  if (amt === 0) return null;
+                  const info = getAccountInfo(accId);
+                  return (
+                    <span key={accId} className={`px-2 py-0.5 rounded-lg border font-mono ${info.badgeClass}`}>
+                      {info.icon} {info.label}: +${fmt(amt)}
+                    </span>
+                  );
+                })}
+                <span className="bg-indigo-600 text-white px-2.5 py-0.5 rounded-lg font-mono">
+                  Total Digital: +${fmt(digitalShiftSummary.totalDigital)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* METRICS RESUMEN DEL TURNO ACTIVO (SOLO EFECTIVO FÍSICO EN CAJÓN) */}
         {subTab === 'turno' && (
           <div className="grid grid-cols-4 gap-2 mb-3 px-2">
             <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
@@ -2231,8 +2411,15 @@ function ModuloCaja() {
                     </div>
                     <div>
                       <p className="font-black text-xs text-slate-800 uppercase leading-snug">{f.desc}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                        {fmtDateTime(f.date)} · <span className="text-slate-600">{f.cat}</span>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 mt-0.5">
+                        <span>{fmtDateTime(f.date)}</span>
+                        <span>·</span>
+                        <span className="text-slate-600">{f.cat}</span>
+                        {f.account && (
+                          <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase border ml-1 ${getAccountInfo(f.account).badgeClass}`}>
+                            {getAccountInfo(f.account).icon} {getAccountInfo(f.account).label}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -2383,6 +2570,21 @@ function ModuloCaja() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Cuenta / Origen de Fondos</label>
+                <select
+                  value={manualAccount}
+                  onChange={e => setManualAccount(e.target.value)}
+                  className="w-full border-2 border-slate-100 rounded-xl px-2.5 py-2 font-bold text-[11px] outline-none bg-white cursor-pointer"
+                >
+                  {FINANCIAL_ACCOUNTS.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon} {a.fullLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Tipo</label>
@@ -2453,6 +2655,14 @@ function ModuloCaja() {
           </div>
         </form>
       </div>
+      {/* MODAL DE TRASLADO ENTRE CUENTAS EN MODULO CAJA */}
+      <TransferModal
+        isOpen={isTransferOpen}
+        onClose={() => setIsTransferOpen(false)}
+        defaultSource="NEQUI_CRISTIAN"
+        defaultDest="EFECTIVO_TIENDA"
+        onTransferSuccess={loadData}
+      />
     </div>
   );
 }
