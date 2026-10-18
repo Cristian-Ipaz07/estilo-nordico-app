@@ -112,6 +112,18 @@
 
 ---
 
+### 11. Sincronización Automática de Variantes con la Tienda Web (`VariantBreakdownModal.jsx`, `public.py` y `webUrlHelper.js`)
+* **Herencia Automática de `is_published: true` en Desglose de Variantes**:
+  - Se corrigió el bug en `VariantBreakdownModal.jsx` donde `is_published` estaba hardcodeado a `false` al crear tallas nuevas.
+  - Ahora cualquier variante hereda automáticamente el estado de publicación de la prenda base (`is_published: baseProduct.is_published !== false`).
+* **Auto-Publicación Idempotente en `/api/public/products`**:
+  - El endpoint público de FastAPI ejecuta una actualización atómica en Supabase para asegurar que todas las variantes activas de chaquetas Ref 5080 tengan `is_published = True`, garantizando que tallas recién creadas (como M y L de Azul Cobalto) aparezcan de inmediato en el e-commerce.
+* **Mapeador Inteligente de Enlaces Web (`webUrlHelper.js`)**:
+  - Función centralizada `getProductWebUrl(product, selectedColor)` que normaliza nombres de colores con diacríticos (ej. "Azul Cobalto" -> `azul-cobalto`) y enlaza limpiamente a `/chaquetas/chaqueta-impermeable-[color]` garantizando respuesta HTTP 200 y cero enlaces rotos (404) al compartir desde el Catálogo de Asesores a WhatsApp.
+* **Ecosistema Web en Vercel Conectado a Render**:
+  - Tienda web pública (`https://web-estilo-nordico.vercel.app`) vinculada a GitHub (`Cristian-Ipaz07/Web-Estilo-Nordico`) con auto-deploy activo.
+  - Consumo directo de la API de Render (`https://estilo-nordico-app.onrender.com/api/public/*`), reflejando existencias físicas en tiempo real, flujo asistido de sobrepedido (3 a 5 días hábiles) y módulo de ventas al por mayor (desde 6 unidades).
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.

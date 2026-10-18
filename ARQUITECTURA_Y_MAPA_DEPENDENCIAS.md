@@ -27,7 +27,8 @@ El ERP de Estilo Nórdico es un sistema transaccional de alta coherencia. Cada a
 | **Flujo de Caja**<br>`CashFlow.jsx`<br>`TransferModal.jsx` | `TerminalModal.jsx`<br>`Reports.jsx` | `GET /cash/`<br>`POST /cash/`<br>`POST /cash/transfer`<br>`DELETE /cash/{id}` | `cash_movements` | 🟡 **ALTO** |
 | **Migraciones & DDL**<br>`backend/main.py` | Todos los módulos y endpoints | `GET /migrate-db` | Todas las tablas de PostgreSQL | 🔴 **CRÍTICO** |
 | **Ventas & Domicilios**<br>`Sales.jsx`<br>`LayawayPage.jsx` | `TerminalModal.jsx`<br>`Inventory.jsx`<br>`CashFlow.jsx` | `GET /sales/`<br>`PUT /sales/{id}`<br>`DELETE /sales/{id}` | `sales`<br>`sale_items`<br>`products`<br>`cash_movements` | 🔴 **CRÍTICO** |
-| **Catálogo de Asesores**<br>`AdvisorCatalog.jsx` | `Inventory.jsx`<br>WhatsApp Asesores<br>Web Externa | `GET /products/` | `products` (solo lectura) | 🟢 **MEDIO** |
+| **Catálogo de Asesores**<br>`AdvisorCatalog.jsx`<br>`webUrlHelper.js` | `Inventory.jsx`<br>WhatsApp Asesores<br>Tienda Web Astro | `GET /products/` | `products` (solo lectura) | 🟢 **MEDIO** |
+| **API Pública Web (E-Commerce)**<br>`public.py`<br>`erpApi.ts` | Tienda Web (`Web-Estilo-Nordico`)<br>`VariantBreakdownModal.jsx` | `GET /api/public/products`<br>`GET /api/public/categories`<br>`GET /api/public/stock-check/{id}` | `products` (lectura y auto-publicación) | 🔴 **CRÍTICO** |
 | **Reportes & Métricas**<br>`Reports.jsx`<br>`Dashboard.jsx` | Todos los módulos de venta y caja | `GET /sales/`<br>`GET /cash/`<br>`GET /products/` | Solo lectura y agregación analítica | 🟢 **MEDIO** |
 
 ---
@@ -134,6 +135,25 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
 
 ---
 
+---
+
+### 7. SI INTEGRAS O SINCRONIZAS LA TIENDA WEB PÚBLICA (`Web-Estilo-Nordico` + `public.py` + `webUrlHelper.js`)
+* ⚠️ **Herencia Obligatoria de `is_published: true` en Desglose de Variantes**:
+  - Al desglosar o crear variantes en `VariantBreakdownModal.jsx`, el payload **DEBE** heredar:
+    `is_published: baseProduct.is_published !== false`.
+  - **Prohibido hardcodear `is_published: false`**: Si una variante se crea como no publicada, la API pública del backend (`/api/public/products`) la ignora, haciendo que la tienda web muestre la talla como "Agotada / Sobrepedido" a pesar de que el asesor la vea con stock físico en el ERP.
+* ⚠️ **Auto-Publicación Idempotente en `/api/public/products`**:
+  - Para evitar que desajustes manuales en el ERP oculten variantes de prendas activas, el endpoint público de FastAPI ejecuta una actualización atómica:
+    `UPDATE products SET is_published = True WHERE ref ILIKE '5080%' AND is_published = False;`
+  - Esto garantiza que cualquier variante creada para prendas estrella quede inmediatamente accesible en el catálogo público de la web.
+* ⚠️ **Generador Inteligente y Seguro de URLs Web (`webUrlHelper.js`)**:
+  - **Función canónica**: `getProductWebUrl(product, selectedColor)`.
+  - **Normalización de Colores**: Utiliza `normalizeColorSlug` para remover tildes y diacríticos (ej. "Azul Cobalto" -> `azul-cobalto`, "Gris Ratón" -> `gris-raton`), generando slugs exactos como `/chaquetas/chaqueta-impermeable-[color]`.
+  - **Garantía Cero 404**: Verifica que la prenda esté publicada y clasificada antes de generar la ruta; si no aplica, redirige limpiamente al catálogo general o raíz evitando enlaces rotos para clientes que vienen desde WhatsApp.
+* ⚠️ **Arquitectura Astro SSG + Micro-Chequeo de Stock en Vivo**:
+  - La web (`Web-Estilo-Nordico`) compila páginas estáticas ultra rápidas en Vercel, pero valida la disponibilidad en tiempo real en el cliente llamando a `GET /api/public/stock-check/{variant_id}`.
+  - Para tallas sin inventario físico disponible para entrega hoy, la web despliega el flujo asistido de **Sobrepedido de Fábrica (3 a 5 días hábiles)** con scroll suave y animación de sacudida (`animate-shake`) hacia el botón de WhatsApp, además del módulo de **Venta al Por Mayor (desde 6 unidades)**.
+
 ## 🛡️ 4. CHECKLIST OBLIGATORIO ANTES DE CONFIRMAR CUALQUIER CAMBIO
 
 Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
@@ -147,6 +167,7 @@ Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
 8. [ ] **¿Añadí columnas a SQLAlchemy?** Verificar que se incluyó `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` en `run_db_migrations()` de `main.py` para no romper tablas existentes.
 9. [ ] **¿Definí fechas con `Optional[datetime] = None` en Pydantic?** Prevenir que registros históricos con `NULL` causen error 500.
 10. [ ] **¿Actualicé `STATUS.md`?** Registrar los cambios realizados para que todo el equipo y agentes tengan trazabilidad inmediata.
+11. [ ] **¿Las variantes nuevas heredan `is_published: true`?** Verificar que las variantes creadas para prendas del e-commerce no queden ocultas con `is_published: false` para la tienda web.
 
 ---
 *Este documento es el estándar maestro de ingeniería de Estilo Nórdico. Consúltalo siempre antes de tocar cualquier lógica central.*
