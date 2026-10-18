@@ -1,9 +1,9 @@
 # ESTADO EN VIVO: NODO ERP (ESTILO NÓRDICO)
-> Última actualización: 2026-10-17 | Ecosistema Cloud en Producción + Variantes Avanzadas + POS con Anticipos & Cruces
+> Última actualización: 2026-10-18 | Ecosistema Cloud en Producción + Tesorería Multi-Cuenta + Variantes Avanzadas + Auto-Migración DDL
 
 ## 🎯 RESUMEN EJECUTIVO
 * **Rol**: Fuente Única de Verdad en la Nube (Inventario Maestro, POS Terminal, Domicilios, Catálogo Asesores, Flujo de Caja & Arqueos, API Pública, Almacenamiento de Fotos).
-* **Fase Actual**: Fase 2.0 — Estabilidad Transaccional, Variantes Dinámicas y Control de Caja Físico vs Mayor.
+* **Fase Actual**: Fase 2.0 — Estabilidad Transaccional, Tesorería Multi-Cuenta, Variantes Dinámicas y Resiliencia DDL.
 * **Infraestructura Cloud Activa**:
   - **Backend API**: [Render.com](https://estilo-nordico-app.onrender.com) (FastAPI + Python 3.11.9 + Uvicorn) | Status: 🟢 **Live**.
   - **Base de Datos**: [Supabase](https://supabase.com) (PostgreSQL 15 en AWS sa-east-1 vía Session Pooler IPv4:5432) | Status: 🟢 **Conectada**.
@@ -13,7 +13,7 @@
 
 ---
 
-## 🚀 HITOS IMPLEMENTADOS RECIENTEMENTE (SESIÓN 16-17 OCTUBRE)
+## 🚀 HITOS IMPLEMENTADOS RECIENTEMENTE (SESIÓN 16-18 OCTUBRE)
 
 ### 1. Sistema Contable de Anticipos / Preventas y Cruce en POS
 * **Categorías Creadas**: `ANTICIPO PREVENTA` (ingreso inicial de dinero sin salida de stock) y `CRUCE ANTICIPO` (entrega de prenda y cierre de venta).
@@ -86,6 +86,29 @@
   - Tira interactiva superior con 6 tarjetas de saldo en tiempo real (las 5 cuentas + Patrimonio Total Disponible).
   - Filtro instantáneo por cuenta con un clic.
   - Columnas enriquecidas con insignias visuales por cuenta y modal de traslados integrado.
+
+### 8. Selector de Fotos Enfocado en Variantes y Scroll de Colores de 1 Sola Línea (`VariantBreakdownModal.jsx`)
+* **Botón '📸 Elegir foto de la ref' por Variante**: Se reemplazó la confusa barra superior de fotos que decía "clic para asignar" por un botón específico en cada fila de variante. Al pulsarlo, abre un modal enfocado con todas las imágenes ya cargadas en la referencia de Supabase Storage. Un clic sobre la miniatura asigna la foto instantáneamente sin volver a abrir el explorador de archivos.
+* **Botón '⚡ Heredar fotos por color'**: Si una referencia tiene 8 tallas del color Azul y ya subiste una foto a una de ellas, este botón propaga automáticamente la foto a todas las tallas del mismo color con un solo clic.
+* **Selector Horizontal de Colores en 1 Sola Línea**: La fila de colores existentes (`En esta ref: + COLOR...`) ahora tiene desplazamiento horizontal limpio (`overflow-x-auto whitespace-nowrap`), evitando que 10 o más botones colapsen verticalmente y ocupen la mitad del modal.
+* **Formulario Colapsable**: El panel superior de creación de variantes se puede plegar con un botón chevron para dejar el 100% del espacio visual (`min-h-[350px]`) a la tabla de variantes ya desglosadas.
+
+### 9. Compatibilidad Universal de Copiado de Fotos en Tablets y Celulares (`clipboardHelper.js`)
+* **Solución de Copia de Imágenes en iPad / Tablets / Móviles**: En navegadores móviles y Safari iPadOS, `navigator.clipboard.write` fallaba por la pérdida del gesto de usuario asíncrono y restricciones de binarios directos en el portapapeles móvil.
+* **Pipeline Multinivel con Web Share API**:
+  - **Paso 1**: En navegadores de escritorio y compatibles, inyecta `new ClipboardItem({ 'image/png': blobPromise })` de forma síncrona dentro del evento de clic.
+  - **Paso 2 (Móviles / Tablets)**: Si el portapapeles binario está bloqueado por el sistema operativo, se invoca `navigator.share({ files: [file], title, text })` permitiendo compartir directamente a WhatsApp, Telegram o Guardar en Fotos con 1 toque nativo.
+  - **Paso 3 (Fallback)**: Si no hay soporte de archivos en Share, copia el enlace HTTPS directo con `navigator.clipboard.writeText`.
+
+### 10. Auto-Migración DDL y Resiliencia Total de Base de Datos PostgreSQL
+* **Incidente Resuelto (Movimientos y Ventas en $0 / Error 500)**: Al agregar las columnas `account` y `payment_method`, las peticiones a `/cash/` y `/sales/` devolvían error 500 porque `Base.metadata.create_all()` de SQLAlchemy no modifica tablas existentes en PostgreSQL, dejando el historial temporalmente inaccesible.
+* **Mecanismo de Auto-Migración en Lifespan (`backend/main.py`)**:
+  - Se implementó la rutina `run_db_migrations()` ejecutada al inicio de FastAPI, que corre sentencias `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` de forma idempotente y segura para `cash_movements` y `sales`.
+  - Endpoint de emergencia y diagnóstico: `GET /migrate-db`.
+  - Fallbacks de auto-curación (*self-healing DDL*) directamente en los endpoints `read_sales` y `get_movements` en caso de anomalías en caliente.
+* **Flexibilización de Esquemas Pydantic**:
+  - Los campos de fecha histórica `payment_date` y `created_at` en `CashMovementResponse` y `PaymentHistoryInSale` se actualizaron a `Optional[datetime] = None`, evitando fallos 500 cuando registros antiguos de PostgreSQL poseen valor `NULL`.
+* **Corrección Reactiva de Filtro de Cuentas en Flujo de Caja**: Se incorporó `selectedAccountFilter` en las dependencias del hook `useMemo` de `filteredMovements` en `CashFlow.jsx`.
 
 ---
 

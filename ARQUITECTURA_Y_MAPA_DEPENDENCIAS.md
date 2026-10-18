@@ -24,7 +24,8 @@ El ERP de Estilo Nórdico es un sistema transaccional de alta coherencia. Cada a
 | **Inventario & Productos**<br>`Inventory.jsx`<br>`ProductModal.jsx` | `VariantBreakdownModal`<br>`AdvisorCatalog.jsx`<br>`TerminalModal.jsx`<br>Tienda Web Pública | `GET /products/`<br>`POST /products/`<br>`PUT /products/{id}`<br>`DELETE /products/{id}`<br>`POST /products/{id}/upload-image` | `products`<br>Supabase Storage (`products` bucket) | 🔴 **CRÍTICO** |
 | **Desglose de Variantes**<br>`VariantBreakdownModal.jsx`<br>`EditVariantModal.jsx` | `Inventory.jsx`<br>`AdvisorCatalog.jsx`<br>`TerminalModal.jsx` | `POST /products/`<br>`PUT /products/{id}`<br>`DELETE /products/{id}`<br>`POST /products/{id}/upload-image` | `products`<br>Supabase Storage | 🟡 **ALTO** |
 | **Recepción en Bloque**<br>`BatchStockEntryModal.jsx` | `Inventory.jsx`<br>`CashFlow.jsx`<br>`Reports.jsx` | `POST /products/batch-stock-entry` | `products`<br>`stock_entries`<br>`cash_movements` | 🔴 **CRÍTICO** |
-| **Flujo de Caja**<br>`CashFlow.jsx` | `TerminalModal.jsx`<br>`Reports.jsx` | `GET /cash/`<br>`POST /cash/`<br>`DELETE /cash/{id}` | `cash_movements` | 🟡 **ALTO** |
+| **Flujo de Caja**<br>`CashFlow.jsx`<br>`TransferModal.jsx` | `TerminalModal.jsx`<br>`Reports.jsx` | `GET /cash/`<br>`POST /cash/`<br>`POST /cash/transfer`<br>`DELETE /cash/{id}` | `cash_movements` | 🟡 **ALTO** |
+| **Migraciones & DDL**<br>`backend/main.py` | Todos los módulos y endpoints | `GET /migrate-db` | Todas las tablas de PostgreSQL | 🔴 **CRÍTICO** |
 | **Ventas & Domicilios**<br>`Sales.jsx`<br>`LayawayPage.jsx` | `TerminalModal.jsx`<br>`Inventory.jsx`<br>`CashFlow.jsx` | `GET /sales/`<br>`PUT /sales/{id}`<br>`DELETE /sales/{id}` | `sales`<br>`sale_items`<br>`products`<br>`cash_movements` | 🔴 **CRÍTICO** |
 | **Catálogo de Asesores**<br>`AdvisorCatalog.jsx` | `Inventory.jsx`<br>WhatsApp Asesores<br>Web Externa | `GET /products/` | `products` (solo lectura) | 🟢 **MEDIO** |
 | **Reportes & Métricas**<br>`Reports.jsx`<br>`Dashboard.jsx` | Todos los módulos de venta y caja | `GET /sales/`<br>`GET /cash/`<br>`GET /products/` | Solo lectura y agregación analítica | 🟢 **MEDIO** |
@@ -114,6 +115,25 @@ Cualquier cambio en el terminal impacta **4 áreas vitales** del negocio:
 
 ---
 
+### 6. SI AGREGAS O MODIFICAS COLUMNAS EN MODELOS SQLALCHEMY (REGLA DE AUTO-MIGRACIÓN DDL)
+* ⚠️ **Limitación Nativa de SQLAlchemy `create_all`**:
+  - `Base.metadata.create_all(bind=engine)` **SOLO crea tablas nuevas** que no existen en PostgreSQL.
+  - **JAMÁS ejecuta `ALTER TABLE ADD COLUMN`** sobre tablas ya existentes.
+  - Si añades un atributo a un modelo existente (ej. `account = Column(String(50))` en `CashMovement` o `payment_method` en `Sale`), SQLAlchemy no arrojará error local, pero la base de datos de producción Supabase carecerá de dicha columna.
+  - Resultado: Las llamadas a los endpoints (`GET /cash/`, `GET /sales/`, etc.) fallarán inmediatamente con **HTTP 500** (`psycopg2.errors.UndefinedColumn: column "account" does not exist`), provocando que las pantallas aparezcan en `$0` o vacías.
+* ⚠️ **Patrón Obligatorio de Auto-Migración Idempotente (`backend/main.py`)**:
+  - Toda nueva columna añadida a un modelo existente **DEBE registrarse obligatoriamente** en la función `run_db_migrations()` invocada en el evento `lifespan` de FastAPI y en el endpoint `GET /migrate-db`:
+    ```python
+    conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR(50) DEFAULT 'EFECTIVO_TIENDA';"))
+    conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50) DEFAULT 'EFECTIVO';"))
+    ```
+  - La cláusula `IF NOT EXISTS` garantiza idempotencia y seguridad absoluta, ejecutándose en <10ms sin bloquear lecturas ni escrituras.
+* ⚠️ **Flexibilidad Obligatoria en Schemas Pydantic (Campos Históricos Nullables)**:
+  - Cuando agregues o leas campos de fecha o auditoría (ej. `payment_date`), **NUNCA los tipes como `datetime` obligatorio** si la tabla en producción contiene filas históricas antiguas con valor `NULL`.
+  - Usa siempre: `payment_date: Optional[datetime] = None`. De lo contrario, Pydantic fallará con `ValidationError` provocando una caída 500 masiva en endpoints de lectura de historial.
+
+---
+
 ## 🛡️ 4. CHECKLIST OBLIGATORIO ANTES DE CONFIRMAR CUALQUIER CAMBIO
 
 Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
@@ -124,7 +144,9 @@ Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
 5. [ ] **¿Se mantuvo la seguridad de costos en el Catálogo de Asesores?** Verificar que ningún asesor tenga visibilidad de costos de compra.
 6. [ ] **¿Ejecuté `npm run build` en frontend?** Confirmar que no hay errores de sintaxis JSX, imports rotos ni warnings de empaquetado.
 7. [ ] **¿El backend responde en FastAPI sin errores 422/500?** Confirmar schemas Pydantic y migraciones de modelos.
-8. [ ] **¿Actualicé `STATUS.md`?** Registrar los cambios realizados para que todo el equipo y agentes tengan trazabilidad inmediata.
+8. [ ] **¿Añadí columnas a SQLAlchemy?** Verificar que se incluyó `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` en `run_db_migrations()` de `main.py` para no romper tablas existentes.
+9. [ ] **¿Definí fechas con `Optional[datetime] = None` en Pydantic?** Prevenir que registros históricos con `NULL` causen error 500.
+10. [ ] **¿Actualicé `STATUS.md`?** Registrar los cambios realizados para que todo el equipo y agentes tengan trazabilidad inmediata.
 
 ---
 *Este documento es el estándar maestro de ingeniería de Estilo Nórdico. Consúltalo siempre antes de tocar cualquier lógica central.*
