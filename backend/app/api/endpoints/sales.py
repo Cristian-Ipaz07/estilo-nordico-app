@@ -52,15 +52,31 @@ def get_cogs(start: Optional[str] = None, end: Optional[str] = None, db: Session
 # ── GET / — listar ventas (más recientes primero) ────────────────────────────
 @router.get("/", response_model=List[SaleResponse])
 def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):
-    query = db.query(Sale).options(
-        selectinload(Sale.items).selectinload(SaleItem.product),
-        selectinload(Sale.payment_history),
-        selectinload(Sale.user)
-    )
-    if status:
-        query = query.filter(Sale.status == status)
-    # Bug 4 fix: ventas más recientes primero
-    return query.order_by(Sale.created_at.desc()).all()
+    try:
+        query = db.query(Sale).options(
+            selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(Sale.payment_history),
+            selectinload(Sale.user)
+        )
+        if status:
+            query = query.filter(Sale.status == status)
+        return query.order_by(Sale.created_at.desc()).all()
+    except Exception as e:
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            db.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            db.commit()
+            query = db.query(Sale).options(
+                selectinload(Sale.items).selectinload(SaleItem.product),
+                selectinload(Sale.payment_history),
+                selectinload(Sale.user)
+            )
+            if status:
+                query = query.filter(Sale.status == status)
+            return query.order_by(Sale.created_at.desc()).all()
+        except Exception:
+            raise e
 
 
 # ── POST / — crear venta ─────────────────────────────────────────────────────

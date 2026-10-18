@@ -283,7 +283,7 @@ export default function CashFlow() {
     }
 
     return list;
-  }, [processedByDate.inRange, selectedType, selectedCategory, search]);
+  }, [processedByDate.inRange, selectedType, selectedCategory, selectedAccountFilter, search]);
 
   // Calcular filas con saldo acumulado progresivo
   const { tableRows, currentBalance, totalEntradas, totalSalidas } = useMemo(() => {

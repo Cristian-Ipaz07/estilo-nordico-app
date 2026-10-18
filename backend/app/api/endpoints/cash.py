@@ -39,8 +39,8 @@ class CashMovementResponse(BaseModel):
     type: str
     category: str
     account: Optional[str] = "EFECTIVO_TIENDA"
-    payment_date: datetime
-    created_at: datetime
+    payment_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -73,7 +73,16 @@ def create_movement(movement: CashMovementCreate, db: Session = Depends(get_db))
 
 @router.get("/", response_model=List[CashMovementResponse])
 def get_movements(db: Session = Depends(get_db)):
-    return db.query(CashMovement).order_by(CashMovement.created_at.desc()).all()
+    try:
+        return db.query(CashMovement).order_by(CashMovement.created_at.desc()).all()
+    except Exception as e:
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            db.commit()
+            return db.query(CashMovement).order_by(CashMovement.created_at.desc()).all()
+        except Exception:
+            raise e
 
 
 @router.delete("/{movement_id}")

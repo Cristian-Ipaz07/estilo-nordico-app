@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.db.database import engine, Base, SessionLocal
+from sqlalchemy import text
 from app.api.endpoints import users, products, sales, cash, auth, corte, public, webhooks
 from app.models.user import User
 from app.models.product import Product
@@ -21,6 +22,17 @@ from app.core import security
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     
+    # ── Migración automática de columnas en tablas existentes (PostgreSQL Supabase) ──
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.commit()
+            print("✅ Migración automática de columnas ejecutada exitosamente.")
+    except Exception as mig_err:
+        print("⚠️ Advertencia en migración automática de columnas:", mig_err)
+
     # Crear usuario administrador semilla si no hay ningún usuario
     db = SessionLocal()
     try:
@@ -70,3 +82,15 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Backend conectado — Estilo Nórdico ERP v2.0"}
+
+@app.get("/migrate-db")
+def run_migrations():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.commit()
+        return {"status": "ok", "message": "Columnas migradas exitosamente en la base de datos"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}

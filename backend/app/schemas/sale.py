@@ -30,7 +30,7 @@ class PaymentHistoryInSale(BaseModel):
     id: int
     amount: float
     account: Optional[str] = "EFECTIVO_TIENDA"
-    payment_date: datetime
+    payment_date: Optional[datetime] = None
     notes: Optional[str] = None
 
     class Config:
