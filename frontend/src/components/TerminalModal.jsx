@@ -103,7 +103,14 @@ function useStickyState(defaultValue, key) {
 }
 
 function useInventory(isOpen) {
-  const [inventory, setInventory] = useState([]);
+  const [inventory, setInventory] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_products');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [refreshing, setRefreshing] = useState(false);
   const lastVersionRef = useRef('');
 
@@ -113,7 +120,12 @@ function useInventory(isOpen) {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(r => r.json())
-      .then(d => setInventory(Array.isArray(d) ? d : []))
+      .then(d => {
+        if (Array.isArray(d)) {
+          setInventory(d);
+          try { localStorage.setItem('nordic_cached_products', JSON.stringify(d)); } catch {}
+        }
+      })
       .catch(console.error)
       .finally(() => setTimeout(() => setRefreshing(false), 600));
   }, []);

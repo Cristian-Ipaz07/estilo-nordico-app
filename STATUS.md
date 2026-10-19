@@ -1,5 +1,5 @@
 # ESTADO EN VIVO: NODO ERP (ESTILO NÓRDICO)
-> Última actualización: 2026-10-18 | Ecosistema Cloud en Producción + Tesorería Multi-Cuenta + Variantes Avanzadas + Auto-Migración DDL
+> Última actualización: 2026-10-19 | Resiliencia Cold-Start (SWR Instantáneo) + Variantes Avanzadas + Multi-Fotos + Omnicanal Web
 
 ## 🎯 RESUMEN EJECUTIVO
 * **Rol**: Fuente Única de Verdad en la Nube (Inventario Maestro, POS Terminal, Domicilios, Catálogo Asesores, Flujo de Caja & Arqueos, API Pública, Almacenamiento de Fotos).
@@ -123,6 +123,18 @@
 * **Ecosistema Web en Vercel Conectado a Render**:
   - Tienda web pública (`https://web-estilo-nordico.vercel.app`) vinculada a GitHub (`Cristian-Ipaz07/Web-Estilo-Nordico`) con auto-deploy activo.
   - Consumo directo de la API de Render (`https://estilo-nordico-app.onrender.com/api/public/*`), reflejando existencias físicas en tiempo real, flujo asistido de sobrepedido (3 a 5 días hábiles) y módulo de ventas al por mayor (desde 6 unidades).
+
+### 8. Resiliencia Cold-Start, Caché SWR Instantáneo & Omnicanal Web (Sesión 19 Octubre)
+* **Cero Pantallas en Blanco al Reabrir (0ms Cold-Start)**: En móviles, tablets y PCs, las páginas críticas (`Inventory.jsx`, `Sales.jsx`, `CashFlow.jsx`, `TerminalModal.jsx`) se hidratan inmediatamente en 0ms desde `localStorage` (`nordic_cached_*`). El usuario puede buscar y consultar al instante mientras la red se despierta en segundo plano.
+* **Keep-Alive Render Automático**: Ping ligero cada 4 minutos a `${API_URL}/products/sync-version` para evitar la suspensión por inactividad de los contenedores gratuitos de Render durante la jornada laboral.
+* **Desplegables en Edición de Referencia (`ProductModal.jsx`)**: El campo Categoría se transformó en un `<select>` con valores normalizados (`HOMBRE`, `MUJER`, `UNISEX`, `NIÑOS`, `ACCESORIOS`, `CALZADO`, `HOGAR`). Subcategoría y Referencia/SKU cuentan con `<datalist>` dinámico alimentado por el catálogo histórico.
+* **Filtros de Ordenamiento en Modal de Variantes (`VariantBreakdownModal.jsx`)**: Nuevas píldoras de orden interactivo: `A-Z` (alfabético por SKU/nombre), `Talla (XS-XXXL)` (orden canónico de confección), `Stock` (de mayor a menor) y `Creación`.
+* **Carga Masiva de Fotos & Asignación Múltiple**: Carga de fotos en lote (`multiple`) a la referencia con barra de progreso. La asignación por variante ahora admite 1, 2 o más fotos (ideal para frente, espalda y detalles) con insignias de orden `#1`, `#2` y tooltips con el nombre de archivo original (`extractImageName`).
+* **Sincronización Web Omnicanal & Cascada `is_published`**:
+  - Al alternar el estado 'Online' de una referencia, la propiedad `is_published` se propaga automáticamente a todas sus variantes hijas en la base de datos PostgreSQL.
+  - El endpoint público `/api/public/products` sincroniza en vivo las variantes de todas las prendas publicadas.
+  - La tienda web (`Web-Estilo-Nordico`) ahora consume todo el catálogo de confección (incluyendo busos, camisetas y bermudas), integrando selector de prenda y filtrado automático por URL `/chaquetas?tipo=buso`.
+* **UX & Scroll en Modal de Variantes**: Cierre al hacer clic fuera del modal (backdrop click), bloqueo de scroll encadenado con el fondo (`overscroll-contain` + scroll lock), y padding inferior (`pb-28`) para evitar que el último producto quede cortado.
 
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.

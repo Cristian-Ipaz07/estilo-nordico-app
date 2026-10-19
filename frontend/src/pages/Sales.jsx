@@ -527,8 +527,23 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
 
 // ── Componente principal ──────────────────────────────────────────────────────
 const Sales = () => {
-  const [sales, setSales] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [sales, setSales] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_sales');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_sales');
+      return !(cached && JSON.parse(cached).length > 0);
+    } catch {
+      return true;
+    }
+  });
+  const [syncingCloud, setSyncingCloud] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('todos');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -541,13 +556,25 @@ const Sales = () => {
     setTimeout(() => setToast(''), 3000);
   };
 
-  const fetchSales = useCallback(() => {
-    setLoading(true);
+  const fetchSales = useCallback((isBackground = false) => {
+    if (!isBackground && (!sales || sales.length === 0)) setLoading(true);
+    setSyncingCloud(true);
     fetch(`${API_URL}/sales/`)
       .then(res => res.json())
-      .then(data => { setSales(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSales(data);
+          try {
+            localStorage.setItem('nordic_cached_sales', JSON.stringify(data));
+          } catch {}
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        setLoading(false);
+        setSyncingCloud(false);
+      });
+  }, [sales]);
 
   useEffect(() => { 
     fetchSales(); 

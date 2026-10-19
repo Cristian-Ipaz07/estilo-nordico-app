@@ -133,3 +133,20 @@ export async function removeProductImage(productId, imageUrl) {
 
   return await res.json();
 }
+
+/**
+ * Extrae un nombre amigable y limpio a partir de una URL de Supabase Storage.
+ * Permite mostrar en el tooltip el nombre clave con el que se subió (ej: "frontal", "estampado trasero").
+ */
+export function extractImageName(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const filename = url.split('/').pop().split('?')[0];
+    let name = filename.replace(/\.(webp|jpg|jpeg|png)$/i, '');
+    // Remover sufijo uuid al final (ej: _a1b2c3d4 o _a1b2c3)
+    name = name.replace(/_[a-f0-9]{6,8}$/i, '');
+    return decodeURIComponent(name).replace(/_/g, ' ').toUpperCase();
+  } catch {
+    return url;
+  }
+}

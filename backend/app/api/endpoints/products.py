@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 import os
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -86,6 +87,12 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
     if "price_sale" in update_data and update_data["price_sale"] is not None:
         db.query(ProductModel).filter(ProductModel.parent_id == product_id).update(
             {"price_sale": update_data["price_sale"]}
+        )
+
+    # Si se actualizó is_published y es un producto padre, propagar a sus variantes
+    if "is_published" in update_data and update_data["is_published"] is not None:
+        db.query(ProductModel).filter(ProductModel.parent_id == product_id).update(
+            {"is_published": update_data["is_published"]}
         )
     
     if not db_product.slug:
@@ -185,10 +192,15 @@ async def upload_product_image(
     if not supabase_key:
         raise HTTPException(status_code=500, detail="Falta configurar SUPABASE_SERVICE_KEY en Render")
 
-    # Nombre limpio para la foto
+    # Nombre limpio para la foto preservando el nombre clave original (ej: frontal, trasero, estampado)
     clean_ref = re.sub(r'[^a-zA-Z0-9_-]', '_', product.ref or f"prod_{product.id}").lower()
-    unique_suffix = uuid.uuid4().hex[:8]
-    filename = f"{clean_ref}_{unique_suffix}.webp"
+    original_stem = Path(file.filename or "").stem
+    clean_custom_name = re.sub(r'[^a-zA-Z0-9_-]', '_', original_name := original_stem).strip('_').lower()
+    unique_suffix = uuid.uuid4().hex[:6]
+    if clean_custom_name and clean_custom_name not in ("image", "file", "blob", "upload", "unnamed", "sin_titulo"):
+        filename = f"{clean_ref}_{clean_custom_name}_{unique_suffix}.webp"
+    else:
+        filename = f"{clean_ref}_{unique_suffix}.webp"
 
     # Subir directo al bucket público 'products' de Supabase Storage
     headers = {

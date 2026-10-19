@@ -123,8 +123,23 @@ const fmtDateTime = (iso) => {
 export default function Inventory() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_products');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_products');
+      return !(cached && JSON.parse(cached).length > 0);
+    } catch {
+      return true;
+    }
+  });
+  const [syncingCloud, setSyncingCloud] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   
   // Disponibilidad: 'IN_STOCK' (Por defecto: solo con stock > 0), 'OUT_OF_STOCK' (Agotadas / Archivo), 'ALL' (Todas)
@@ -153,16 +168,25 @@ export default function Inventory() {
   const [isBatchEntryOpen, setIsBatchEntryOpen] = useState(false);
   const [batchPreselectedRef, setBatchPreselectedRef] = useState('');
 
-  const fetchInventory = async () => {
-    setLoading(true);
+  const fetchInventory = async (isBackground = false) => {
+    if (!isBackground && products.length === 0) setLoading(true);
+    setSyncingCloud(true);
     try {
       const response = await fetch(`${API_URL}/products/`);
-      const data = await response.json();
-      setProducts(Array.isArray(data) ? data : []);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setProducts(data);
+          try {
+            localStorage.setItem('nordic_cached_products', JSON.stringify(data));
+          } catch {}
+        }
+      }
     } catch (err) {
       console.error("Error cargando inventario:", err);
     } finally {
       setLoading(false);
+      setSyncingCloud(false);
     }
   };
 
@@ -548,16 +572,27 @@ export default function Inventory() {
   const handleTogglePublish = async (p, e) => {
     e.stopPropagation();
     try {
+      const nextPublished = !p.is_published;
       const res = await fetch(`${API_URL}/products/${p.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ is_published: !p.is_published })
+        body: JSON.stringify({ is_published: nextPublished })
       });
       if (res.ok) {
-        setProducts(prev => prev.map(item => item.id === p.id ? { ...item, is_published: !p.is_published } : item));
+        setProducts(prev => {
+          const updated = prev.map(item => 
+            (item.id === p.id || item.parent_id === p.id) 
+              ? { ...item, is_published: nextPublished } 
+              : item
+          );
+          try {
+            localStorage.setItem('nordic_cached_products', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
       }
     } catch (err) {
       console.error(err);

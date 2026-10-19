@@ -51,6 +51,28 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   // Estados para asignación y carga de fotos de variantes
   const [uploadingVariantId, setUploadingVariantId] = useState(null);
   const [pickingPhotoForVariant, setPickingPhotoForVariant] = useState(null);
+  const [selectedVariantPhotos, setSelectedVariantPhotos] = useState([]);
+  const [variantSortBy, setVariantSortBy] = useState('creation'); // 'creation' | 'az' | 'size' | 'stock'
+  const [bulkUploadingToRef, setBulkUploadingToRef] = useState(false);
+  const [bulkUploadProgress, setBulkUploadProgress] = useState({ current: 0, total: 0 });
+
+  // Bloquear scroll del fondo mientras el modal esté abierto
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
+  // Sincronizar fotos seleccionadas al abrir el selector de variante
+  useEffect(() => {
+    if (pickingPhotoForVariant) {
+      setSelectedVariantPhotos(Array.isArray(pickingPhotoForVariant.images) ? pickingPhotoForVariant.images : []);
+    } else {
+      setSelectedVariantPhotos([]);
+    }
+  }, [pickingPhotoForVariant]);
   const [showNewFormPhotoPicker, setShowNewFormPhotoPicker] = useState(false);
   const [selectedGalleryPhoto, setSelectedGalleryPhoto] = useState(null);
   const [newVariantFile, setNewVariantFile] = useState(null);
@@ -214,6 +236,42 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }, [existingVariants]);
 
+  // Ordenamiento canónico de tallas (de menor a mayor)
+  const SIZE_ORDER = {
+    'UNICA': 0, 'ÚNICA': 0, 'ONE SIZE': 0,
+    'XS': 1, 'S': 2, 'M': 3, 'L': 4, 'XL': 5, 'XXL': 6, '2XL': 6, 'XXXL': 7, '3XL': 7, '4XL': 8,
+    '28': 10, '30': 11, '32': 12, '34': 13, '36': 14, '38': 15, '40': 16
+  };
+
+  const getSortSizeRank = (size) => {
+    if (!size) return 999;
+    const s = String(size).trim().toUpperCase();
+    if (SIZE_ORDER[s] !== undefined) return SIZE_ORDER[s];
+    const num = parseInt(s, 10);
+    if (!isNaN(num)) return 100 + num;
+    return 500;
+  };
+
+  const sortedVariants = useMemo(() => {
+    const list = [...existingVariants];
+    if (variantSortBy === 'az') {
+      return list.sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
+    }
+    if (variantSortBy === 'size') {
+      return list.sort((a, b) => {
+        const rankA = getSortSizeRank(a.size);
+        const rankB = getSortSizeRank(b.size);
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.color || '').localeCompare(b.color || '');
+      });
+    }
+    if (variantSortBy === 'stock') {
+      return list.sort((a, b) => (b.stock || 0) - (a.stock || 0));
+    }
+    // 'creation' (orden ID)
+    return list.sort((a, b) => a.id - b.id);
+  }, [existingVariants, variantSortBy]);
+
   // TODAS LAS FOTOS EXISTENTES EN ESTA REFERENCIA (PRENDA BASE + VARIANTES EXISTENTES)
   const availableReferencePhotos = useMemo(() => {
     const set = new Set();
@@ -343,6 +401,57 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
     } catch (err) {
       console.error(err);
       alert('Error al quitar la imagen');
+    } finally {
+      setUploadingVariantId(null);
+    }
+  };
+
+  // Subir fotos en lote a la referencia base
+  const handleBulkUploadToRef = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setBulkUploadingToRef(true);
+    setBulkUploadProgress({ current: 0, total: files.length });
+    try {
+      for (let i = 0; i < files.length; i++) {
+        setBulkUploadProgress({ current: i + 1, total: files.length });
+        const file = files[i];
+        const webpFile = await optimizeImageToWebP(file);
+        await uploadProductImage(baseProduct.id, webpFile, false);
+      }
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error al subir fotos a la referencia');
+    } finally {
+      setBulkUploadingToRef(false);
+      setBulkUploadProgress({ current: 0, total: 0 });
+      e.target.value = '';
+    }
+  };
+
+  // Guardar fotos múltiples asignadas a una variante
+  const handleSaveVariantPhotos = async () => {
+    if (!pickingPhotoForVariant) return;
+    setUploadingVariantId(pickingPhotoForVariant.id);
+    try {
+      const res = await fetch(`${API_URL}/products/${pickingPhotoForVariant.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ images: selectedVariantPhotos })
+      });
+      if (res.ok) {
+        setPickingPhotoForVariant(null);
+        if (onRefresh) await onRefresh();
+      } else {
+        alert('No se pudieron guardar las fotos de la variante');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error al guardar fotos de la variante');
     } finally {
       setUploadingVariantId(null);
     }
@@ -644,8 +753,14 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div 
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+      >
         
         {/* Header Superior */}
         <div className="px-5 sm:px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
@@ -1092,7 +1207,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         )}
 
         {/* Lista de Variantes Existentes con Scroll Propio y Máximo Espacio */}
-        <div className="flex-1 min-h-[350px] overflow-y-auto p-4 sm:p-6 space-y-3 custom-scrollbar">
+        <div className="flex-1 min-h-[350px] overflow-y-auto overscroll-contain p-4 sm:p-6 pb-28 space-y-3 custom-scrollbar">
           
           {/* BANNER DE CORRECCIÓN RÁPIDA: Si hay variantes con 'ESTILO NÓRDICO' */}
           {variantsWithEstiloNordico.length > 0 && (
@@ -1138,10 +1253,65 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-              Variantes Actuales ({existingVariants.length})
-            </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                Variantes Actuales ({existingVariants.length})
+              </p>
+              {/* Controles de ordenamiento */}
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setVariantSortBy('az')}
+                  className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${variantSortBy === 'az' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  title="Ordenar de la A a la Z"
+                >
+                  🔤 A - Z
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVariantSortBy('size')}
+                  className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${variantSortBy === 'size' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  title="Ordenar canónicamente por talla (S, M, L, XL, etc.)"
+                >
+                  📏 Por Talla
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVariantSortBy('stock')}
+                  className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${variantSortBy === 'stock' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  title="Ordenar por mayor stock"
+                >
+                  📦 Stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVariantSortBy('creation')}
+                  className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${variantSortBy === 'creation' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  title="Orden original de creación"
+                >
+                  🕒 Orden ID
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Botón para subir fotos en lote a la referencia */}
+              <label 
+                className="text-[10px] font-bold text-slate-700 hover:text-indigo-700 bg-slate-100 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                title="Sube múltiples fotos de la prenda a la referencia de una sola vez"
+              >
+                {bulkUploadingToRef ? <RefreshCw className="animate-spin text-indigo-600" size={12} /> : <UploadCloud size={12} className="text-indigo-600" />}
+                <span>{bulkUploadingToRef ? `Subiendo (${bulkUploadProgress.current}/${bulkUploadProgress.total})...` : '📁 + Subir Fotos a la Ref (Lote)'}</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  disabled={bulkUploadingToRef}
+                  onChange={handleBulkUploadToRef}
+                />
+              </label>
+
               <button
                 type="button"
                 onClick={handleSyncColorPhotos}
@@ -1150,9 +1320,6 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               >
                 <span>⚡ Heredar fotos por color</span>
               </button>
-              <span className="text-[10px] font-normal text-slate-400 hidden sm:inline">
-                💡 Clic en la foto de la variante para elegir de la referencia
-              </span>
             </div>
           </div>
 
@@ -1164,7 +1331,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             </div>
           ) : (
             <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden shadow-xs">
-              {existingVariants.map(v => {
+              {sortedVariants.map(v => {
                 const hasVariantImage = Array.isArray(v.images) && v.images.length > 0;
                 const isUploadingThis = uploadingVariantId === v.id;
 
@@ -1328,10 +1495,16 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
 
       </div>
 
-      {/* Modal / Selector de Fotos para Variante Específica */}
+      {/* Modal / Selector de Fotos para Variante Específica (Asignación Múltiple + Nombres Clave) */}
       {pickingPhotoForVariant && (
-        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-150">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setPickingPhotoForVariant(null); }}
+          className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 overscroll-contain"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-150"
+          >
             {/* Header Modal Selector de Fotos */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
               <div>
@@ -1349,7 +1522,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                   )}
                 </div>
                 <h4 className="text-xs font-black text-slate-800 mt-1">
-                  Elegir Foto para esta Variante
+                  Asignar Fotos a esta Variante ({selectedVariantPhotos.length} seleccionada{selectedVariantPhotos.length === 1 ? '' : 's'})
                 </h4>
               </div>
               <button
@@ -1362,51 +1535,60 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
             </div>
 
             {/* Cuerpo del Selector: Cuadrícula de Fotos de la Referencia */}
-            <div className="p-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+            <div className="p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 custom-scrollbar">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                   Fotos de la Referencia #{baseProduct.ref} ({availableReferencePhotos.length})
                 </p>
-                <span className="text-[10px] text-slate-400">
-                  Haz clic para asignarla
+                <span className="text-[10px] text-indigo-600 font-bold">
+                  Selecciona 1, 2 o más fotos (Frente, Espalda, Detalle)
                 </span>
               </div>
 
               {availableReferencePhotos.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   {availableReferencePhotos.map((photoUrl, idx) => {
-                    const isAssigned = Array.isArray(pickingPhotoForVariant.images) && pickingPhotoForVariant.images.includes(photoUrl);
+                    const isSelected = selectedVariantPhotos.includes(photoUrl);
+                    const photoOrder = selectedVariantPhotos.indexOf(photoUrl) + 1;
+                    const imgName = extractImageName(photoUrl);
+
                     return (
                       <button
                         key={idx}
                         type="button"
-                        disabled={uploadingVariantId === pickingPhotoForVariant.id}
-                        onClick={() => handleAssignBaseGalleryPhoto(pickingPhotoForVariant.id, photoUrl)}
+                        onClick={() => {
+                          setSelectedVariantPhotos(prev => 
+                            prev.includes(photoUrl) 
+                              ? prev.filter(u => u !== photoUrl) 
+                              : [...prev, photoUrl]
+                          );
+                        }}
                         className={`relative aspect-square rounded-2xl overflow-hidden border-2 transition-all cursor-pointer group bg-slate-50 ${
-                          isAssigned 
+                          isSelected 
                             ? 'border-emerald-500 ring-4 ring-emerald-100 shadow-md scale-95' 
                             : 'border-slate-200 hover:border-indigo-600 hover:shadow-md hover:scale-102'
                         }`}
-                        title={isAssigned ? 'Foto actualmente asignada' : 'Clic para asignar esta foto'}
+                        title={imgName ? `${imgName} · Clic para ${isSelected ? 'deseleccionar' : 'asignar'}` : (isSelected ? 'Deseleccionar' : 'Asignar')}
                       >
                         <img
                           src={normalizeImageUrl(photoUrl)}
-                          alt={`Foto ref ${idx + 1}`}
-                          className="w-full h-full object-cover"
+                          alt={imgName || `Foto ref ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         />
-                        {isAssigned ? (
-                          <div className="absolute inset-0 bg-emerald-900/40 flex flex-col items-center justify-center p-1 text-center">
-                            <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-md">
-                              <Check size={16} />
-                            </div>
-                            <span className="text-[9px] font-black text-white mt-1 drop-shadow">
-                              Asignada
-                            </span>
+                        {/* Etiqueta de nombre clave en la parte inferior */}
+                        <div className="absolute inset-x-0 bottom-0 bg-slate-950/75 p-1 text-center backdrop-blur-2xs pointer-events-none">
+                          <p className="text-[8px] font-black text-white truncate px-0.5">{imgName || `FOTO #${idx+1}`}</p>
+                        </div>
+
+                        {isSelected ? (
+                          <div className="absolute top-1 right-1 flex items-center gap-1 bg-emerald-600 text-white px-1.5 py-0.5 rounded-full shadow-md text-[9px] font-black">
+                            <Check size={10} />
+                            <span>#{photoOrder}</span>
                           </div>
                         ) : (
                           <div className="absolute inset-0 bg-indigo-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <span className="text-[10px] font-black text-white bg-indigo-600/90 px-2 py-1 rounded-lg shadow-sm">
-                              Elegir
+                              + Añadir
                             </span>
                           </div>
                         )}
@@ -1417,11 +1599,11 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
               ) : (
                 <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">
                   No hay fotos cargadas en la referencia base #{baseProduct.ref}.<br />
-                  Sube una con el botón de abajo.
+                  Sube fotos con el botón de abajo.
                 </div>
               )}
 
-              {/* Botón para subir foto nueva desde PC */}
+              {/* Botón para subir fotos nuevas desde PC (Soporta Múltiple) */}
               <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
                 <label
                   htmlFor="modal-variant-upload-file"
@@ -1432,48 +1614,72 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                   ) : (
                     <UploadCloud size={16} className="text-indigo-600" />
                   )}
-                  <span>Subir foto nueva desde este equipo (PC / Celular)</span>
+                  <span>📁 Subir Fotos Nuevas desde mi Equipo (Selección Múltiple)</span>
                 </label>
                 <input
                   id="modal-variant-upload-file"
                   type="file"
+                  multiple
                   accept="image/*"
                   className="hidden"
                   onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      await handleUploadVariantPhoto(pickingPhotoForVariant.id, file);
+                    const files = Array.from(e.target.files || []);
+                    if (files.length === 0) return;
+                    setUploadingVariantId(pickingPhotoForVariant.id);
+                    try {
+                      const newUrls = [];
+                      for (const file of files) {
+                        const webpFile = await optimizeImageToWebP(file);
+                        const res = await uploadProductImage(pickingPhotoForVariant.id, webpFile, false);
+                        if (res.image_url) newUrls.push(res.image_url);
+                      }
+                      setSelectedVariantPhotos(prev => [...prev, ...newUrls]);
+                      if (onRefresh) await onRefresh();
+                    } catch (err) {
+                      alert('Error subiendo fotos: ' + (err.message || ''));
+                    } finally {
+                      setUploadingVariantId(null);
+                      e.target.value = '';
                     }
                   }}
                 />
 
-                {Array.isArray(pickingPhotoForVariant.images) && pickingPhotoForVariant.images.length > 0 && (
+                {selectedVariantPhotos.length > 0 && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      await handleRemoveVariantPhoto(pickingPhotoForVariant.id, pickingPhotoForVariant.images[0]);
-                    }}
+                    onClick={() => setSelectedVariantPhotos([])}
                     className="w-full py-2 px-4 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <Trash2 size={13} />
-                    <span>Quitar foto de esta variante</span>
+                    <span>Deseleccionar todas las fotos de esta variante</span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Footer Modal Selector */}
-            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs shrink-0">
-              <span className="text-[10px] text-slate-400">
-                💡 Al elegir la foto, se sincroniza en el catálogo de ventas y tienda.
+            {/* Footer Modal Selector con Botón Guardar */}
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between text-xs shrink-0">
+              <span className="text-[10px] text-slate-500 font-medium">
+                {selectedVariantPhotos.length} foto{selectedVariantPhotos.length === 1 ? '' : 's'} asignada{selectedVariantPhotos.length === 1 ? '' : 's'}
               </span>
-              <button
-                type="button"
-                onClick={() => setPickingPhotoForVariant(null)}
-                className="px-4 py-1.5 bg-slate-800 text-white font-bold rounded-xl text-xs hover:bg-slate-700 transition-colors cursor-pointer"
-              >
-                Cerrar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPickingPhotoForVariant(null)}
+                  className="px-3 py-1.5 text-slate-500 hover:text-slate-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveVariantPhotos}
+                  disabled={uploadingVariantId === pickingPhotoForVariant.id}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  <Check size={14} />
+                  <span>Guardar Fotos Asignadas ({selectedVariantPhotos.length})</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

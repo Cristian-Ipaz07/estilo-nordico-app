@@ -25,12 +25,36 @@ def list_public_products(
     db: Session = Depends(get_db),
 ):
     """Lista productos publicados para la tienda web."""
-    # Auto-publicar variantes de chaquetas 5080 para asegurar sincronización en vivo con la web
+    # Auto-publicar variantes cuando su producto padre esté publicado
     try:
+        # 1. Asegurar chaquetas 5080
         db.query(ProductModel).filter(
             ProductModel.ref.ilike("5080%"),
             ProductModel.is_published == False
         ).update({"is_published": True}, synchronize_session=False)
+
+        # 2. Cascada automática para todas las prendas padre publicadas
+        published_parent_ids = [p[0] for p in db.query(ProductModel.id).filter(
+            ProductModel.parent_id == None,
+            ProductModel.is_published == True
+        ).all()]
+        if published_parent_ids:
+            db.query(ProductModel).filter(
+                ProductModel.parent_id.in_(published_parent_ids),
+                ProductModel.is_published == False
+            ).update({"is_published": True}, synchronize_session=False)
+
+        # 3. Si un padre fue despublicado, despublicar sus variantes
+        unpublished_parent_ids = [p[0] for p in db.query(ProductModel.id).filter(
+            ProductModel.parent_id == None,
+            ProductModel.is_published == False
+        ).all()]
+        if unpublished_parent_ids:
+            db.query(ProductModel).filter(
+                ProductModel.parent_id.in_(unpublished_parent_ids),
+                ProductModel.is_published == True
+            ).update({"is_published": False}, synchronize_session=False)
+
         db.commit()
     except Exception:
         db.rollback()

@@ -1,7 +1,7 @@
 import { API_URL } from '../config/api';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Globe, Image as ImageIcon, RefreshCw, Check, UploadCloud } from 'lucide-react';
-import { normalizeImageUrl, optimizeImageToWebP, uploadProductImage } from '../utils/imageOptimizer';
+import { normalizeImageUrl, optimizeImageToWebP, uploadProductImage, extractImageName } from '../utils/imageOptimizer';
 
 export default function ProductModal({ product, isOpen, onClose, onSaved }) {
   const isEdit = Boolean(product && product.id);
@@ -27,33 +27,70 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+
+  // Opciones inteligentes desplegables extraídas del inventario y catálogos estándar
+  const { categoryOptions, subcategoryOptions, refOptions } = useMemo(() => {
+    let prods = [];
+    try {
+      const cached = localStorage.getItem('nordic_cached_products');
+      if (cached) prods = JSON.parse(cached);
+    } catch {}
+
+    const cats = new Set(['HOMBRE', 'MUJER', 'UNISEX', 'NIÑOS', 'ACCESORIOS', 'CALZADO', 'HOGAR']);
+    const subs = new Set(['BERMUDA', 'BUSO', 'CAMISETA', 'CHAQUETA', 'JEANS', 'PANTALON', 'BILLETERA', 'CORREA', 'HEBILLA', 'GORRA', 'RELOJ', 'PERFUME', 'LOCION', 'GAFAS', 'SHORT', 'BLUSA', 'POLO', 'BOXER', 'JOGGER', 'CHALECO']);
+    const refs = new Set();
+
+    prods.forEach(p => {
+      if (p.category) cats.add(p.category.trim().toUpperCase());
+      if (p.subcategory) subs.add(p.subcategory.trim().toUpperCase());
+      if (p.ref) refs.add(p.ref.trim());
+    });
+
+    return {
+      categoryOptions: Array.from(cats).sort(),
+      subcategoryOptions: Array.from(subs).sort(),
+      refOptions: Array.from(refs).sort()
+    };
+  }, []);
 
   const handleUploadFromPC = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (!isEdit || !product?.id) {
+      alert('Para subir fotos directamente a la nube, primero guarda la prenda base con su referencia.');
+      return;
+    }
 
     setUploadingPhoto(true);
-    try {
-      // Optimizar en el navegador a WebP 1200px con transparencia
-      const webpFile = await optimizeImageToWebP(file);
+    setUploadProgress({ current: 0, total: files.length });
 
-      if (isEdit && product?.id) {
-        // Subir directo a Supabase Storage mediante el backend
+    const newUploaded = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        setUploadProgress({ current: i + 1, total: files.length });
+        const file = files[i];
+        const webpFile = await optimizeImageToWebP(file);
         const res = await uploadProductImage(product.id, webpFile);
         if (res.image_url) {
-          setFormData(prev => ({
-            ...prev,
-            images: [...prev.images, res.image_url]
-          }));
+          newUploaded.push(res.image_url);
         }
-      } else {
-        alert('Para subir fotos directamente a la nube, primero guarda la prenda base con su referencia.');
+      }
+
+      if (newUploaded.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          images: [...prev.images, ...newUploaded]
+        }));
       }
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Error al subir foto');
+      alert(err.message || 'Error al subir fotos');
     } finally {
       setUploadingPhoto(false);
+      setUploadProgress({ current: 0, total: 0 });
+      e.target.value = '';
     }
   };
 
@@ -213,14 +250,20 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
                     Referencia / SKU *
                   </label>
                   <input
+                    list="product-modal-refs-list"
                     type="text"
                     required
-                    placeholder="Ej. 5080-AZU-M"
+                    placeholder="Ej. 770 o 5080"
                     value={formData.ref}
-                    onChange={e => setFormData({ ...formData, ref: e.target.value })}
+                    onChange={e => setFormData({ ...formData, ref: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Usa código con variante (ej: 5080-AZUL-M).</p>
+                  <datalist id="product-modal-refs-list">
+                    {refOptions.map(r => (
+                      <option key={r} value={r} />
+                    ))}
+                  </datalist>
+                  <p className="text-[10px] text-slate-400 mt-1">Código único de la referencia o SKU.</p>
                 </div>
                 <div>
                   <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
@@ -229,13 +272,13 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
                   <select
                     value={formData.product_type}
                     onChange={e => setFormData({ ...formData, product_type: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-500 focus:bg-white cursor-pointer"
                   >
                     <option value="CHAQUETA">CHAQUETA</option>
-                    <option value="ROPA">ROPA (Camisetas, Jeans, etc.)</option>
+                    <option value="ROPA">ROPA (Camisetas, Jeans, Busos, Bermudas)</option>
                     <option value="PERFUME">PERFUME</option>
                     <option value="RELOJ">RELOJ</option>
-                    <option value="ACCESORIO">ACCESORIO</option>
+                    <option value="ACCESORIO">ACCESORIO (Correas, Billeteras, Hebillas)</option>
                     <option value="OTRO">OTRO</option>
                   </select>
                 </div>
@@ -257,24 +300,36 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
 
               <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Categoría</label>
-                  <input
-                    type="text"
-                    placeholder="Hombre / Mujer"
-                    value={formData.category}
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                    Categoría (Desplegable)
+                  </label>
+                  <select
+                    value={formData.category ? formData.category.toUpperCase() : 'HOMBRE'}
                     onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs text-slate-800 outline-none focus:border-indigo-500"
-                  />
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:border-indigo-500 focus:bg-white cursor-pointer"
+                  >
+                    {categoryOptions.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Subcategoría</label>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                    Subcategoría
+                  </label>
                   <input
+                    list="product-modal-subcat-list"
                     type="text"
-                    placeholder="Rompevientos..."
-                    value={formData.subcategory}
-                    onChange={e => setFormData({ ...formData, subcategory: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs text-slate-800 outline-none focus:border-indigo-500"
+                    placeholder="Elegir o escribir..."
+                    value={formData.subcategory || ''}
+                    onChange={e => setFormData({ ...formData, subcategory: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:border-indigo-500 focus:bg-white"
                   />
+                  <datalist id="product-modal-subcat-list">
+                    {subcategoryOptions.map(sub => (
+                      <option key={sub} value={sub} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Color</label>
@@ -389,12 +444,12 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
                       {uploadingPhoto ? (
                         <>
                           <RefreshCw className="animate-spin text-indigo-600" size={15} />
-                          <span>Optimizando a WebP y subiendo a la nube...</span>
+                          <span>Subiendo fotos a la nube ({uploadProgress.current} de {uploadProgress.total})...</span>
                         </>
                       ) : (
                         <>
                           <UploadCloud size={16} className="text-indigo-600" />
-                          <span>📁 Subir Foto desde mi PC (Convierte a WebP automático)</span>
+                          <span>📁 Subir Fotos desde mi PC (Selección Múltiple a WebP)</span>
                         </>
                       )}
                     </label>
@@ -402,6 +457,7 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
                       id="product-modal-file-upload"
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={handleUploadFromPC}
                       disabled={uploadingPhoto}
@@ -428,8 +484,11 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
 
                 <div className="grid grid-cols-4 gap-3">
                   {formData.images.map((img, idx) => (
-                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100">
-                      <img src={normalizeImageUrl(img)} alt={`Foto ${idx+1}`} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                    <div key={idx} title={extractImageName(img)} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-100 shadow-2xs">
+                      <img src={normalizeImageUrl(img)} alt={`Foto ${idx+1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" onError={(e) => { e.target.style.display = 'none'; }} />
+                      <div className="absolute inset-x-0 bottom-0 bg-slate-900/70 p-1 text-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-[8px] font-black text-white truncate px-1">{extractImageName(img)}</p>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveImage(idx)}

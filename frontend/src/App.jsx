@@ -21,6 +21,7 @@ import UserManagement from './pages/UserManagement';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DateRangeProvider } from './context/DateRangeContext';
 import Login from './pages/Login';
+import { API_URL } from './config/api';
 
 const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = false, onNavigate }) => {
   const location = useLocation();
@@ -91,6 +92,17 @@ const Layout = ({ children }) => {
 
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'Admin';
+
+  // Pre-warmer & Keep-Alive para Render Cloud:
+  // Despierta el backend al instante y realiza un ping liviano cada 4 minutos
+  useEffect(() => {
+    const pingCloud = () => {
+      fetch(`${API_URL}/products/sync-version`).catch(() => {});
+    };
+    pingCloud();
+    const timer = setInterval(pingCloud, 4 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Atajos: Ctrl + K (Terminal) y Ctrl + B (Colapsar Menú)
   useEffect(() => {
@@ -288,6 +300,17 @@ const AppContent = () => {
     const { user } = useAuth();
     if (!user) return <Login />;
     const isAdmin = user?.role === 'Admin';
+
+  // Pre-warmer & Keep-Alive para Render Cloud:
+  // Despierta el backend al instante y realiza un ping liviano cada 4 minutos
+  useEffect(() => {
+    const pingCloud = () => {
+      fetch(`${API_URL}/products/sync-version`).catch(() => {});
+    };
+    pingCloud();
+    const timer = setInterval(pingCloud, 4 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
     return (
         <Layout>

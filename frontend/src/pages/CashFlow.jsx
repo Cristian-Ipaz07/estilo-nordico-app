@@ -53,9 +53,30 @@ const fmtDateDisplay = (dateStr) => {
 };
 
 export default function CashFlow() {
-  const [movements, setMovements] = useState([]);
-  const [sales, setSales] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [movements, setMovements] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_cash_movements');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [sales, setSales] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_sales');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nordic_cached_cash_movements');
+      return !(cached && JSON.parse(cached).length > 0);
+    } catch {
+      return true;
+    }
+  });
   const [refreshing, setRefreshing] = useState(false);
 
   // Filtros de fecha globales y locales
@@ -98,8 +119,14 @@ export default function CashFlow() {
       const cashData = await cashRes.json();
       const salesData = await salesRes.json();
 
-      setMovements(Array.isArray(cashData) ? cashData : []);
-      setSales(Array.isArray(salesData) ? salesData : []);
+      if (Array.isArray(cashData)) {
+        setMovements(cashData);
+        try { localStorage.setItem('nordic_cached_cash_movements', JSON.stringify(cashData)); } catch {}
+      }
+      if (Array.isArray(salesData)) {
+        setSales(salesData);
+        try { localStorage.setItem('nordic_cached_sales', JSON.stringify(salesData)); } catch {}
+      }
     } catch (err) {
       console.error('Error cargando contabilidad:', err);
     } finally {
