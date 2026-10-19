@@ -847,7 +847,21 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
     // Filtro por Tipo de prenda
     if (selectedType !== 'TODOS') {
-      list = list.filter(p => (p.product_type || 'ROPA').toUpperCase() === selectedType);
+      if (selectedType === 'BUSO') {
+        list = list.filter(p => 
+          (p.subcategory || '').toUpperCase().includes('BUSO') || 
+          (p.name || '').toUpperCase().includes('BUSO') ||
+          (p.product_type || '').toUpperCase() === 'BUSO'
+        );
+      } else if (selectedType === 'CHAQUETA') {
+        list = list.filter(p => 
+          (p.subcategory || '').toUpperCase().includes('CHAQUETA') || 
+          (p.name || '').toUpperCase().includes('CHAQUETA') ||
+          (p.product_type || '').toUpperCase() === 'CHAQUETA'
+        );
+      } else {
+        list = list.filter(p => (p.product_type || 'ROPA').toUpperCase() === selectedType);
+      }
     }
 
     // Filtro por Talla(s) Seleccionada(s) (ej: XL y 32 simultáneamente)
@@ -941,18 +955,29 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
   };
 
   const handleCopyFilteredLink = () => {
-    let url = `${WEB_STORE_URL}/chaquetas`;
+    let baseUrl = `${WEB_STORE_URL}/chaquetas`;
+    if (selectedType === 'PERFUME') {
+      baseUrl = `${WEB_STORE_URL}/perfumes`;
+    } else if (selectedType === 'RELOJ') {
+      baseUrl = `${WEB_STORE_URL}/relojes`;
+    }
+
     const params = [];
+    if (selectedType === 'BUSO' || (search && search.toLowerCase().includes('buso'))) {
+      params.push('tipo=buso');
+    } else if (selectedType === 'CHAQUETA' || (search && search.toLowerCase().includes('chaqueta'))) {
+      params.push('tipo=chaqueta');
+    }
+
     if (selectedSizes.length > 0) {
       params.push(`talla=${encodeURIComponent(selectedSizes.join(','))}`);
     }
     if (selectedColors.length > 0) {
       params.push(`color=${encodeURIComponent(selectedColors.join(','))}`);
     }
-    if (params.length > 0) {
-      url += `?${params.join('&')}`;
-    }
-    navigator.clipboard.writeText(url);
+
+    const fullUrl = params.length > 0 ? `${baseUrl}?${params.join('&')}` : baseUrl;
+    navigator.clipboard.writeText(fullUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
   };
@@ -1026,7 +1051,7 @@ export default function AdvisorCatalog({ products = [], allProducts = [], onEdit
 
           {/* Filtros de Tipo */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {['TODOS', 'CHAQUETA', 'ROPA', 'PERFUME', 'RELOJ', 'ACCESORIO'].map(t => (
+            {['TODOS', 'CHAQUETA', 'BUSO', 'ROPA', 'PERFUME', 'RELOJ', 'ACCESORIO'].map(t => (
               <button
                 key={t}
                 onClick={() => setSelectedType(t)}

@@ -45,10 +45,34 @@ export function getProductWebUrl(product, selectedColor = null) {
       return `${WEB_STORE_URL}/chaquetas/chaqueta-impermeable-${colorSlug}`;
     }
 
-    return `${WEB_STORE_URL}/chaquetas`;
+    return `${WEB_STORE_URL}/chaquetas?tipo=chaqueta`;
   }
 
-  // 2. PERFUMES
+  // 2. BUSOS Y HOODIES (Ref 30861 o subcategoría/nombre Buso)
+  const nameUpper = (product.name || '').toUpperCase();
+  const isBuso = ref.startsWith('30861') ||
+                 subcategory.includes('BUSO') ||
+                 nameUpper.includes('BUSO') ||
+                 nameUpper.includes('CAPUCHA');
+
+  if (isBuso) {
+    if (product.brand && product.color && product.size) {
+      const refBase = ref.split('-')[0].toLowerCase();
+      const brandSlug = normalizeColorSlug(product.brand);
+      const colorSlug = normalizeColorSlug(product.color);
+      const sizeSlug = normalizeColorSlug(product.size);
+      return `${WEB_STORE_URL}/chaquetas/buso-${refBase}-${brandSlug}-${colorSlug}-${sizeSlug}`;
+    }
+    return `${WEB_STORE_URL}/chaquetas?tipo=buso`;
+  }
+
+  // 3. BILLETERAS Y ACCESORIOS (Ref 8270)
+  const isWallet = ref.startsWith('8270') || subcategory.includes('BILLETERA');
+  if (isWallet) {
+    return `${WEB_STORE_URL}/chaquetas/billetera-8270`;
+  }
+
+  // 4. PERFUMES
   const isPerfume = category.includes('PERFUME') ||
                       subcategory.includes('PERFUME') ||
                       productType === 'PERFUME';
