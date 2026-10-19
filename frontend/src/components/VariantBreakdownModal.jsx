@@ -9,7 +9,8 @@ import {
   normalizeImageUrl, 
   optimizeImageToWebP, 
   uploadProductImage, 
-  removeProductImage 
+  removeProductImage,
+  extractImageName
 } from '../utils/imageOptimizer';
 import EditVariantModal from './EditVariantModal';
 
