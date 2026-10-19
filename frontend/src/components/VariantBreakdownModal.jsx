@@ -57,12 +57,17 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [bulkUploadingToRef, setBulkUploadingToRef] = useState(false);
   const [bulkUploadProgress, setBulkUploadProgress] = useState({ current: 0, total: 0 });
 
-  // Bloquear scroll del fondo mientras el modal esté abierto
+  // Bloquear scroll del fondo y de cualquier contenedor mientras el modal esté abierto
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.classList.add('modal-open');
     return () => {
-      document.body.style.overflow = originalOverflow;
+      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.body.classList.remove('modal-open');
     };
   }, []);
 
@@ -756,10 +761,13 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   return (
     <div 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
       className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain"
     >
       <div 
         onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
         className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
       >
         
@@ -1208,7 +1216,7 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         )}
 
         {/* Lista de Variantes Existentes con Scroll Propio y Máximo Espacio */}
-        <div className="flex-1 min-h-[350px] overflow-y-auto overscroll-contain p-4 sm:p-6 pb-28 space-y-3 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 pb-20 space-y-3 custom-scrollbar">
           
           {/* BANNER DE CORRECCIÓN RÁPIDA: Si hay variantes con 'ESTILO NÓRDICO' */}
           {variantsWithEstiloNordico.length > 0 && (
@@ -1477,6 +1485,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                   </div>
                 );
               })}
+              {/* Espacio generoso al final para que la última variante nunca quede pegada ni tapada */}
+              <div className="h-20 w-full shrink-0" aria-hidden="true" />
             </div>
           )}
         </div>

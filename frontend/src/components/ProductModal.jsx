@@ -4,6 +4,20 @@ import { X, Globe, Image as ImageIcon, RefreshCw, Check, UploadCloud } from 'luc
 import { normalizeImageUrl, optimizeImageToWebP, uploadProductImage, extractImageName } from '../utils/imageOptimizer';
 
 export default function ProductModal({ product, isOpen, onClose, onSaved }) {
+  // Bloquear scroll del fondo mientras el modal esté abierto
+  useEffect(() => {
+    if (!isOpen) return;
+    const origBody = document.body.style.overflow;
+    const origHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.classList.add('modal-open');
+    return () => {
+      document.body.style.overflow = origBody;
+      document.documentElement.style.overflow = origHtml;
+      document.body.classList.remove('modal-open');
+    };
+  }, [isOpen]);
   const isEdit = Boolean(product && product.id);
   const [formData, setFormData] = useState({
     ref: '',
@@ -208,7 +222,7 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+    <div onWheel={(e) => e.stopPropagation()} onTouchMove={(e) => e.stopPropagation()} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto overscroll-contain">
       <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div>
