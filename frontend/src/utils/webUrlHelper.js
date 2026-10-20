@@ -89,7 +89,23 @@ export function getProductWebUrl(product, selectedColor = null) {
     return `${WEB_STORE_URL}/chaquetas?tipo=conjunto`;
   }
 
-  // 4. BILLETERAS Y ACCESORIOS (Ref 8270)
+  // 4. CAMISETAS STREETWEAR
+  const isShirt = subcategory.includes('CAMISETA') || nameUpper.includes('CAMISETA');
+  if (isShirt) {
+    const refBase = ref.split('-')[0].toLowerCase();
+    if (product.brand && product.color && product.size) {
+      const brandSlug = normalizeColorSlug(product.brand);
+      const colorSlug = normalizeColorSlug(product.color);
+      const sizeSlug = normalizeColorSlug(product.size);
+      return `${WEB_STORE_URL}/chaquetas/camiseta-${refBase}-${brandSlug}-${colorSlug}-${sizeSlug}`;
+    }
+    if (refBase) {
+      return `${WEB_STORE_URL}/chaquetas/camiseta-${refBase}`;
+    }
+    return `${WEB_STORE_URL}/chaquetas?tipo=camiseta`;
+  }
+
+  // 5. BILLETERAS Y ACCESORIOS (Ref 8270)
   const isWallet = ref.startsWith('8270') || subcategory.includes('BILLETERA');
   if (isWallet) {
     return `${WEB_STORE_URL}/chaquetas/billetera-8270`;
