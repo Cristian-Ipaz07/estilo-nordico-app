@@ -1951,8 +1951,16 @@ function ModuloCaja() {
     // Ventas y sus abonos
     sales.forEach(s => {
       const history = s.payment_history || [];
-      const historyTotal = history.reduce((sum, p) => sum + p.amount, 0);
-      const initialPayment = (s.amount_paid || 0) - historyTotal;
+      const initialPayments = history.filter(p => (p.notes || '').startsWith('Pago inicial') || p.notes?.includes('Pago inicial'));
+      const subsequentAbonos = history.filter(p => !((p.notes || '').startsWith('Pago inicial') || p.notes?.includes('Pago inicial')));
+
+      let initialPayment = 0;
+      if (initialPayments.length > 0) {
+        initialPayment = initialPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      } else {
+        const abonosTotal = subsequentAbonos.reduce((sum, p) => sum + (p.amount || 0), 0);
+        initialPayment = Math.max(0, (s.amount_paid || 0) - abonosTotal);
+      }
 
       // Descontar anticipo previo si fue cruzado para evitar duplicar dinero
       const notes = s.delivery_notes || '';
@@ -1969,13 +1977,13 @@ function ModuloCaja() {
           amount: freshPayment,
           type: 'ENTRADA',
           cat: 'VENTA',
-          account: sAcc,
+          account: (initialPayments.length > 0 && initialPayments[0].account) ? initialPayments[0].account : sAcc,
           date: s.created_at,
           isSale: true
         });
       }
 
-      history.forEach(p => {
+      subsequentAbonos.forEach(p => {
         list.push({
           id: "sale-" + s.id + "-pay-" + p.id,
           desc: "ABONO VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),

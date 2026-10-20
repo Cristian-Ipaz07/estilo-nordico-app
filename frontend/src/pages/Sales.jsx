@@ -662,21 +662,37 @@ const Sales = () => {
 
     sales.forEach(s => {
       const history = s.payment_history || [];
-      const historyTotal = history.reduce((sum, p) => sum + (p.amount || 0), 0);
-      const initialDeposit = Math.max(0, (s.amount_paid || 0) - historyTotal);
 
-      // 1. La venta / apartado original en su created_at
+      // Separar pagos iniciales (hechos al momento de la venta) de abonos posteriores reales
+      const initialPayments = history.filter(p => (p.notes || '').startsWith('Pago inicial') || p.notes?.includes('Pago inicial'));
+      const subsequentAbonos = history.filter(p => !((p.notes || '').startsWith('Pago inicial') || p.notes?.includes('Pago inicial')));
+
+      let initialCollected = 0;
+      if (initialPayments.length > 0) {
+        initialCollected = initialPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      } else {
+        const abonosTotal = subsequentAbonos.reduce((sum, p) => sum + (p.amount || 0), 0);
+        initialCollected = Math.max(0, (s.amount_paid || 0) - abonosTotal);
+      }
+
+      // Si fue cruzado con anticipo previo (ej. Venta #303), no contar dinero nuevo duplicado
+      const notes = s.delivery_notes || '';
+      const match = notes.match(/\[ANTICIPO_CRUZADO:(\d+)/i);
+      const antCruzado = match ? Number(match[1]) : 0;
+      const freshInitialCollected = Math.max(0, initialCollected - antCruzado);
+
+      // 1. La venta en su created_at (con su recaudo inicial consolidado)
       list.push({
         ...s,
         uniqueKey: `sale-${s.id}`,
         isPayment: false,
         eventDate: s.created_at,
-        collectedInEvent: history.length > 0 ? initialDeposit : (s.amount_paid || 0),
+        collectedInEvent: freshInitialCollected,
         merchandiseValue: s.total_sale || 0
       });
 
-      // 2. Cada abono posterior en payment_history con su propio payment_date
-      history.forEach(p => {
+      // 2. Solo los ABONOS REALES posteriores (a separados o saldos pendientes)
+      subsequentAbonos.forEach(p => {
         list.push({
           uniqueKey: `sale-${s.id}-pay-${p.id}`,
           isPayment: true,
