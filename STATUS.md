@@ -136,8 +136,23 @@
   - La tienda web (`Web-Estilo-Nordico`) ahora consume todo el catálogo de confección (incluyendo busos, camisetas y bermudas), integrando selector de prenda y filtrado automático por URL `/chaquetas?tipo=buso`.
 * **UX & Scroll en Modal de Variantes**: Cierre al hacer clic fuera del modal (backdrop click), bloqueo de scroll encadenado con el fondo (`overscroll-contain` + scroll lock), y padding inferior (`pb-28`) para evitar que el último producto quede cortado.
 
+### 9. Lanzamiento de Conjuntos Importados (Ref 1326), Chaquetas Dama (Ref 5081) & Enrutamiento Omnicanal (Sesión 20 Octubre)
+* **Despiece de Conjuntos Importados (Ref 1326)**:
+  - Ingreso y desglose de 4 variantes únicas de alta gama (Chaqueta con cremallera + Pantalón/Sudadera a $170.000 COP) activas en el ERP:
+    - `1326-DSQ-GRIS-L`: Dsquared2 Gris, Talla L (Stock 1, 3 fotos Supabase Storage).
+    - `1326-LV-BLANCO-XL`: Louis Vuitton Blanco, Talla XL (Stock 1, 3 fotos Supabase Storage).
+    - `1326-UA-AZUL-XL`: Under Armour Azul, Talla XL (Stock 1, 3 fotos Supabase Storage).
+    - `1326-UA-NEGROROJO-M`: Under Armour Negro Rojo, Talla M (Stock 1, 3 fotos Supabase Storage).
+  - Base padre `1326` (IMPORTADO, Subcategoría CONJUNTO, Categoría HOMBRE) publicada (`is_published: true`).
+* **Sincronización en Vivo en la API de Render**:
+  - `/api/public/products` y `/api/public/navigation` exponen la subcategoría `CONJUNTO` con conteo exacto de stock (`product_count: 5`, `total_stock: 8`).
+* **Compatibilidad Omnicanal con Catálogo de Asesores (`AdvisorCatalog.jsx`)**:
+  - Los links generados por el asesor al filtrar por talla o tipo de prenda ahora aterrizan de forma transparente en la tienda web con soporte de parámetros de consulta (`?tipo=conjunto`, `?tipo=buso`, `?genero=mujer`, `?talla=XL`), asegurando que el cliente vea exactamente lo que el asesor le ofreció sin confusiones de inventario.
+* **Separación de Género & Chaquetas Dama (Ref 5081)**:
+  - Chaquetas de mujer categorizadas bajo `MUJER` separadas limpiamente de la Ref 5080 de caballero.
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
 3. **Cuentas por Pagar a Socios**: Control de deuda acumulada con Cristian y amortización automática desde Flujo de Caja.
-4. **Conexión API Pública Web (Astro)**: Exposición de variantes y fotos optimizadas para el e-commerce público.
+4. **Campaña de Tráfico Meta Ads**: Lanzamiento de pauta a WhatsApp con los nuevos conjuntos importados y busos únicos.
