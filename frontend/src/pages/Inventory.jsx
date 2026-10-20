@@ -1288,32 +1288,38 @@ export default function Inventory() {
       </div>
 
       {/* Modal de Crear / Editar Prenda Base */}
-      <ProductModal
-        product={selectedProduct}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSaved={fetchInventory}
-      />
+      {isModalOpen && (
+        <ProductModal
+          product={selectedProduct}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSaved={fetchInventory}
+        />
+      )}
 
       {/* Modal de Variantes por Referencia */}
-      <VariantBreakdownModal
-        baseProduct={variantModalProduct}
-        allProducts={products}
-        isOpen={isVariantModalOpen}
-        onClose={() => setIsVariantModalOpen(false)}
-        onRefresh={fetchInventory}
-      />
+      {isVariantModalOpen && variantModalProduct && (
+        <VariantBreakdownModal
+          baseProduct={variantModalProduct}
+          allProducts={products}
+          isOpen={isVariantModalOpen}
+          onClose={() => setIsVariantModalOpen(false)}
+          onRefresh={fetchInventory}
+        />
+      )}
 
       {/* Modal de Entrada de Mercancía en Bloque / Recepción de Pedidos */}
-      <BatchStockEntryModal
-        isOpen={isBatchEntryOpen}
-        onClose={() => setIsBatchEntryOpen(false)}
-        products={products}
-        initialRef={batchPreselectedRef}
-        onSuccess={(data) => {
-          fetchInventory();
-        }}
-      />
+      {isBatchEntryOpen && (
+        <BatchStockEntryModal
+          isOpen={isBatchEntryOpen}
+          onClose={() => setIsBatchEntryOpen(false)}
+          products={products}
+          initialRef={batchPreselectedRef}
+          onSuccess={(data) => {
+            fetchInventory();
+          }}
+        />
+      )}
     </div>
   );
 }

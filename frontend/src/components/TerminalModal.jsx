@@ -1,3 +1,4 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { API_URL } from '../config/api';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -2681,6 +2682,7 @@ function ModuloCaja() {
 
 // ─── TERMINAL MODAL PRINCIPAL ─────────────────────────────────────────────────
 export default function TerminalModal({ isOpen, onClose }) {
+  useBodyScrollLock(isOpen);
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
   const [activeTab, setActiveTab] = useState('ventas');

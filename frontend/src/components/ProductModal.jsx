@@ -3,21 +3,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Globe, Image as ImageIcon, RefreshCw, Check, UploadCloud } from 'lucide-react';
 import { normalizeImageUrl, optimizeImageToWebP, uploadProductImage, extractImageName } from '../utils/imageOptimizer';
 
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+
 export default function ProductModal({ product, isOpen, onClose, onSaved }) {
-  // Bloquear scroll del fondo mientras el modal esté abierto
-  useEffect(() => {
-    if (!isOpen) return;
-    const origBody = document.body.style.overflow;
-    const origHtml = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.style.overflow = origBody;
-      document.documentElement.style.overflow = origHtml;
-      document.body.classList.remove('modal-open');
-    };
-  }, [isOpen]);
+  useBodyScrollLock(isOpen);
   const isEdit = Boolean(product && product.id);
   const [formData, setFormData] = useState({
     ref: '',

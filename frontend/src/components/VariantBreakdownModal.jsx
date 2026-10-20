@@ -1,3 +1,4 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Tag, 
@@ -57,19 +58,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   const [bulkUploadingToRef, setBulkUploadingToRef] = useState(false);
   const [bulkUploadProgress, setBulkUploadProgress] = useState({ current: 0, total: 0 });
 
-  // Bloquear scroll del fondo y de cualquier contenedor mientras el modal esté abierto
-  useEffect(() => {
-    const originalBodyOverflow = document.body.style.overflow;
-    const originalHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.style.overflow = originalBodyOverflow;
-      document.documentElement.style.overflow = originalHtmlOverflow;
-      document.body.classList.remove('modal-open');
-    };
-  }, []);
+  // Bloquear scroll del fondo mientras esté abierto y restaurar limpiamente al cerrar
+  useBodyScrollLock(isOpen);
 
   // Sincronizar fotos seleccionadas al abrir el selector de variante
   useEffect(() => {
@@ -1697,21 +1687,23 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
       )}
 
       {/* Modal Subsidario para Editar Variante */}
-      <EditVariantModal
-        isOpen={!!editingVariant}
-        variant={editingVariant}
-        baseProduct={baseProduct}
-        allProducts={allProducts}
-        dynamicColors={dynamicColorOptions}
-        referenceColors={existingReferenceColors}
-        dynamicSizes={dynamicSizeOptions}
-        dynamicBrands={dynamicBrandOptions}
-        onClose={() => setEditingVariant(null)}
-        onSuccess={async () => {
-          setEditingVariant(null);
-          if (onRefresh) await onRefresh();
-        }}
-      />
+      {editingVariant && (
+        <EditVariantModal
+          isOpen={!!editingVariant}
+          variant={editingVariant}
+          baseProduct={baseProduct}
+          allProducts={allProducts}
+          dynamicColors={dynamicColorOptions}
+          referenceColors={existingReferenceColors}
+          dynamicSizes={dynamicSizeOptions}
+          dynamicBrands={dynamicBrandOptions}
+          onClose={() => setEditingVariant(null)}
+          onSuccess={async () => {
+            setEditingVariant(null);
+            if (onRefresh) await onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }

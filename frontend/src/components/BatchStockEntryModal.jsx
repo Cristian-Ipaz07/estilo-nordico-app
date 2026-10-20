@@ -1,3 +1,4 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Check, RefreshCw, AlertCircle, Layers, Truck, 
@@ -23,6 +24,7 @@ export default function BatchStockEntryModal({
   onSuccess,
   initialRef = ''
 }) {
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
   // 1. Estados de Referencia Base

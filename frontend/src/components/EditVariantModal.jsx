@@ -1,3 +1,4 @@
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import React, { useState, useEffect } from 'react';
 import { X, Check, RefreshCw, AlertCircle, Pencil } from 'lucide-react';
 import { API_URL } from '../config/api';
@@ -17,6 +18,7 @@ export default function EditVariantModal({
   onClose,
   onSuccess
 }) {
+  useBodyScrollLock(isOpen);
   if (!isOpen || !variant || !baseProduct) return null;
 
   const [brand, setBrand] = useState(variant.brand || '');

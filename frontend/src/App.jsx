@@ -1,3 +1,4 @@
+import { forceUnlockBodyScroll } from './hooks/useBodyScrollLock';
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -298,6 +299,19 @@ const Layout = ({ children }) => {
 
 const AppContent = () => {
     const { user } = useAuth();
+    const location = useLocation();
+
+    // Salvaguarda: si cambia de ruta, asegurar que no queden bloqueos de scroll residuales
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        const hasOpenModal = document.querySelector('.fixed.inset-0.z-50, .fixed.inset-0.z-\\[100\\], .fixed.inset-0.z-\\[200\\], .fixed.inset-0.z-60');
+        if (!hasOpenModal) {
+          forceUnlockBodyScroll();
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }, [location.pathname]);
+
     if (!user) return <Login />;
     const isAdmin = user?.role === 'Admin';
 
