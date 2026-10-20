@@ -692,7 +692,7 @@ const Sales = () => {
       });
 
       // 2. Solo los ABONOS REALES posteriores (a separados o saldos pendientes)
-      subsequentAbonos.forEach(p => {
+      subsequentAbonos.filter(p => p.account !== 'ANTICIPO_CRUZADO').forEach(p => {
         list.push({
           uniqueKey: `sale-${s.id}-pay-${p.id}`,
           isPayment: true,

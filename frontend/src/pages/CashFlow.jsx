@@ -183,7 +183,7 @@ export default function CashFlow() {
         });
       }
 
-      subsequentAbonos.forEach(p => {
+      subsequentAbonos.filter(p => p.account !== 'ANTICIPO_CRUZADO').forEach(p => {
         virtualSales.push({
           id: `sale-${s.id}-pay-${p.id}`,
           description: `ABONO VENTA #${s.id} - ${s.customer_name || 'CLIENTE FINAL'}`,

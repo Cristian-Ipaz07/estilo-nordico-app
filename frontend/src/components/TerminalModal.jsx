@@ -1983,7 +1983,7 @@ function ModuloCaja() {
         });
       }
 
-      subsequentAbonos.forEach(p => {
+      subsequentAbonos.filter(p => p.account !== 'ANTICIPO_CRUZADO').forEach(p => {
         list.push({
           id: "sale-" + s.id + "-pay-" + p.id,
           desc: "ABONO VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
