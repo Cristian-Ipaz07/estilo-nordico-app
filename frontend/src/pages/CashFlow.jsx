@@ -257,6 +257,13 @@ export default function CashFlow() {
       BANCOLOMBIA: 0
     };
 
+    const breakdown = {
+      NEQUI_CRISTIAN: { casa: 0, turno: 0 },
+      NEQUI_DAVID: { casa: 0, turno: 0 },
+      BANCOLOMBIA: { casa: 0, turno: 0 },
+      EFECTIVO: { casa: 0, turno: 0 }
+    };
+
     let totalPhysicalCash = 0;
     let openShiftCash = 0;
 
@@ -265,15 +272,22 @@ export default function CashFlow() {
       const amt = Number(m.amount) || 0;
       const isEntrada = m.type === 'ENTRADA';
       const signedAmt = isEntrada ? amt : -amt;
+      const t = new Date(m.payment_date || m.created_at).getTime();
+      const isOpenShift = lastCierreTimestamp > 0 && t > lastCierreTimestamp;
 
       // Cuentas virtuales / bancarias
       if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA') {
         b[acc] += signedAmt;
+        if (!breakdown[acc]) breakdown[acc] = { casa: 0, turno: 0 };
+        if (isOpenShift) {
+          breakdown[acc].turno += signedAmt;
+        } else {
+          breakdown[acc].casa += signedAmt;
+        }
       } else {
         // Efectivo Físico
         totalPhysicalCash += signedAmt;
-        const t = new Date(m.payment_date || m.created_at).getTime();
-        if (lastCierreTimestamp > 0 && t > lastCierreTimestamp && (acc === 'EFECTIVO_TIENDA' || !acc)) {
+        if (isOpenShift && (acc === 'EFECTIVO_TIENDA' || !acc)) {
           openShiftCash += signedAmt;
         }
       }
@@ -284,8 +298,13 @@ export default function CashFlow() {
     // En casa está el saldo acumulado consolidado de todos los cierres previos (Caja Mayor)
     b.EFECTIVO_CASA = Math.max(0, totalPhysicalCash - b.EFECTIVO_TIENDA);
 
+    breakdown.EFECTIVO = {
+      casa: b.EFECTIVO_CASA,
+      turno: b.EFECTIVO_TIENDA
+    };
+
     const total = Object.values(b).reduce((sum, v) => sum + v, 0);
-    return { balances: b, total, lastCierreTimestamp, openShiftCash };
+    return { balances: b, breakdown, total, lastCierreTimestamp, openShiftCash };
   }, [allMovements]);
 
   // Procesar saldo arrastrado y filtrado por fecha
@@ -1051,9 +1070,10 @@ export default function CashFlow() {
                 const isEntrada = row.type === 'ENTRADA';
 
                 return (
+                  <React.Fragment key={row.id || i}>
                   <tr 
-                    key={row.id || i} 
-                    className={`transition-colors hover:bg-slate-50/80 ${
+                    onClick={() => row.sale && setExpandedSaleId(expandedSaleId === row.id ? null : row.id)}
+                    className={`transition-colors hover:bg-slate-50/80 ${row.sale ? 'cursor-pointer' : ''} ${
                       row.isInitial ? 'bg-amber-50/40 font-bold' : ''
                     } ${isSalida ? 'bg-rose-50/10' : ''}`}
                   >
@@ -1062,15 +1082,28 @@ export default function CashFlow() {
                       {row.fechaStr}
                     </td>
 
-                    {/* Descripción con badge de canal */}
+                    {/* Descripción con badge de canal y vendedor */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-900 uppercase">
                           {row.description}
                         </span>
+                        {row.sellerName && (
+                          <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg flex items-center gap-1 normal-case tracking-normal">
+                            <span>👤 {row.sellerName}</span>
+                            {row.creatorName && row.creatorName !== row.sellerName && (
+                              <span className="text-[8px] text-slate-400 italic">· reg: {row.creatorName}</span>
+                            )}
+                          </span>
+                        )}
                         {row.channel && (
                           <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
                             {row.channel}
+                          </span>
+                        )}
+                        {row.sale && (
+                          <span className="text-[9px] font-black text-indigo-600 hover:underline">
+                            {expandedSaleId === row.id ? '▲ Ocultar prendas' : '▼ Ver prendas'}
                           </span>
                         )}
                         {row.isInitial && (
@@ -1166,6 +1199,52 @@ export default function CashFlow() {
                       )}
                     </td>
                   </tr>
+                  {/* Desglose de prendas al hacer clic en una venta */}
+                  {expandedSaleId === row.id && row.sale && (
+                    <tr className="bg-slate-50/90 border-b border-indigo-100">
+                      <td colSpan={8} className="px-8 py-3">
+                        <div className="p-3 bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-2">
+                          <div className="flex items-center justify-between text-xs font-black uppercase text-slate-500">
+                            <span>Prendas vendidas en Venta #{row.sale.id} ({row.sale.items?.length || 0})</span>
+                            <span>Cliente: <strong className="text-slate-800">{row.sale.customer_name || 'Cliente Final'}</strong></span>
+                          </div>
+                          {row.sale.items && row.sale.items.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {row.sale.items.map((it, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-[10px]">
+                                      {it.quantity}x
+                                    </span>
+                                    <div>
+                                      <span className="font-bold text-slate-800 text-[11px] block">
+                                        {it.product?.name || `Producto #${it.product_id}`}
+                                      </span>
+                                      {it.product?.ref && (
+                                        <span className="text-[9px] text-slate-400 font-mono">Ref: {it.product.ref}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="font-mono font-black text-slate-900 text-xs">
+                                    ${fmt(it.total_item || (it.quantity * it.unit_price))}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic">No hay prendas registradas en los items de esta venta.</p>
+                          )}
+                          {(row.sale.delivery_address || row.sale.delivery_notes) && (
+                            <div className="text-[10px] text-slate-600 bg-amber-50/80 border border-amber-200/60 p-2 rounded-xl">
+                              {row.sale.delivery_address && <p>📍 <strong>Dirección:</strong> {row.sale.delivery_address}</p>}
+                              {row.sale.delivery_notes && <p>📝 <strong>Nota:</strong> {row.sale.delivery_notes}</p>}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
 

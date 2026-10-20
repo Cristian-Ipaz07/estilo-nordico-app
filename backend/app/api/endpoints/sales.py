@@ -56,7 +56,8 @@ def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):
         query = db.query(Sale).options(
             selectinload(Sale.items).selectinload(SaleItem.product),
             selectinload(Sale.payment_history),
-            selectinload(Sale.user)
+            selectinload(Sale.user),
+            selectinload(Sale.creator)
         )
         if status:
             query = query.filter(Sale.status == status)
@@ -107,6 +108,7 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
         sale_channel=sale_data.sale_channel or "LOCAL",
         payment_method=sale_data.payment_method or "EFECTIVO_TIENDA",
         user_id=sale_data.user_id,
+        created_by=sale_data.created_by,
         created_at=created_at_val,
         delivery_address=sale_data.delivery_address,
         delivery_notes=sale_data.delivery_notes,
@@ -200,6 +202,10 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
     # El "vendedor" se guarda en sale_channel para compatibilidad con el modelo actual
     if sale_data.seller is not None:
         db_sale.sale_channel = sale_data.seller
+    if sale_data.user_id is not None:
+        db_sale.user_id = sale_data.user_id
+    if sale_data.created_by is not None:
+        db_sale.created_by = sale_data.created_by
     if sale_data.payment_method is not None:
         db_sale.payment_method = sale_data.payment_method
 

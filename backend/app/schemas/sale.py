@@ -87,6 +87,7 @@ class SaleCreate(SaleBase):
     # Fecha retroactiva opcional (YYYY-MM-DD). Si se omite, se usa la hora actual de Colombia.
     sale_date: Optional[str] = None
     user_id: Optional[int] = None
+    created_by: Optional[int] = None
     payments: Optional[List[dict]] = None
 
 
@@ -94,6 +95,8 @@ class SaleCreate(SaleBase):
 class SaleUpdate(BaseModel):
     customer_name: Optional[str] = None
     seller: Optional[str] = None      # nombre de vendedor (se guarda en sale_channel)
+    user_id: Optional[int] = None
+    created_by: Optional[int] = None
     amount_paid: Optional[float] = None
     payment_method: Optional[str] = None
     sale_date: Optional[str] = None   # YYYY-MM-DD para corregir la fecha
@@ -116,7 +119,10 @@ class SaleResponse(BaseModel):
     payment_method: Optional[str] = "EFECTIVO_TIENDA"
     created_at: datetime
     items: List[SaleItemResponse]
+    user_id: Optional[int] = None
+    created_by: Optional[int] = None
     user: Optional[UserInSale] = None
+    creator: Optional[UserInSale] = None
     payment_history: Optional[List[PaymentHistoryInSale]] = None
 
     class Config:

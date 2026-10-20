@@ -156,6 +156,7 @@ const PaymentModal = ({ sale, onPay, onClose }) => {
 const EditSaleModal = ({ sale, onUpdate, onClose }) => {
   const [formData, setFormData] = useState({
     customer_name: sale.customer_name || '',
+    user_id: sale.user?.id || '',
     seller: sale.sale_channel || 'LOCAL',
     amount_paid: sale.amount_paid || 0,
     sale_date: isoToDateStr(sale.created_at)
@@ -302,9 +303,14 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
             </div>
           </div>
         </td>
-        <td className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase italic">
-          <div>{sale.user ? sale.user.full_name : (sale.sale_channel || 'LOCAL')}</div>
-          {sale.sale_channel !== 'LOCAL' && sale.user && <span className="block text-[9px] text-slate-400 mt-0.5">{sale.sale_channel}</span>}
+        <td className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">
+          <div className="font-bold text-slate-800">👤 {sale.user ? sale.user.full_name : (sale.sale_channel || 'Local')}</div>
+          {sale.creator && sale.creator.id !== sale.user?.id && (
+            <span className="block text-[9px] text-slate-400 font-normal">💻 Registró: {sale.creator.full_name || sale.creator.username}</span>
+          )}
+          {sale.sale_channel && sale.sale_channel !== 'LOCAL' && sale.sale_channel !== 'DOMICILIO' && !sale.user && (
+            <span className="block text-[9px] text-slate-400 mt-0.5">{sale.sale_channel}</span>
+          )}
           {sale.payment_method && (
             <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border mt-1 font-mono ${getAccountInfo(sale.payment_method).badgeClass}`}>
               {getAccountInfo(sale.payment_method).icon} {getAccountInfo(sale.payment_method).label}

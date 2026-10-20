@@ -19,11 +19,13 @@ class Sale(Base):
     delivery_address = Column(String, nullable=True)
     delivery_notes = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     payment_method = Column(String, default="EFECTIVO_TIENDA", nullable=True)
     created_at = Column(DateTime, default=get_colombia_time)
 
     # Relaciones
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by])
     # Relación con los productos de esta venta
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
     payment_history = relationship("PaymentHistory", back_populates="sale", cascade="all, delete-orphan")

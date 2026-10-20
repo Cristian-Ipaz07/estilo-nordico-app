@@ -503,7 +503,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       return;
     }
 
-    const chosenUserId = isAdmin ? (Number(vendedorId) || user?.id || null) : (user?.id || null);
+    const chosenVendedorId = Number(vendedorId) || user?.id || null;
+    const creatorUserId = user?.id || null;
 
     const saleStatus = isDelivery 
       ? "en_domicilio" 
@@ -532,7 +533,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       customer_name: (customer || "CLIENTE FINAL").trim(),
       total_price: totalVenta,
       sale_channel: isDelivery ? "DOMICILIO" : "LOCAL",
-      user_id: chosenUserId,
+      user_id: chosenVendedorId,
+      created_by: creatorUserId,
       amount_paid: effectiveAmountPaid,
       payment_method: isSplitPayment ? "DIVIDIDO" : paymentAccount,
       payments: effectivePayments,
@@ -794,20 +796,21 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
             <input type="date" className="bg-transparent text-[11px] font-black outline-none w-full text-slate-600"
               value={saleDate} onChange={e => setSaleDate(e.target.value)} />
           </div>
-          <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-4">
-            <Tag size={16} className="text-slate-400 flex-shrink-0" />
-            {isAdmin ? (
-              <select className="bg-transparent text-[10px] font-black outline-none w-full text-slate-600 uppercase cursor-pointer"
+          <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-3 py-1">
+            <Tag size={15} className="text-slate-400 flex-shrink-0" />
+            <div className="w-full">
+              <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight">Vendedor (Comisión)</span>
+              <select className="bg-transparent text-[10px] font-black outline-none w-full text-slate-700 uppercase cursor-pointer"
                 value={vendedorId} onChange={e => setVendedorId(e.target.value)}>
-                {sellers.map(s => (
-                  <option key={s.id} value={s.id}>{s.full_name}</option>
-                ))}
+                {sellers.length > 0 ? (
+                  sellers.map(s => (
+                    <option key={s.id} value={s.id}>{s.full_name || s.username}</option>
+                  ))
+                ) : (
+                  <option value={user?.id || ''}>{user?.full_name || user?.username || 'Vendedor'}</option>
+                )}
               </select>
-            ) : (
-              <div className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-lg truncate">
-                {user?.full_name || user?.username || 'Vendedor'}
-              </div>
-            )}
+            </div>
           </div>
           <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-[20px] font-mono font-black text-xs flex items-center gap-1.5 shrink-0 shadow-2xs" title="Número consecutivo de la venta actual para tu cuaderno">
             <Receipt size={14} className="text-indigo-600" />
@@ -1944,6 +1947,7 @@ function ModuloCaja() {
   const [baseCaja, setBaseCaja] = useStickyState(150000, 'base_caja_terminal');
   const [isEditingBase, setIsEditingBase] = useState(false);
   const [tempBase, setTempBase] = useState(baseCaja);
+  const [expandedShiftSaleId, setExpandedShiftSaleId] = useState(null);
 
   // Formulario manual
   const [desc, setDesc] = useState('');
@@ -2014,29 +2018,40 @@ function ModuloCaja() {
 
       const sAcc = s.payment_method || 'EFECTIVO_TIENDA';
 
+      const sellerName = s.user ? (s.user.full_name || s.user.username) : (s.sale_channel && s.sale_channel !== 'LOCAL' && s.sale_channel !== 'DOMICILIO' ? s.sale_channel : 'Tienda');
+      const creatorName = s.creator ? (s.creator.full_name || s.creator.username) : null;
+
       if (freshPayment > 0) {
         list.push({
           id: "sale-" + s.id + "-init",
+          saleId: s.id,
           desc: "VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL') + (antCruzado > 0 ? ' (PARCIAL ANTICIPO)' : ''),
           amount: freshPayment,
           type: 'ENTRADA',
           cat: 'VENTA',
           account: (initialPayments.length > 0 && initialPayments[0].account) ? initialPayments[0].account : sAcc,
           date: s.created_at,
-          isSale: true
+          isSale: true,
+          sale: s,
+          sellerName,
+          creatorName
         });
       }
 
       subsequentAbonos.filter(p => p.account !== 'ANTICIPO_CRUZADO').forEach(p => {
         list.push({
           id: "sale-" + s.id + "-pay-" + p.id,
+          saleId: s.id,
           desc: "ABONO VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
           amount: p.amount,
           type: 'ENTRADA',
           cat: 'ABONO',
           account: p.account || sAcc,
           date: p.payment_date,
-          isSale: true
+          isSale: true,
+          sale: s,
+          sellerName,
+          creatorName
         });
       });
     });
@@ -2121,6 +2136,11 @@ function ModuloCaja() {
   const shiftNetVentas = shiftTotalIn - shiftTotalOut; // Dinero físico neto del cajón
   const totalEnCajon = (Number(baseCaja) || 0) + shiftNetVentas; // Efectivo físico real en caja
 
+  // Ventas totales de este turno (Efectivo físico + Cobros digitales)
+  const shiftTotalAllSales = useMemo(() => {
+    return activeShiftFlow.filter(e => e.type === 'ENTRADA').reduce((sum, e) => sum + e.amount, 0);
+  }, [activeShiftFlow]);
+
   // Desglose de cobros digitales en este turno (Nequi Cristian, Nequi David, Bancolombia, etc.)
   const digitalShiftSummary = useMemo(() => {
     const digitals = activeShiftFlow.filter(f => (f.account || 'EFECTIVO_TIENDA') !== 'EFECTIVO_TIENDA');
@@ -2156,7 +2176,7 @@ function ModuloCaja() {
     setIsSubmitting(true);
     try {
       const closureDateTime = cierreDate + "T23:59:59";
-      const descText = "CIERRE DE CAJA (Ventas: $" + fmt(shiftTotalIn) + " - Gastos: $" + fmt(shiftTotalOut) + " = Guardado: $" + fmt(shiftNetVentas) + " | Base: $" + fmt(cierreBaseSiguiente) + ")";
+      const descText = "CIERRE DE CAJA (Ventas Totales: $" + fmt(shiftTotalAllSales) + " | Efectivo Tienda: $" + fmt(shiftTotalIn) + " - Gastos: $" + fmt(shiftTotalOut) + " = Guardado: $" + fmt(shiftNetVentas) + " | Nequi: $" + fmt(digitalShiftSummary.totalDigital) + " | Base: $" + fmt(cierreBaseSiguiente) + ")";
       const res = await fetch(`${API_URL}/cash/`, {
         method: 'POST',
         headers: { 
