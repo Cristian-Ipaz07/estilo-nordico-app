@@ -48,25 +48,48 @@ export function getProductWebUrl(product, selectedColor = null) {
     return `${WEB_STORE_URL}/chaquetas?tipo=chaqueta`;
   }
 
-  // 2. BUSOS Y HOODIES (Ref 30861 o subcategoría/nombre Buso)
+  // 2. BUSOS Y HOODIES (Ref 30861, 3708 o subcategoría/nombre Buso)
   const nameUpper = (product.name || '').toUpperCase();
   const isBuso = ref.startsWith('30861') ||
+                 ref.startsWith('3708') ||
                  subcategory.includes('BUSO') ||
                  nameUpper.includes('BUSO') ||
                  nameUpper.includes('CAPUCHA');
 
   if (isBuso) {
+    const refBase = ref.split('-')[0].toLowerCase();
     if (product.brand && product.color && product.size) {
-      const refBase = ref.split('-')[0].toLowerCase();
       const brandSlug = normalizeColorSlug(product.brand);
       const colorSlug = normalizeColorSlug(product.color);
       const sizeSlug = normalizeColorSlug(product.size);
       return `${WEB_STORE_URL}/chaquetas/buso-${refBase}-${brandSlug}-${colorSlug}-${sizeSlug}`;
     }
+    if (refBase) {
+      return `${WEB_STORE_URL}/chaquetas/buso-${refBase}`;
+    }
     return `${WEB_STORE_URL}/chaquetas?tipo=buso`;
   }
 
-  // 3. BILLETERAS Y ACCESORIOS (Ref 8270)
+  // 3. CONJUNTOS IMPORTADOS (Ref 1326 o subcategoría Conjunto)
+  const isConjunto = ref.startsWith('1326') ||
+                     subcategory.includes('CONJUNTO') ||
+                     nameUpper.includes('CONJUNTO');
+
+  if (isConjunto) {
+    const refBase = ref.split('-')[0].toLowerCase();
+    if (product.brand && product.color && product.size) {
+      const brandSlug = normalizeColorSlug(product.brand);
+      const colorSlug = normalizeColorSlug(product.color);
+      const sizeSlug = normalizeColorSlug(product.size);
+      return `${WEB_STORE_URL}/chaquetas/conjunto-${refBase}-${brandSlug}-${colorSlug}-${sizeSlug}`;
+    }
+    if (refBase) {
+      return `${WEB_STORE_URL}/chaquetas/conjunto-${refBase}`;
+    }
+    return `${WEB_STORE_URL}/chaquetas?tipo=conjunto`;
+  }
+
+  // 4. BILLETERAS Y ACCESORIOS (Ref 8270)
   const isWallet = ref.startsWith('8270') || subcategory.includes('BILLETERA');
   if (isWallet) {
     return `${WEB_STORE_URL}/chaquetas/billetera-8270`;
