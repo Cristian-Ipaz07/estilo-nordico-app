@@ -87,6 +87,7 @@ export default function CashFlow() {
   const [selectedCategory, setSelectedCategory] = useState('TODAS');
   const [selectedType, setSelectedType] = useState('TODOS'); // 'TODOS' | 'ENTRADA' | 'SALIDA'
   const [selectedAccountFilter, setSelectedAccountFilter] = useState('TODAS'); // 'TODAS' | accountId
+  const [includeOpenShift, setIncludeOpenShift] = useState(false); // Si true, incluye ventas del turno actual de hoy sin cerrar
 
   // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -236,8 +237,18 @@ export default function CashFlow() {
     });
   }, [movements, sales]);
 
-  // Arqueo global de bolsas / cuentas en tiempo real (Histórico total)
+  // Arqueo global de bolsas / cuentas en tiempo real (Separando Caja Menor / Tienda de Caja Mayor / Casa)
   const treasuryBalances = useMemo(() => {
+    // 1. Encontrar el timestamp del último Cierre de Caja registrado
+    let lastCierreTimestamp = 0;
+    allMovements.forEach(m => {
+      const isCierre = (m.category || '').toUpperCase() === 'CIERRE CAJA' || (m.description || '').toUpperCase().startsWith('CIERRE DE CAJA');
+      if (isCierre) {
+        const t = new Date(m.payment_date || m.created_at).getTime();
+        if (t > lastCierreTimestamp) lastCierreTimestamp = t;
+      }
+    });
+
     const b = {
       EFECTIVO_TIENDA: 0,
       NEQUI_CRISTIAN: 0,
@@ -245,16 +256,36 @@ export default function CashFlow() {
       EFECTIVO_CASA: 0,
       BANCOLOMBIA: 0
     };
+
+    let totalPhysicalCash = 0;
+    let openShiftCash = 0;
+
     allMovements.forEach(m => {
       const acc = m.account || 'EFECTIVO_TIENDA';
       const amt = Number(m.amount) || 0;
-      if (b[acc] !== undefined) {
-        if (m.type === 'ENTRADA') b[acc] += amt;
-        else b[acc] -= amt;
+      const isEntrada = m.type === 'ENTRADA';
+      const signedAmt = isEntrada ? amt : -amt;
+
+      // Cuentas virtuales / bancarias
+      if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA') {
+        b[acc] += signedAmt;
+      } else {
+        // Efectivo Físico
+        totalPhysicalCash += signedAmt;
+        const t = new Date(m.payment_date || m.created_at).getTime();
+        if (lastCierreTimestamp > 0 && t > lastCierreTimestamp && (acc === 'EFECTIVO_TIENDA' || !acc)) {
+          openShiftCash += signedAmt;
+        }
       }
     });
+
+    // En tienda está lo del turno abierto de hoy (Caja Menor en curso)
+    b.EFECTIVO_TIENDA = Math.max(0, openShiftCash);
+    // En casa está el saldo acumulado consolidado de todos los cierres previos (Caja Mayor)
+    b.EFECTIVO_CASA = Math.max(0, totalPhysicalCash - b.EFECTIVO_TIENDA);
+
     const total = Object.values(b).reduce((sum, v) => sum + v, 0);
-    return { balances: b, total };
+    return { balances: b, total, lastCierreTimestamp, openShiftCash };
   }, [allMovements]);
 
   // Procesar saldo arrastrado y filtrado por fecha
@@ -267,18 +298,28 @@ export default function CashFlow() {
       const d = toDateKey(m.payment_date || m.created_at);
       const isEntrada = m.type === 'ENTRADA';
       const amt = Number(m.amount) || 0;
+      const t = new Date(m.payment_date || m.created_at).getTime();
+      const isOpenShiftItem = treasuryBalances.lastCierreTimestamp > 0 && t > treasuryBalances.lastCierreTimestamp;
+
+      // Si el usuario quiere ver solo el flujo consolidado a Casa, omitir operaciones de tienda aún no cerradas
+      if (!includeOpenShift && isOpenShiftItem) {
+        return;
+      }
 
       if (d < startDate) {
         // Movimientos antes del corte suman al saldo arrastrado
         if (isEntrada) initialBalance += amt;
         else initialBalance -= amt;
       } else if (d <= effectiveEnd) {
-        inRange.push(m);
+        inRange.push({
+          ...m,
+          isOpenShiftItem
+        });
       }
     });
 
     return { initialBalance, inRange };
-  }, [allMovements, startDate, endDate]);
+  }, [allMovements, startDate, endDate, includeOpenShift, treasuryBalances.lastCierreTimestamp]);
 
   // Lista de todas las categorías disponibles para el filtro Excel
   const availableCategories = useMemo(() => {
@@ -666,9 +707,21 @@ export default function CashFlow() {
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] font-black uppercase text-slate-500 truncate leading-tight">
-                  {acc.label}
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase text-slate-500 truncate leading-tight">
+                    {acc.label}
+                  </p>
+                  {acc.id === 'EFECTIVO_TIENDA' && (
+                    <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded">
+                      Caja Menor
+                    </span>
+                  )}
+                  {acc.id === 'EFECTIVO_CASA' && (
+                    <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-amber-100 text-amber-800 rounded">
+                      Caja Mayor
+                    </span>
+                  )}
+                </div>
                 <p className={`text-base font-black font-mono tracking-tight mt-0.5 ${bal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
                   ${fmt(bal)}
                 </p>
@@ -827,6 +880,34 @@ export default function CashFlow() {
               Todo
             </button>
           </div>
+
+          {/* Toggle Modo: Solo Cierres Casa vs Con Turno Abierto Hoy */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setIncludeOpenShift(false)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                !includeOpenShift
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>🏠</span>
+              <span>Solo Cierres (Casa)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncludeOpenShift(true)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                includeOpenShift
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>🏪</span>
+              <span>Con Turno Hoy (+${fmt(treasuryBalances.openShiftCash)})</span>
+            </button>
+          </div>
         </div>
 
         {/* Fila 2: Filtros dinámicos (Buscador, Tipo y Categoría) */}
@@ -908,6 +989,30 @@ export default function CashFlow() {
         </div>
       </div>
 
+      {/* Alerta de Turno Abierto cuando se ve solo el saldo en casa */}
+      {!includeOpenShift && treasuryBalances.openShiftCash > 0 && (
+        <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-2xs mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🏪</span>
+            <div>
+              <span className="text-xs font-black text-amber-900 uppercase">
+                Turno de Hoy en Tienda (Caja Menor en curso): +${fmt(treasuryBalances.openShiftCash)}
+              </span>
+              <p className="text-[11px] font-medium text-amber-700">
+                Estas ventas están en la gaveta de la tienda y se pasarán a Casa cuando hagas el Cierre de Caja esta noche.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIncludeOpenShift(true)}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase transition-all shadow-xs cursor-pointer"
+          >
+            Ver con turno de hoy
+          </button>
+        </div>
+      )}
+
       {/* Tabla del Historial de Operaciones (Ancho Completo, Elegante y sin Columnas Escondidas) */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -971,6 +1076,11 @@ export default function CashFlow() {
                         {row.isInitial && (
                           <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
                             Base Arrastre
+                          </span>
+                        )}
+                        {row.isOpenShiftItem && (
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                            🟡 Turno en Curso (Hoy)
                           </span>
                         )}
                       </div>

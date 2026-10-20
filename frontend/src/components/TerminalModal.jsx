@@ -8,7 +8,7 @@ import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Package, DollarSign, Clock,
   Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
-  History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight
+  History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
 import TransferModal from './TransferModal';
@@ -203,6 +203,27 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   const isAdmin = user?.role === 'Admin';
   const [sellers, setSellers] = useState([]);
   const [vendedorId, setVendedorId] = useStickyState(user?.id || '', 'en_terminal_vendedor');
+  const [nextSaleNumber, setNextSaleNumber] = useState('...');
+
+  const loadNextSaleNumber = useCallback(() => {
+    fetch(`${API_URL}/sales/`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const maxId = Math.max(...data.map(s => Number(s.id) || 0));
+          if (maxId > 0) setNextSaleNumber(maxId + 1);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    loadNextSaleNumber();
+    window.addEventListener('refresh-sales', loadNextSaleNumber);
+    return () => window.removeEventListener('refresh-sales', loadNextSaleNumber);
+  }, [loadNextSaleNumber]);
 
   useEffect(() => {
     if (user?.id) {
@@ -569,9 +590,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       }
 
       const isSep = effectiveAmountPaid < totalVenta;
+      const saleNum = createdSale.id ? `#${createdSale.id}` : (nextSaleNumber ? `#${nextSaleNumber}` : '');
       const successText = isDelivery 
-        ? '¡Domicilio registrado con éxito!' 
-        : (!isAdmin ? '¡Pedido registrado por confirmar!' : (isSep ? '¡Separado registrado!' : '¡Venta finalizada!'));
+        ? `¡Domicilio ${saleNum} registrado con éxito!` 
+        : (!isAdmin ? `¡Pedido ${saleNum} registrado por confirmar!` : (isSep ? `¡Separado ${saleNum} registrado!` : `¡Venta ${saleNum} finalizada con éxito!`));
 
       setSuccessMsg(successText);
       setTimeout(() => setSuccessMsg(''), 3500);
@@ -787,6 +809,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
               </div>
             )}
           </div>
+          <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-[20px] font-mono font-black text-xs flex items-center gap-1.5 shrink-0 shadow-2xs" title="Número consecutivo de la venta actual para tu cuaderno">
+            <Receipt size={14} className="text-indigo-600" />
+            <span>Venta #{nextSaleNumber}</span>
+          </div>
         </div>
       </div>
 
@@ -975,41 +1001,50 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
           </div>
         )}
 
-        {/* BARRA PARA CRUZAR CON ANTICIPO PREVIO */}
-        <div className="mb-3 bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2 shrink-0">
-            <input 
-              type="checkbox" 
-              id="chk-use-anticipo"
-              checked={useAnticipo}
-              onChange={e => {
-                const checked = e.target.checked;
-                setUseAnticipo(checked);
-                if (!checked) {
-                  setSelectedAnticipoId('');
-                  setAnticipoAmount(0);
-                  setAmountPaid(totalVenta);
-                  setCobroEfectivoHoy(0);
-                }
-              }}
-              className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
-            />
-            <label htmlFor="chk-use-anticipo" className="text-[11px] font-black text-slate-700 uppercase cursor-pointer flex items-center gap-2">
-              <span>🔖 Cruzar con Anticipo Previo (Ya Pagado)</span>
+        {/* BARRA COLAPSABLE PARA CRUZAR CON ANTICIPO PREVIO */}
+        <div className="mb-2 bg-slate-50 border border-slate-200/80 rounded-2xl p-2 shadow-2xs transition-all">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !useAnticipo;
+              setUseAnticipo(next);
+              if (!next) {
+                setSelectedAnticipoId('');
+                setAnticipoAmount(0);
+                setAmountPaid(totalVenta);
+                setCobroEfectivoHoy(0);
+              }
+            }}
+            className="w-full flex items-center justify-between text-left cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black text-slate-700 uppercase flex items-center gap-1.5">
+                <span>🔖 ¿Deseas cruzar con un anticipo previo?</span>
+              </span>
               {anticiposList.length > 0 && (
                 <span className="bg-teal-600 text-white text-[9px] px-2 py-0.5 rounded-full font-bold">
-                  {anticiposList.length} pendiente{anticiposList.length > 1 ? 's' : ''}
+                  {anticiposList.length} disp.
                 </span>
               )}
-            </label>
-          </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-teal-700 uppercase">
+              {useAnticipo && anticipoAmount > 0 && (
+                <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-lg font-mono font-black mr-1">
+                  -${fmt(anticipoAmount)}
+                </span>
+              )}
+              <span className="flex items-center gap-0.5 text-slate-500 font-bold">
+                {useAnticipo ? <>Ocultar <ChevronUp size={13} /></> : <>Seleccionar <ChevronDown size={13} /></>}
+              </span>
+            </div>
+          </button>
 
           {useAnticipo && (
-            <div className="flex-1 flex items-center gap-2 w-full md:w-auto">
+            <div className="pt-2 mt-2 border-t border-slate-200/70 flex flex-col md:flex-row items-center gap-2 w-full animate-in fade-in duration-150">
               <select
                 value={selectedAnticipoId}
                 onChange={e => handleSelectAnticipo(e.target.value)}
-                className="flex-1 bg-white border border-teal-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-teal-500"
+                className="flex-1 bg-white border border-teal-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 w-full"
               >
                 <option value="">-- Seleccionar Anticipo Registrado --</option>
                 {anticiposList.map(a => (
@@ -1027,14 +1062,18 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
           )}
         </div>
 
-        {/* SELECTOR DE CUENTA / MÉTODO DE PAGO */}
-        <div className="mb-2.5 bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 flex flex-col gap-2 shadow-2xs">
+        {/* SELECTOR DE CUENTA / MÉTODO DE PAGO LIMPIO (SOLO CAJA TIENDA, NEQUI Y MIXTO) */}
+        <div className="mb-2 bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 flex flex-col gap-2 shadow-2xs">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
-              <span>💳 Cuenta / Método de Pago:</span>
+              <span>💳 Método de Pago:</span>
             </span>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {FINANCIAL_ACCOUNTS.map(acc => {
+              {[
+                { id: 'EFECTIVO_TIENDA', label: 'Efectivo', icon: '💵' },
+                { id: 'NEQUI_CRISTIAN', label: 'Nequi Cristian', icon: '📱' },
+                { id: 'NEQUI_DAVID', label: 'Nequi David', icon: '📱' }
+              ].map(acc => {
                 const isSelected = !isSplitPayment && paymentAccount === acc.id;
                 return (
                   <button
@@ -1044,7 +1083,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
                       setIsSplitPayment(false);
                       setPaymentAccount(acc.id);
                     }}
-                    className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1 ${
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1.5 ${
                       isSelected
                         ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-900/10'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
@@ -1058,14 +1097,14 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
               <button
                 type="button"
                 onClick={() => setIsSplitPayment(!isSplitPayment)}
-                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1 ${
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer border flex items-center gap-1.5 ${
                   isSplitPayment
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-300'
                     : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
                 }`}
               >
                 <span>🔀</span>
-                <span>Pago Dividido / Mixto</span>
+                <span>Pago Mixto</span>
               </button>
             </div>
           </div>
@@ -1073,8 +1112,13 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
           {/* Panel Desplegable para Pago Dividido */}
           {isSplitPayment && (
             <div className="pt-2 border-t border-slate-200/60 animate-in fade-in duration-150">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
-                {FINANCIAL_ACCOUNTS.map(acc => (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                {[
+                  { id: 'EFECTIVO_TIENDA', label: 'Efectivo Tienda', icon: '💵' },
+                  { id: 'NEQUI_CRISTIAN', label: 'Nequi Cristian', icon: '📱' },
+                  { id: 'NEQUI_DAVID', label: 'Nequi David', icon: '📱' },
+                  { id: 'BANCOLOMBIA', label: 'Bancolombia', icon: '🏦' }
+                ].map(acc => (
                   <div key={acc.id} className="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs">
                     <span className="text-[9px] font-black uppercase text-slate-500 block truncate mb-1">
                       {acc.icon} {acc.label}
