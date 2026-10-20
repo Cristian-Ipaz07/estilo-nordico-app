@@ -315,17 +315,6 @@ const AppContent = () => {
     if (!user) return <Login />;
     const isAdmin = user?.role === 'Admin';
 
-  // Pre-warmer & Keep-Alive para Render Cloud:
-  // Despierta el backend al instante y realiza un ping liviano cada 4 minutos
-  useEffect(() => {
-    const pingCloud = () => {
-      fetch(`${API_URL}/products/sync-version`).catch(() => {});
-    };
-    pingCloud();
-    const timer = setInterval(pingCloud, 4 * 60 * 1000);
-    return () => clearInterval(timer);
-  }, []);
-
     return (
         <Layout>
             <Routes>

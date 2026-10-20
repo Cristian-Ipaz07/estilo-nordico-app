@@ -19,20 +19,22 @@ export default function EditVariantModal({
   onSuccess
 }) {
   useBodyScrollLock(isOpen);
-  if (!isOpen || !variant || !baseProduct) return null;
 
-  const [brand, setBrand] = useState(variant.brand || '');
+  const [brand, setBrand] = useState(variant?.brand || '');
   const [detail, setDetail] = useState(
-    variant.description && variant.description !== baseProduct.description ? variant.description : ''
+    variant?.description && baseProduct && variant.description !== baseProduct.description ? variant.description : ''
   );
-  const [color, setColor] = useState(variant.color || '');
-  const [size, setSize] = useState(variant.size || '');
-  const [sku, setSku] = useState(variant.ref || '');
+  const [color, setColor] = useState(variant?.color || '');
+  const [size, setSize] = useState(variant?.size || '');
+  const [sku, setSku] = useState(variant?.ref || '');
   const [autoSyncSku, setAutoSyncSku] = useState(true);
-  const [stock, setStock] = useState(variant.stock ?? 0);
-  const [priceSale, setPriceSale] = useState(variant.price_sale ?? 0);
+  const [stock, setStock] = useState(variant?.stock ?? 0);
+  const [priceSale, setPriceSale] = useState(variant?.price_sale ?? 0);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Hook orden seguro: el guard va después de declarar todos los hooks
+  if (!isOpen || !variant || !baseProduct) return null;
 
   // Sincronizar SKU automáticamente cuando cambie Marca, Detalle, Color o Talla si autoSyncSku está activo
   useEffect(() => {
