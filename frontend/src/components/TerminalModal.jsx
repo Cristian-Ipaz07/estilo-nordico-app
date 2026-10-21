@@ -315,12 +315,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
     }
   }, [initialDeliveryMode]);
 
-  useEffect(() => {
-    // Si la modalidad es contraentrega y no hay anticipo, asegurar que abono recibido no tome el total de la venta por defecto
-    if (isDelivery && !useAnticipo && amountPaid === totalVenta && totalVenta > 0) {
-      setAmountPaid(0);
-    }
-  }, [isDelivery, totalVenta]);
+
   const [deliveryAddress, setDeliveryAddress] = useStickyState('', 'en_terminal_delivery_address');
   const [deliveryPhone, setDeliveryPhone] = useStickyState('', 'en_terminal_delivery_phone');
   const [deliveryNotes, setDeliveryNotes] = useStickyState('', 'en_terminal_delivery_notes');
@@ -509,14 +504,26 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
   const hasStockError = cart.some(i => i.qty < 1 || i.stock <= 0 || i.qty > i.stock);
 
   useEffect(() => {
-    if (!useAnticipo) {
-      setAmountPaid(totalVenta);
-      setCobroEfectivoHoy(0);
+    if (isDelivery) {
+      // En domicilio contraentrega, el cobro inicial por defecto es 0 a menos que cruce con anticipo
+      if (useAnticipo && anticipoAmount > 0) {
+        const resto = Math.max(0, totalVenta - anticipoAmount);
+        setCobroEfectivoHoy(resto);
+      } else {
+        setAmountPaid(0);
+        setCobroEfectivoHoy(0);
+      }
     } else {
-      const resto = Math.max(0, totalVenta - (anticipoAmount || 0));
-      setCobroEfectivoHoy(resto);
+      // Venta local directa
+      if (!useAnticipo) {
+        setAmountPaid(totalVenta);
+        setCobroEfectivoHoy(0);
+      } else {
+        const resto = Math.max(0, totalVenta - (anticipoAmount || 0));
+        setCobroEfectivoHoy(resto);
+      }
     }
-  }, [totalVenta, useAnticipo, anticipoAmount]);
+  }, [totalVenta, useAnticipo, anticipoAmount, isDelivery]);
 
   const handleSelectAnticipo = (id) => {
     setSelectedAnticipoId(id);
