@@ -73,6 +73,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const Layout = ({ children }) => {
   const [selectedBranch, setSelectedBranch] = useState("Sede Principal (Pasto)");
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isTerminalDeliveryMode, setIsTerminalDeliveryMode] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [pendingDeliveriesCount, setPendingDeliveriesCount] = useState(0);
 
@@ -260,7 +261,7 @@ const Layout = ({ children }) => {
             </button>
 
             {/* Buscador Rápido Ctrl + K */}
-            <div className="relative cursor-pointer hidden sm:block" onClick={() => setIsTerminalOpen(true)}>
+            <div className="relative cursor-pointer hidden sm:block" onClick={() => { setIsTerminalDeliveryMode(false); setIsTerminalOpen(true); }}>
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text" 
@@ -335,7 +336,7 @@ const Layout = ({ children }) => {
 
       {/* Modal del Terminal POS */}
       {isTerminalOpen && (
-        <TerminalModal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
+        <TerminalModal isOpen={isTerminalOpen} onClose={() => { setIsTerminalOpen(false); setIsTerminalDeliveryMode(false); }} initialDeliveryMode={isTerminalDeliveryMode} />
       )}
 
       {/* Drawer de Notificaciones de Domicilios y Pedidos */}
@@ -344,6 +345,7 @@ const Layout = ({ children }) => {
         onClose={() => setIsNotificationsOpen(false)}
         onOpenTerminal={() => {
           setIsNotificationsOpen(false);
+          setIsTerminalDeliveryMode(true);
           setIsTerminalOpen(true);
         }}
       />

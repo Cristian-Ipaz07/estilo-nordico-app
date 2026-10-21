@@ -67,6 +67,14 @@ const getTodayCO = () => {
   return co.toISOString().split('T')[0];
 };
 
+// Helper para fecha de mañana en Colombia (YYYY-MM-DD)
+const getTomorrowCO = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const co = new Date(d.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+  return co.toISOString().split('T')[0];
+};
+
 // Formatting date and time (AM/PM)
 const fmtDateTime = (iso) => {
   if (!iso) return '—';
@@ -191,7 +199,7 @@ function useInventory(isOpen) {
 }
 
 // ─── MÓDULO VENTAS ────────────────────────────────────────────────────────────
-function ModuloVentas({ inventory, reloadInventory, refreshing }) {
+function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryMode = false }) {
   const [search, setSearch] = useState('');
   const [filteredResults, setFilteredResults] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -299,6 +307,20 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
   }, [loadAnticipos]);
   const [saleDate, setSaleDate] = useStickyState(getTodayCO(), 'en_terminal_sale_date');
   const [isDelivery, setIsDelivery] = useStickyState(false, 'en_terminal_is_delivery');
+
+  useEffect(() => {
+    if (initialDeliveryMode) {
+      setIsDelivery(true);
+      setAmountPaid(0);
+    }
+  }, [initialDeliveryMode]);
+
+  useEffect(() => {
+    // Si la modalidad es contraentrega y no hay anticipo, asegurar que abono recibido no tome el total de la venta por defecto
+    if (isDelivery && !useAnticipo && amountPaid === totalVenta && totalVenta > 0) {
+      setAmountPaid(0);
+    }
+  }, [isDelivery, totalVenta]);
   const [deliveryAddress, setDeliveryAddress] = useStickyState('', 'en_terminal_delivery_address');
   const [deliveryPhone, setDeliveryPhone] = useStickyState('', 'en_terminal_delivery_phone');
   const [deliveryNotes, setDeliveryNotes] = useStickyState('', 'en_terminal_delivery_notes');
@@ -2975,7 +2997,7 @@ function ModuloCaja() {
 }
 
 // ─── TERMINAL MODAL PRINCIPAL ─────────────────────────────────────────────────
-export default function TerminalModal({ isOpen, onClose }) {
+export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = false }) {
   useBodyScrollLock(isOpen);
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
@@ -3020,7 +3042,7 @@ export default function TerminalModal({ isOpen, onClose }) {
 
         {/* CONTENIDO MÓDULO */}
         <div className="flex-[4] flex flex-col bg-white overflow-hidden">
-          {effectiveTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} />}
+          {effectiveTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} initialDeliveryMode={initialDeliveryMode} />}
           {effectiveTab === 'separados' && <ModuloSeparados />}
           {isAdmin && effectiveTab === 'stock' && <ModuloStock inventory={inventory} reloadInventory={reloadInventory} />}
           {isAdmin && effectiveTab === 'caja' && <ModuloCaja />}
