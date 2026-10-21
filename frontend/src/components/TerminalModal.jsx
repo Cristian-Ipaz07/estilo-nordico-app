@@ -2155,7 +2155,7 @@ function ModuloCaja() {
   const [tempBase, setTempBase] = useState(baseCaja);
   const [expandedShiftSaleId, setExpandedShiftSaleId] = useState(null);
 
-  // Modal correcci??n de cuenta / m??todo de pago
+  // Modal corrección de cuenta / método de pago
   const [accountModalTarget, setAccountModalTarget] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState('EFECTIVO_TIENDA');
   const [isSavingAccount, setIsSavingAccount] = useState(false);
@@ -2230,7 +2230,7 @@ function ModuloCaja() {
         }
       }
 
-      setMsg('??M??todo de pago / cuenta actualizado con ??xito!');
+      setMsg('¡Método de pago / cuenta actualizado con éxito!');
       setAccountModalTarget(null);
       loadData();
       window.dispatchEvent(new CustomEvent('refresh-sales'));
@@ -2413,6 +2413,25 @@ function ModuloCaja() {
         const dStr = (f.date || '').split('T')[0];
         if (dStr < '2026-10-06') return false;
         if (lastActiveClosure && new Date(f.date) <= new Date(lastActiveClosure.date)) return false;
+
+        // Filtrar movimientos pertenecientes a CASA (Caja Mayor / Nómina de cortes / Reinversiones)
+        const fAcc = f.account || '';
+        const fDesc = (f.desc || '').toUpperCase();
+        const fCat = (f.cat || '').toUpperCase();
+        if (
+          fAcc === 'EFECTIVO_CASA' || 
+          fAcc === 'NEQUI_CASA' || 
+          fDesc.includes('(NEQUI EN CASA)') ||
+          fDesc.includes('NEQUI CASA') ||
+          fDesc.includes('(EFECTIVO EN CASA)') ||
+          fDesc.includes('(CAJA MAYOR)') ||
+          fDesc.includes('CORTE ANTERIOR') ||
+          fCat === 'SALARIO' || 
+          fCat === 'REINVERSION'
+        ) {
+          return false;
+        }
+
         return true;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2465,6 +2484,14 @@ function ModuloCaja() {
     const totalDigital = Object.values(byAccount).reduce((s, v) => s + v, 0);
     return { byAccount, totalDigital, count: digitals.length };
   }, [activeShiftFlow]);
+
+  // Saldo disponible en el turno activo según la cuenta seleccionada
+  const getShiftAccountBalance = (acc) => {
+    if (acc === 'EFECTIVO_TIENDA') return totalEnCajon;
+    if (acc === 'NEQUI_CRISTIAN') return digitalShiftSummary.byAccount?.NEQUI_CRISTIAN || 0;
+    if (acc === 'NEQUI_DAVID') return digitalShiftSummary.byAccount?.NEQUI_DAVID || 0;
+    return 0;
+  };
 
   // Abrir modal de cierre
   const handleOpenCierreModal = () => {
@@ -2545,6 +2572,16 @@ function ModuloCaja() {
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!desc || !amount) return;
+
+    if (type === 'SALIDA') {
+      const avail = getShiftAccountBalance(manualAccount);
+      if (Number(amount) > avail) {
+        const accInfo = getAccountInfo(manualAccount);
+        alert(`Fondos insuficientes en el turno actual: La cuenta "${accInfo.fullLabel}" solo dispone de $${fmt(avail)}. No es posible realizar un gasto por $${fmt(Number(amount))}.`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
@@ -2864,7 +2901,7 @@ function ModuloCaja() {
                           <button
                             type="button"
                             onClick={() => handleOpenChangeAccountModal(f)}
-                            title="Clic para corregir cuenta o m??todo de cobro"
+                            title="Clic para corregir cuenta o método de cobro"
                             className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ml-1 hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer ${getAccountInfo(f.account).badgeClass}`}
                           >
                             <span>{getAccountInfo(f.account).icon} {getAccountInfo(f.account).label}</span>
@@ -2881,7 +2918,7 @@ function ModuloCaja() {
                     <button
                       type="button"
                       onClick={() => handleOpenChangeAccountModal(f)}
-                      title="Cambiar m??todo o cuenta de este movimiento"
+                      title="Cambiar método o cuenta de este movimiento"
                       className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                     >
                       <Edit3 size={13} />
@@ -3038,13 +3075,36 @@ function ModuloCaja() {
                   onChange={e => setManualAccount(e.target.value)}
                   className="w-full border-2 border-slate-100 rounded-xl px-2.5 py-2 font-bold text-[11px] outline-none bg-white cursor-pointer"
                 >
-                  {FINANCIAL_ACCOUNTS.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.icon} {a.fullLabel}
-                    </option>
-                  ))}
+                  <optgroup label="🏪 Fondos del Turno de Hoy (Caja Local)">
+                    {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'TIENDA').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.icon} {a.fullLabel} (Turno: ${fmt(getShiftAccountBalance(a.id))})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🏠 Cuentas de Casa (Caja Mayor)">
+                    {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'CASA').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.icon} {a.fullLabel}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                <div className="flex items-center justify-between text-[10px] px-1 mt-1">
+                  <span className="font-bold text-slate-400 uppercase text-[9px]">Saldo disponible en turno:</span>
+                  <span className={`font-mono font-black ${getShiftAccountBalance(manualAccount) <= 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                    ${fmt(getShiftAccountBalance(manualAccount))}
+                  </span>
+                </div>
               </div>
+
+              {/* Alerta de fondos insuficientes en turno */}
+              {type === 'SALIDA' && Number(amount) > getShiftAccountBalance(manualAccount) && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-bold">
+                  <AlertCircle size={14} className="shrink-0 text-rose-600" />
+                  <span>Fondos insuficientes en turno: Disponible: ${fmt(getShiftAccountBalance(manualAccount))}.</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
@@ -3107,8 +3167,8 @@ function ModuloCaja() {
           <div className="pt-2">
             <button 
               type="submit" 
-              disabled={isSubmitting || !desc || !amount}
-              className="w-full bg-indigo-600 text-white rounded-xl py-3 font-black uppercase text-xs hover:bg-indigo-700 shadow-md disabled:opacity-30 transition-all cursor-pointer"
+              disabled={isSubmitting || !desc || !amount || (type === 'SALIDA' && (Number(amount) > getShiftAccountBalance(manualAccount) || getShiftAccountBalance(manualAccount) <= 0))}
+              className="w-full bg-indigo-600 text-white rounded-xl py-3 font-black uppercase text-xs hover:bg-indigo-700 shadow-md disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
             >
               {isSubmitting ? 'Registrando...' : 'Agregar Al Flujo'}
             </button>
@@ -3124,18 +3184,26 @@ function ModuloCaja() {
         defaultDest="NEQUI_CRISTIAN"
         context="terminal"
         onTransferSuccess={loadData}
+        balances={{
+          EFECTIVO_TIENDA: totalEnCajon,
+          NEQUI_CRISTIAN: digitalShiftSummary.byAccount?.NEQUI_CRISTIAN || 0,
+          NEQUI_DAVID: digitalShiftSummary.byAccount?.NEQUI_DAVID || 0,
+          EFECTIVO_CASA: 0,
+          NEQUI_CASA: 0,
+          BANCOLOMBIA: 0
+        }}
       />
 
-      {/* MODAL DE EDICI??N R??PIDA DE CUENTA / M??TODO DE PAGO */}
+      {/* MODAL DE EDICIÓN RÁPIDA DE CUENTA / MÉTODO DE PAGO */}
       {accountModalTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-100 flex flex-col gap-4">
             <div className="flex justify-between items-start">
               <div>
                 <span className="text-[10px] font-black tracking-widest uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  Correcci??n de Cuenta
+                  Corrección de Cuenta
                 </span>
-                <h3 className="text-base font-black text-slate-800 mt-1">Cambiar M??todo de Cobro</h3>
+                <h3 className="text-base font-black text-slate-800 mt-1">Cambiar Método de Cobro</h3>
               </div>
               <button
                 type="button"
@@ -3155,7 +3223,7 @@ function ModuloCaja() {
 
             <div>
               <label className="text-[10px] font-black uppercase text-slate-400 block mb-1.5">
-                ??En qu?? cuenta ingres?? o sali?? este dinero?
+                ¿En qué cuenta ingresó o salió este dinero?
               </label>
               <div className="space-y-1.5">
                 {FINANCIAL_ACCOUNTS.map(acc => {

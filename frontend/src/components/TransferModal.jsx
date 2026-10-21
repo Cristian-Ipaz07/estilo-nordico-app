@@ -4,7 +4,17 @@ import { FINANCIAL_ACCOUNTS, getAccountInfo } from '../utils/accounts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTIVO_TIENDA', defaultDest = 'NEQUI_CRISTIAN', context = 'general', onTransferSuccess }) {
+const fmt = (n) => Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
+
+export default function TransferModal({ 
+  isOpen, 
+  onClose, 
+  defaultSource = 'EFECTIVO_TIENDA', 
+  defaultDest = 'NEQUI_CRISTIAN', 
+  context = 'general', 
+  onTransferSuccess,
+  balances = {}
+}) {
   const [sourceAccount, setSourceAccount] = useState(defaultSource);
   const [destAccount, setDestAccount] = useState(defaultDest);
   const [amount, setAmount] = useState('');
@@ -18,6 +28,12 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
+
+  const srcInfo = getAccountInfo(sourceAccount);
+  const dstInfo = getAccountInfo(destAccount);
+
+  const srcBalance = (balances && balances[sourceAccount] !== undefined) ? Number(balances[sourceAccount]) : null;
+  const isInsufficient = srcBalance !== null && (Number(amount) > srcBalance || srcBalance <= 0);
 
   const handleSourceChange = (e) => {
     const src = e.target.value;
@@ -44,6 +60,11 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
     }
     if (sourceAccount === destAccount) {
       setErrorMsg('La cuenta de origen y destino deben ser diferentes');
+      return;
+    }
+
+    if (srcBalance !== null && amt > srcBalance) {
+      setErrorMsg(`Fondos insuficientes: La cuenta "${srcInfo.fullLabel}" solo dispone de $${fmt(srcBalance)}. No puedes transferir $${fmt(amt)}.`);
       return;
     }
 
@@ -79,9 +100,6 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
       setIsSubmitting(false);
     }
   };
-
-  const srcInfo = getAccountInfo(sourceAccount);
-  const dstInfo = getAccountInfo(destAccount);
 
   return (
     <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -152,12 +170,29 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
                   onChange={handleSourceChange}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
                 >
-                  {FINANCIAL_ACCOUNTS.map(acc => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.icon} {acc.fullLabel}
-                    </option>
-                  ))}
+                  <optgroup label="🏠 Fondos de Casa (Caja Mayor)">
+                    {FINANCIAL_ACCOUNTS.filter(acc => acc.scope === 'CASA').map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.icon} {acc.fullLabel}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🏪 Fondos de Tienda (Turno Mostrador)">
+                    {FINANCIAL_ACCOUNTS.filter(acc => acc.scope === 'TIENDA').map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.icon} {acc.fullLabel}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                {srcBalance !== null && (
+                  <div className="flex items-center justify-between text-[11px] mt-1.5 px-1">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Saldo disponible:</span>
+                    <span className={`font-mono font-black ${srcBalance <= 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                      ${fmt(srcBalance)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Destino */}
@@ -170,12 +205,29 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
                   onChange={e => setDestAccount(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
                 >
-                  {FINANCIAL_ACCOUNTS.filter(acc => acc.id !== sourceAccount).map(acc => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.icon} {acc.fullLabel}
-                    </option>
-                  ))}
+                  <optgroup label="🏠 Fondos de Casa (Caja Mayor)">
+                    {FINANCIAL_ACCOUNTS.filter(acc => acc.scope === 'CASA' && acc.id !== sourceAccount).map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.icon} {acc.fullLabel}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🏪 Fondos de Tienda (Turno Mostrador)">
+                    {FINANCIAL_ACCOUNTS.filter(acc => acc.scope === 'TIENDA' && acc.id !== sourceAccount).map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.icon} {acc.fullLabel}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                {balances && balances[destAccount] !== undefined && (
+                  <div className="flex items-center justify-between text-[11px] mt-1.5 px-1">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Saldo actual:</span>
+                    <span className="font-mono font-black text-slate-600">
+                      ${fmt(balances[destAccount])}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -211,7 +263,7 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  🔒 Retirar a Nequi
+                  🔒 Retirar a Nequi Tienda
                 </button>
                 <button
                   type="button"
@@ -252,7 +304,9 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
             <label className="text-[10px] font-black uppercase text-slate-500 mb-1 block">
               Monto a Trasladar ($)
             </label>
-            <div className="flex items-center border-2 border-slate-200 rounded-2xl px-4 py-2.5 bg-slate-50 focus-within:border-indigo-500 focus-within:bg-white transition-colors">
+            <div className={`flex items-center border-2 rounded-2xl px-4 py-2.5 bg-slate-50 focus-within:bg-white transition-colors ${
+              isInsufficient ? 'border-rose-300 focus-within:border-rose-500' : 'border-slate-200 focus-within:border-indigo-500'
+            }`}>
               <span className="font-black text-slate-400 mr-2 text-lg">$</span>
               <input
                 type="number"
@@ -263,6 +317,17 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
                 className="w-full bg-transparent outline-none font-black text-xl text-slate-900"
               />
             </div>
+
+            {/* Alerta de fondos insuficientes */}
+            {isInsufficient && Number(amount) > 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2 text-rose-700 text-xs font-bold mt-2">
+                <AlertCircle size={16} className="shrink-0 text-rose-600 mt-0.5" />
+                <span>
+                  Fondos insuficientes: La cuenta origen <strong>{srcInfo.fullLabel}</strong> solo dispone de <strong>${fmt(srcBalance)}</strong>. No es posible realizar un traslado por <strong>${fmt(Number(amount))}</strong>.
+                </span>
+              </div>
+            )}
+
             {/* Botones rápidos */}
             <div className="flex gap-1.5 mt-2 flex-wrap">
               {[50000, 100000, 200000, 500000].map(val => (
@@ -329,8 +394,8 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTI
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !amount || Number(amount) <= 0}
-              className="flex-1 py-3 px-4 bg-slate-900 hover:bg-black text-white rounded-2xl font-black text-xs uppercase transition-all shadow-md disabled:opacity-30 cursor-pointer flex items-center justify-center gap-2"
+              disabled={isSubmitting || !amount || Number(amount) <= 0 || isInsufficient}
+              className="flex-1 py-3 px-4 bg-slate-900 hover:bg-black text-white rounded-2xl font-black text-xs uppercase transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
             >
               {isSubmitting ? 'Registrando...' : 'Confirmar Traslado'}
             </button>

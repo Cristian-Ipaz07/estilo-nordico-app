@@ -255,6 +255,7 @@ export default function CashFlow() {
       NEQUI_CRISTIAN: 0,
       NEQUI_DAVID: 0,
       EFECTIVO_CASA: 0,
+      NEQUI_CASA: 0,
       BANCOLOMBIA: 0
     };
 
@@ -276,11 +277,25 @@ export default function CashFlow() {
       const t = new Date(m.payment_date || m.created_at).getTime();
       const isOpenShift = lastCierreTimestamp > 0 && t > lastCierreTimestamp;
 
+      // Determinamos si el movimiento pertenece explícitamente a CASA (Caja Mayor / Consolidado)
+      const mDesc = (m.description || '').toUpperCase();
+      const mCat = (m.category || '').toUpperCase();
+      const isExplicitCasa = acc === 'EFECTIVO_CASA' || 
+                             acc === 'NEQUI_CASA' || 
+                             mDesc.includes('(NEQUI EN CASA)') ||
+                             mDesc.includes('NEQUI CASA') ||
+                             mDesc.includes('(EFECTIVO EN CASA)') ||
+                             mDesc.includes('(CAJA MAYOR)') ||
+                             mDesc.includes('CORTE ANTERIOR') ||
+                             mCat === 'SALARIO' ||
+                             mCat === 'REINVERSION';
+
       // Cuentas virtuales / bancarias
-      if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA') {
-        b[acc] += signedAmt;
+      if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA' || acc === 'NEQUI_CASA') {
+        b[acc] = (b[acc] || 0) + signedAmt;
         totalDigital += signedAmt;
-        if (isOpenShift) {
+        // Solo afecta al turno de la tienda si ocurrió dentro del turno abierto Y NO es de Casa
+        if (isOpenShift && !isExplicitCasa) {
           openShiftDigitalTotal += signedAmt;
           if (openShiftDigitalByAccount[acc] !== undefined) {
             openShiftDigitalByAccount[acc] += signedAmt;
@@ -289,7 +304,7 @@ export default function CashFlow() {
       } else {
         // Efectivo Físico
         totalPhysicalCash += signedAmt;
-        if (isOpenShift && (acc === 'EFECTIVO_TIENDA' || !acc)) {
+        if (isOpenShift && (acc === 'EFECTIVO_TIENDA' || !acc) && !isExplicitCasa) {
           openShiftPhysicalCash += signedAmt;
         }
       }
@@ -310,6 +325,7 @@ export default function CashFlow() {
     const casaFisico = Math.max(0, totalPhysicalCash - tiendaFisico);
     const casaDigital = Math.max(0, totalDigital - tiendaDigital);
     const casaTotal = casaFisico + casaDigital;
+    b.NEQUI_CASA = casaDigital;
 
     // 3. Patrimonio Total Disponible (Físico + Digital)
     const totalPatrimonio = totalPhysicalCash + totalDigital;
@@ -333,6 +349,17 @@ export default function CashFlow() {
       }
     };
   }, [allMovements]);
+
+  // Consulta de saldo disponible por cuenta para validación estricta de fondos
+  const getAccountAvailableBalance = (account) => {
+    if (account === 'EFECTIVO_CASA') return treasuryBalances.casa.fisico;
+    if (account === 'NEQUI_CASA') return treasuryBalances.casa.digital;
+    if (account === 'EFECTIVO_TIENDA') return treasuryBalances.tienda.fisico;
+    if (account === 'NEQUI_CRISTIAN') return treasuryBalances.tienda.digitalByAccount?.NEQUI_CRISTIAN || 0;
+    if (account === 'NEQUI_DAVID') return treasuryBalances.tienda.digitalByAccount?.NEQUI_DAVID || 0;
+    if (account === 'BANCOLOMBIA') return treasuryBalances.balances?.BANCOLOMBIA || 0;
+    return 0;
+  };
 
   // Procesar saldo arrastrado y filtrado por fecha
   const processedByDate = useMemo(() => {
@@ -489,6 +516,15 @@ export default function CashFlow() {
     if (!newMovement.description.trim()) {
       alert('Ingresa una descripción para el movimiento');
       return;
+    }
+
+    if (newMovement.type === 'SALIDA') {
+      const avail = getAccountAvailableBalance(newMovement.account);
+      if (amt > avail) {
+        const accInfo = getAccountInfo(newMovement.account);
+        alert(`Fondos insuficientes: La cuenta "${accInfo.fullLabel}" solo dispone de $${fmt(avail)}. No es posible registrar una salida por $${fmt(amt)}.`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -1644,13 +1680,39 @@ export default function CashFlow() {
                   }}
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
                 >
-                  {FINANCIAL_ACCOUNTS.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.icon} {a.fullLabel}
-                    </option>
-                  ))}
+                  <optgroup label="🏠 Fondos de Casa (Caja Mayor)">
+                    {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'CASA').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.icon} {a.fullLabel} (Disponible: ${fmt(getAccountAvailableBalance(a.id))})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🏪 Fondos de Tienda (Turno Mostrador)">
+                    {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'TIENDA').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.icon} {a.fullLabel} (Disponible: ${fmt(getAccountAvailableBalance(a.id))})
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                <div className="flex items-center justify-between text-xs px-1 mt-1.5">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Saldo Disponible en esta cuenta:</span>
+                  <span className={`font-mono font-black ${getAccountAvailableBalance(newMovement.account) <= 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                    ${fmt(getAccountAvailableBalance(newMovement.account))}
+                  </span>
+                </div>
               </div>
+
+              {/* Alerta de Fondos Insuficientes */}
+              {newMovement.type === 'SALIDA' && Number(newMovement.amount) > getAccountAvailableBalance(newMovement.account) && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-rose-800">
+                  <AlertCircle size={16} className="text-rose-600 mt-0.5 shrink-0" />
+                  <div className="text-xs">
+                    <strong className="block font-black uppercase">Fondos Insuficientes</strong>
+                    <span>La cuenta seleccionada solo cuenta con <strong>${fmt(getAccountAvailableBalance(newMovement.account))}</strong>. No es posible realizar una salida por <strong>${fmt(Number(newMovement.amount) || 0)}</strong>.</span>
+                  </div>
+                </div>
+              )}
 
               {/* Descripción */}
               <div>
@@ -1671,8 +1733,8 @@ export default function CashFlow() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  disabled={submitting || (newMovement.type === 'SALIDA' && (Number(newMovement.amount) > getAccountAvailableBalance(newMovement.account) || getAccountAvailableBalance(newMovement.account) <= 0))}
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
                   <span>Guardar Movimiento Contable</span>
@@ -1796,6 +1858,14 @@ export default function CashFlow() {
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
         onTransferSuccess={loadData}
+        balances={{
+          EFECTIVO_CASA: treasuryBalances.casa.fisico,
+          NEQUI_CASA: treasuryBalances.casa.digital,
+          EFECTIVO_TIENDA: treasuryBalances.tienda.fisico,
+          NEQUI_CRISTIAN: treasuryBalances.tienda.digitalByAccount?.NEQUI_CRISTIAN || 0,
+          NEQUI_DAVID: treasuryBalances.tienda.digitalByAccount?.NEQUI_DAVID || 0,
+          BANCOLOMBIA: treasuryBalances.balances?.BANCOLOMBIA || 0
+        }}
       />
 
     </div>

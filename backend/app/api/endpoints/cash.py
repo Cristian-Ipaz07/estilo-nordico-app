@@ -133,10 +133,11 @@ def update_movement(movement_id: int, movement: CashMovementUpdate, db: Session 
 
 ACCOUNT_LABELS = {
     "EFECTIVO_TIENDA": "Efectivo Tienda (Gaveta)",
-    "NEQUI_CRISTIAN": "Nequi Cristian",
-    "NEQUI_DAVID": "Nequi David",
+    "NEQUI_CRISTIAN": "Nequi Cristian (Turno Tienda)",
+    "NEQUI_DAVID": "Nequi David (Turno Tienda)",
     "EFECTIVO_CASA": "Efectivo en Casa (Caja Mayor)",
-    "BANCOLOMBIA": "Bancolombia / Cuenta",
+    "NEQUI_CASA": "Nequi en Casa (Caja Mayor / Consolidado)",
+    "BANCOLOMBIA": "Bancolombia / Cuenta (Casa)",
 }
 
 class CashTransferCreate(BaseModel):

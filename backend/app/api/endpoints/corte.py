@@ -135,7 +135,8 @@ def pagar_nomina(record_id: int, db: Session = Depends(get_db)):
         description=f"SALARIO {nombre.upper()} — {rec.periodo_start} al {rec.periodo_end}",
         amount=rec.total_salario,
         type="SALIDA",
-        category="SALARIO"
+        category="SALARIO",
+        account="EFECTIVO_CASA"
     )
     db.add(mov)
     db.flush()
