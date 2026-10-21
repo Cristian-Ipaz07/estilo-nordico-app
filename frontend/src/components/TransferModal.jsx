@@ -4,7 +4,7 @@ import { FINANCIAL_ACCOUNTS, getAccountInfo } from '../utils/accounts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-export default function TransferModal({ isOpen, onClose, defaultSource = 'NEQUI_CRISTIAN', defaultDest = 'EFECTIVO_TIENDA', onTransferSuccess }) {
+export default function TransferModal({ isOpen, onClose, defaultSource = 'EFECTIVO_TIENDA', defaultDest = 'NEQUI_CRISTIAN', context = 'general', onTransferSuccess }) {
   const [sourceAccount, setSourceAccount] = useState(defaultSource);
   const [destAccount, setDestAccount] = useState(defaultDest);
   const [amount, setAmount] = useState('');
@@ -87,15 +87,25 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'NEQUI_
     <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-[32px] p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
         
-        {/* Header */}
+        {/* Header con Contexto de Caja Local */}
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+              context === 'terminal' 
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' 
+                : 'bg-indigo-50 border border-indigo-100 text-indigo-600'
+            }`}>
               <ArrowLeftRight size={20} />
             </div>
             <div>
-              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Tesorería & Liquidez</span>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Traslado entre Cuentas</h3>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${
+                context === 'terminal' ? 'text-emerald-700' : 'text-indigo-600'
+              }`}>
+                {context === 'terminal' ? 'Caja del Local (Tienda Mostrador)' : 'Tesorería & Liquidez'}
+              </span>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                {context === 'terminal' ? 'Traslado / Retiro desde Tienda' : 'Traslado entre Cuentas'}
+              </h3>
             </div>
           </div>
           <button 
@@ -105,6 +115,19 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'NEQUI_
             <X size={18} />
           </button>
         </div>
+
+        {/* Badge Aclaratorio si estamos en el Terminal POS */}
+        {context === 'terminal' && (
+          <div className="px-3.5 py-2 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl flex items-center justify-between text-xs font-bold text-emerald-900 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏪</span>
+              <span>Operando desde la Caja Física del Local (Mostrador)</span>
+            </div>
+            <span className="text-[10px] font-black uppercase bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-md">
+              Tienda
+            </span>
+          </div>
+        )}
 
         {errorMsg && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs font-bold">
@@ -167,6 +190,62 @@ export default function TransferModal({ isOpen, onClose, defaultSource = 'NEQUI_
               </span>
             </div>
           </div>
+
+          {/* Botones rápidos de preset para la caja del local */}
+          {context === 'terminal' && (
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">
+                Operaciones comunes desde Tienda:
+              </span>
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceAccount('EFECTIVO_TIENDA');
+                    setDestAccount('NEQUI_CRISTIAN');
+                    setDescription('RETIRO CAJA TIENDA A NEQUI');
+                  }}
+                  className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                    sourceAccount === 'EFECTIVO_TIENDA' && destAccount === 'NEQUI_CRISTIAN'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  🔒 Retirar a Nequi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceAccount('EFECTIVO_TIENDA');
+                    setDestAccount('EFECTIVO_CASA');
+                    setDescription('TRASLADO EFECTIVO TIENDA A CASA');
+                  }}
+                  className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                    sourceAccount === 'EFECTIVO_TIENDA' && destAccount === 'EFECTIVO_CASA'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  🏠 Llevar a Casa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceAccount('NEQUI_CRISTIAN');
+                    setDestAccount('EFECTIVO_TIENDA');
+                    setDescription('BASE / CAMBIO TIENDA DESDE NEQUI');
+                  }}
+                  className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                    sourceAccount === 'NEQUI_CRISTIAN' && destAccount === 'EFECTIVO_TIENDA'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  🪙 Inyectar Cambio a Tienda
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Monto */}
           <div>

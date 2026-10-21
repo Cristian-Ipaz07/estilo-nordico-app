@@ -2141,6 +2141,19 @@ function ModuloCaja() {
     return activeShiftFlow.filter(e => e.type === 'ENTRADA').reduce((sum, e) => sum + e.amount, 0);
   }, [activeShiftFlow]);
 
+  // Desglose de abonos vs ventas directas para el detalle del corte
+  const shiftAbonos = useMemo(() => {
+    return activeShiftFlow.filter(e => e.type === 'ENTRADA' && e.cat === 'ABONO').reduce((sum, e) => sum + e.amount, 0);
+  }, [activeShiftFlow]);
+
+  const shiftVentasDirectas = useMemo(() => {
+    return activeShiftFlow.filter(e => e.type === 'ENTRADA' && e.cat === 'VENTA').reduce((sum, e) => sum + e.amount, 0);
+  }, [activeShiftFlow]);
+
+  const shiftPhysicalVentas = useMemo(() => {
+    return physicalShiftFlow.filter(e => e.type === 'ENTRADA' && e.cat === 'VENTA').reduce((sum, e) => sum + e.amount, 0);
+  }, [physicalShiftFlow]);
+
   // Desglose de cobros digitales en este turno (Nequi Cristian, Nequi David, Bancolombia, etc.)
   const digitalShiftSummary = useMemo(() => {
     const digitals = activeShiftFlow.filter(f => (f.account || 'EFECTIVO_TIENDA') !== 'EFECTIVO_TIENDA');
@@ -2285,27 +2298,66 @@ function ModuloCaja() {
               </button>
             </div>
 
-            {/* Tarjetas de Resumen */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="bg-emerald-50/70 border border-emerald-100 p-3 rounded-2xl">
-                <p className="text-[9px] font-black text-emerald-600 uppercase">Ventas / Entradas</p>
-                <p className="text-base font-black text-emerald-700">+${fmt(shiftTotalIn)}</p>
-              </div>
-              <div className="bg-rose-50/70 border border-rose-100 p-3 rounded-2xl">
-                <p className="text-[9px] font-black text-rose-600 uppercase">Gastos / Salidas</p>
-                <p className="text-base font-black text-rose-700">-${fmt(shiftTotalOut)}</p>
-              </div>
-              <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-2xl col-span-2">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-[9px] font-black text-indigo-600 uppercase">Dinero Neto a Guardar / Retirar</p>
-                    <p className="text-xl font-black text-indigo-900">${fmt(shiftNetVentas)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black text-slate-400 uppercase">Efectivo Total en Cajón</p>
-                    <p className="text-sm font-black text-slate-700">${fmt(totalEnCajon)}</p>
-                  </div>
+            {/* Resumen del Corte de Caja con Total Facturado y Desglose Completo */}
+            <div className="space-y-2.5">
+              {/* Tarjeta 1: Total Facturado / Recaudado en el Turno */}
+              <div className="bg-slate-900 text-white p-3.5 rounded-2xl shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Total Facturado en el Turno (Todo)
+                  </span>
+                  <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-black">
+                    Ventas + Abonos
+                  </span>
                 </div>
+                <p className="text-2xl font-black font-mono text-emerald-400 mt-1">
+                  ${fmt(shiftTotalAllSales)}
+                </p>
+                <div className="flex items-center gap-2 mt-1.5 text-[10px] font-bold text-slate-300 flex-wrap">
+                  <span>💵 Efectivo: <strong className="font-mono text-white">${fmt(shiftTotalIn)}</strong></span>
+                  <span>·</span>
+                  <span>📱 Nequi: <strong className="font-mono text-white">${fmt(digitalShiftSummary.totalDigital)}</strong></span>
+                  <span>·</span>
+                  <span>🏷️ Abonos: <strong className="font-mono text-white">${fmt(shiftAbonos)}</strong></span>
+                </div>
+              </div>
+
+              {/* Tarjeta 2: Desglose Efectivo Físico vs Nequi Digital */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-emerald-50/80 border border-emerald-200/80 p-2.5 rounded-2xl">
+                  <span className="text-[8px] font-black uppercase text-emerald-800 block">Efectivo Físico Retirar (Casa)</span>
+                  <span className="text-base font-black text-emerald-700 font-mono mt-0.5 block">${fmt(shiftNetVentas)}</span>
+                  <span className="text-[8px] text-emerald-600 block mt-0.5 font-bold">Ventas ${fmt(shiftTotalIn)} - Gastos ${fmt(shiftTotalOut)}</span>
+                </div>
+
+                <div className="bg-indigo-50/80 border border-indigo-200/80 p-2.5 rounded-2xl">
+                  <span className="text-[8px] font-black uppercase text-indigo-800 block">Nequi que pasa a Casa</span>
+                  <span className="text-base font-black text-indigo-700 font-mono mt-0.5 block">+${fmt(digitalShiftSummary.totalDigital)}</span>
+                  <span className="text-[8px] text-indigo-600 block mt-0.5 font-bold">Se consolida en Caja Mayor</span>
+                </div>
+              </div>
+
+              {/* Tarjeta 3: Arqueo del Cajón Físico de Tienda */}
+              <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-2xl flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[9px] font-black text-amber-900 uppercase block">Total Efectivo en Cajón Hoy</span>
+                  <p className="text-lg font-black text-amber-950 font-mono mt-0.5">${fmt(totalEnCajon)}</p>
+                </div>
+                <div className="text-right text-[10px] font-bold text-amber-900 space-y-0.5">
+                  <p>🔒 Retiras en efectivo a Casa: <strong className="font-mono">${fmt(shiftNetVentas)}</strong></p>
+                  <p>🪙 Dejas en gaveta como Base: <strong className="font-mono">${fmt(cierreBaseSiguiente)}</strong></p>
+                </div>
+              </div>
+
+              {/* Tarjeta 4: Total que se consolida en Casa */}
+              <div className="bg-slate-100 border border-slate-200 rounded-2xl p-2.5 flex items-center justify-between text-xs">
+                <span className="text-[9px] font-black uppercase text-slate-600">🏠 Total Consolidado a Casa hoy:</span>
+                <span className="font-mono font-black text-slate-900 text-sm">
+                  ${fmt(shiftNetVentas + digitalShiftSummary.totalDigital)}
+                  <span className="text-[9px] font-normal text-slate-500 ml-1">
+                    (Ef. ${fmt(shiftNetVentas)} + Nequi ${fmt(digitalShiftSummary.totalDigital)})
+                  </span>
+                </span>
               </div>
             </div>
 
@@ -2428,52 +2480,62 @@ function ModuloCaja() {
           </div>
         </div>
 
-        {/* RESUMEN DE COBROS DIGITALES DEL TURNO */}
-        {subTab === 'turno' && digitalShiftSummary.totalDigital > 0 && (
-          <div className="mb-2 px-2">
-            <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-2.5 flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs">📱</span>
-                <span className="text-[10px] font-black uppercase text-indigo-900 tracking-wider">
-                  Cobros Digitales en este Turno:
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap text-[10px] font-black">
-                {Object.entries(digitalShiftSummary.byAccount).map(([accId, amt]) => {
-                  if (amt === 0) return null;
-                  const info = getAccountInfo(accId);
-                  return (
-                    <span key={accId} className={`px-2 py-0.5 rounded-lg border font-mono ${info.badgeClass}`}>
-                      {info.icon} {info.label}: +${fmt(amt)}
-                    </span>
-                  );
-                })}
-                <span className="bg-indigo-600 text-white px-2.5 py-0.5 rounded-lg font-mono">
-                  Total Digital: +${fmt(digitalShiftSummary.totalDigital)}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* METRICS RESUMEN DEL TURNO ACTIVO (SOLO EFECTIVO FÍSICO EN CAJÓN) */}
+        {/* RESUMEN DEL FLUJO Y CORTE DEL TURNO */}
         {subTab === 'turno' && (
-          <div className="grid grid-cols-4 gap-2 mb-3 px-2">
-            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
-              <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight">Base Caja</span>
-              <span className="text-xs font-black text-slate-800">${fmt(baseCaja)}</span>
+          <div className="space-y-2 mb-3 px-2">
+            {/* Banner Principal del Turno: Total del Flujo Facturado */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-3 shadow-md flex items-center justify-between">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-wider text-indigo-300 block">
+                  Total Flujo del Turno (Ventas + Abonos)
+                </span>
+                <p className="text-2xl font-black font-mono text-emerald-400 tracking-tight mt-0.5">
+                  +${fmt(shiftTotalAllSales)}
+                </p>
+                <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-slate-300 flex-wrap">
+                  <span className="bg-white/10 px-2 py-0.5 rounded-md">
+                    📱 Nequi: ${fmt(digitalShiftSummary.totalDigital)}
+                  </span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded-md">
+                    🏷️ Abonos: ${fmt(shiftAbonos)}
+                  </span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded-md">
+                    🛍️ Mostrador: ${fmt(shiftPhysicalVentas)}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right border-l border-white/10 pl-3">
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
+                  Efectivo Físico Neto
+                </span>
+                <p className="text-base font-black font-mono text-white mt-0.5">
+                  ${fmt(shiftNetVentas)}
+                </p>
+                <span className="text-[9px] text-indigo-200 block">
+                  (a guardar en Casa)
+                </span>
+              </div>
             </div>
-            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
-              <span className="text-[8px] font-black uppercase text-emerald-500 block leading-tight">Ventas (+)</span>
-              <span className="text-xs font-black text-emerald-600">+${fmt(shiftTotalIn)}</span>
-            </div>
-            <div className="bg-white border rounded-2xl p-2.5 shadow-xs">
-              <span className="text-[8px] font-black uppercase text-rose-500 block leading-tight">Gastos (-)</span>
-              <span className="text-xs font-black text-rose-600">-${fmt(shiftTotalOut)}</span>
-            </div>
-            <div className="bg-white border border-indigo-100 rounded-2xl p-2.5 shadow-xs bg-indigo-50/30">
-              <span className="text-[8px] font-black uppercase text-indigo-600 block leading-tight">Neto Retirar</span>
-              <span className="text-xs font-black text-indigo-700">${fmt(shiftNetVentas)}</span>
+
+            {/* Fila de 3 Indicadores Rápidos: Efectivo Cajón, En Nequi y Gastos */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white border border-emerald-100 rounded-2xl p-2.5 shadow-xs bg-emerald-50/20">
+                <span className="text-[8px] font-black uppercase text-emerald-600 block leading-tight">Total Efectivo en Cajón</span>
+                <span className="text-xs font-black text-emerald-700 font-mono mt-0.5 block">${fmt(totalEnCajon)}</span>
+                <span className="text-[8px] font-bold text-slate-400 block truncate">Base ${fmt(baseCaja)} + Neto ${fmt(shiftNetVentas)}</span>
+              </div>
+
+              <div className="bg-white border border-indigo-100 rounded-2xl p-2.5 shadow-xs bg-indigo-50/20">
+                <span className="text-[8px] font-black uppercase text-indigo-600 block leading-tight">En Nequi (Turno)</span>
+                <span className="text-xs font-black text-indigo-700 font-mono mt-0.5 block">+${fmt(digitalShiftSummary.totalDigital)}</span>
+                <span className="text-[8px] font-bold text-slate-400 block truncate">Se traslada a Casa al cerrar</span>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-2.5 shadow-xs">
+                <span className="text-[8px] font-black uppercase text-rose-500 block leading-tight">Gastos del Turno (-)</span>
+                <span className="text-xs font-black text-rose-600 font-mono mt-0.5 block">-${fmt(shiftTotalOut)}</span>
+                <span className="text-[8px] font-bold text-slate-400 block truncate">{shiftTotalOut > 0 ? 'Salidas registradas' : 'Sin egresos'}</span>
+              </div>
             </div>
           </div>
         )}
@@ -2744,8 +2806,9 @@ function ModuloCaja() {
       <TransferModal
         isOpen={isTransferOpen}
         onClose={() => setIsTransferOpen(false)}
-        defaultSource="NEQUI_CRISTIAN"
-        defaultDest="EFECTIVO_TIENDA"
+        defaultSource="EFECTIVO_TIENDA"
+        defaultDest="NEQUI_CRISTIAN"
+        context="terminal"
         onTransferSuccess={loadData}
       />
     </div>

@@ -258,15 +258,15 @@ export default function CashFlow() {
       BANCOLOMBIA: 0
     };
 
-    const breakdown = {
-      NEQUI_CRISTIAN: { casa: 0, turno: 0 },
-      NEQUI_DAVID: { casa: 0, turno: 0 },
-      BANCOLOMBIA: { casa: 0, turno: 0 },
-      EFECTIVO: { casa: 0, turno: 0 }
-    };
-
     let totalPhysicalCash = 0;
-    let openShiftCash = 0;
+    let openShiftPhysicalCash = 0;
+    let openShiftDigitalTotal = 0;
+    const openShiftDigitalByAccount = {
+      NEQUI_CRISTIAN: 0,
+      NEQUI_DAVID: 0,
+      BANCOLOMBIA: 0
+    };
+    let totalDigital = 0;
 
     allMovements.forEach(m => {
       const acc = m.account || 'EFECTIVO_TIENDA';
@@ -279,33 +279,59 @@ export default function CashFlow() {
       // Cuentas virtuales / bancarias
       if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA') {
         b[acc] += signedAmt;
-        if (!breakdown[acc]) breakdown[acc] = { casa: 0, turno: 0 };
+        totalDigital += signedAmt;
         if (isOpenShift) {
-          breakdown[acc].turno += signedAmt;
-        } else {
-          breakdown[acc].casa += signedAmt;
+          openShiftDigitalTotal += signedAmt;
+          if (openShiftDigitalByAccount[acc] !== undefined) {
+            openShiftDigitalByAccount[acc] += signedAmt;
+          }
         }
       } else {
         // Efectivo Físico
         totalPhysicalCash += signedAmt;
         if (isOpenShift && (acc === 'EFECTIVO_TIENDA' || !acc)) {
-          openShiftCash += signedAmt;
+          openShiftPhysicalCash += signedAmt;
         }
       }
     });
 
     // En tienda está lo del turno abierto de hoy (Caja Menor en curso)
-    b.EFECTIVO_TIENDA = Math.max(0, openShiftCash);
+    b.EFECTIVO_TIENDA = Math.max(0, openShiftPhysicalCash);
     // En casa está el saldo acumulado consolidado de todos los cierres previos (Caja Mayor)
     b.EFECTIVO_CASA = Math.max(0, totalPhysicalCash - b.EFECTIVO_TIENDA);
 
-    breakdown.EFECTIVO = {
-      casa: b.EFECTIVO_CASA,
-      turno: b.EFECTIVO_TIENDA
-    };
+    // Master Location Hubs (Caja Local vs Casa Mayor)
+    // 1. Tienda / Local (Turno abierto en curso)
+    const tiendaFisico = Math.max(0, openShiftPhysicalCash);
+    const tiendaDigital = Math.max(0, openShiftDigitalTotal);
+    const tiendaTotal = tiendaFisico + tiendaDigital;
 
-    const total = Object.values(b).reduce((sum, v) => sum + v, 0);
-    return { balances: b, breakdown, total, lastCierreTimestamp, openShiftCash };
+    // 2. Casa / Caja Mayor (Fondos consolidados seguros)
+    const casaFisico = Math.max(0, totalPhysicalCash - tiendaFisico);
+    const casaDigital = Math.max(0, totalDigital - tiendaDigital);
+    const casaTotal = casaFisico + casaDigital;
+
+    // 3. Patrimonio Total Disponible (Físico + Digital)
+    const totalPatrimonio = totalPhysicalCash + totalDigital;
+
+    return { 
+      balances: b, 
+      total: totalPatrimonio, 
+      lastCierreTimestamp, 
+      openShiftCash: openShiftPhysicalCash,
+      tienda: {
+        total: tiendaTotal,
+        fisico: tiendaFisico,
+        digital: tiendaDigital,
+        digitalByAccount: openShiftDigitalByAccount,
+        isOpen: (tiendaTotal > 0 || openShiftPhysicalCash > 0)
+      },
+      casa: {
+        total: casaTotal,
+        fisico: casaFisico,
+        digital: casaDigital
+      }
+    };
   }, [allMovements]);
 
   // Procesar saldo arrastrado y filtrado por fecha
@@ -679,15 +705,16 @@ export default function CashFlow() {
         </div>
       </div>
 
-      {/* ARQUEO GLOBAL DE BOLSAS DE DINERO (5 Cuentas + Patrimonio Total) */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
+      {/* ARQUEO DE LIQUIDEZ: CASA, CAJA LOCAL Y PATRIMONIO TOTAL */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div className="flex items-center gap-2">
             <Wallet size={18} className="text-indigo-600" />
             <h3 className="font-black text-slate-900 text-sm uppercase tracking-wide">
-              Arqueo Global de Cuentas & Bolsas
+              Arqueo de Liquidez: Casa & Caja Local
             </h3>
-            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-black border border-indigo-100">
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-black border border-emerald-100 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               En Vivo
             </span>
           </div>
@@ -696,7 +723,7 @@ export default function CashFlow() {
             {selectedAccountFilter !== 'TODAS' && (
               <button
                 onClick={() => setSelectedAccountFilter('TODAS')}
-                className="text-[10px] font-black text-indigo-600 hover:underline uppercase"
+                className="text-[10px] font-black text-indigo-600 hover:underline uppercase cursor-pointer"
               >
                 Ver Todas
               </button>
@@ -704,70 +731,208 @@ export default function CashFlow() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {FINANCIAL_ACCOUNTS.map(acc => {
-            const bal = treasuryBalances.balances[acc.id] || 0;
-            const isSelected = selectedAccountFilter === acc.id;
+        {/* 3 TARJETAS MAESTRAS DE UBICACIÓN FÍSICA Y DIGITAL */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* 1. CASA (CAJA MAYOR / CONSOLIDADO SEGURO) */}
+          <div className="p-4 rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 via-white to-amber-50/20 shadow-xs flex flex-col justify-between relative overflow-hidden">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏠</span>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider block">
+                      CASA (Caja Mayor)
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-600">Fondos Seguros Consolidados</h4>
+                  </div>
+                </div>
+                <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md">
+                  Consolidado
+                </span>
+              </div>
 
-            return (
-              <div
-                key={acc.id}
-                onClick={() => setSelectedAccountFilter(prev => prev === acc.id ? 'TODAS' : acc.id)}
-                className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden select-none ${
-                  isSelected 
-                    ? 'border-indigo-600 ring-2 ring-indigo-500/20 bg-indigo-50/40 shadow-xs' 
-                    : 'border-slate-200/80 bg-slate-50/60 hover:bg-slate-50 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-base">{acc.icon}</span>
-                  {isSelected && (
-                    <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-indigo-600 text-white rounded-md">
-                      Filtro
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase text-slate-500 truncate leading-tight">
-                    {acc.label}
-                  </p>
-                  {acc.id === 'EFECTIVO_TIENDA' && (
-                    <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded">
-                      Caja Menor
-                    </span>
-                  )}
-                  {acc.id === 'EFECTIVO_CASA' && (
-                    <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-amber-100 text-amber-800 rounded">
-                      Caja Mayor
-                    </span>
-                  )}
-                </div>
-                <p className={`text-base font-black font-mono tracking-tight mt-0.5 ${bal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
-                  ${fmt(bal)}
+              {/* Total Casa */}
+              <div className="pt-1">
+                <p className="text-[10px] font-black uppercase text-slate-400">Total en Casa:</p>
+                <p className="text-2xl font-black font-mono text-slate-900 tracking-tight">
+                  ${fmt(treasuryBalances.casa.total)}
                 </p>
               </div>
-            );
-          })}
 
-          {/* Tarjeta Patrimonio Total */}
-          <div 
-            onClick={() => setSelectedAccountFilter('TODAS')}
-            className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none bg-slate-900 text-white border-slate-800 shadow-sm ${
-              selectedAccountFilter === 'TODAS' ? 'ring-2 ring-emerald-400/40' : ''
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-base">💎</span>
-              <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-emerald-500/30 text-emerald-300 rounded-md">
-                Total
-              </span>
+              {/* Apartados: Físico y Digital en Casa */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-white/90 border border-amber-100 p-2.5 rounded-xl shadow-2xs">
+                  <span className="text-[9px] font-black uppercase text-slate-400 block leading-tight">💵 Físico en Casa</span>
+                  <span className="text-sm font-black font-mono text-slate-800 mt-0.5 block">
+                    ${fmt(treasuryBalances.casa.fisico)}
+                  </span>
+                </div>
+                <div className="bg-white/90 border border-indigo-100 p-2.5 rounded-xl shadow-2xs">
+                  <span className="text-[9px] font-black uppercase text-indigo-500 block leading-tight">📱 Digital (Nequi)</span>
+                  <span className="text-sm font-black font-mono text-indigo-700 mt-0.5 block">
+                    ${fmt(treasuryBalances.casa.digital)}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="text-[10px] font-black uppercase text-slate-300 truncate leading-tight">
-              Patrimonio Disponible
-            </p>
-            <p className="text-base font-black font-mono text-emerald-400 tracking-tight mt-0.5">
-              ${fmt(treasuryBalances.total)}
-            </p>
+
+            <div className="mt-3 pt-2 border-t border-amber-100/80 text-[10px] text-amber-800 font-medium flex items-center justify-between">
+              <span>
+                {treasuryBalances.tienda.isOpen 
+                  ? `Esperando cierre para recibir +$${fmt(treasuryBalances.tienda.total)}` 
+                  : '✓ Cierres del ciclo ya consolidados en Casa'}
+              </span>
+              <span className="text-xs">🔒</span>
+            </div>
+          </div>
+
+          {/* 2. CAJA LOCAL (TIENDA MOSTRADOR / TURNO EN CURSO) */}
+          <div className="p-4 rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/40 via-white to-emerald-50/20 shadow-xs flex flex-col justify-between relative overflow-hidden">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏪</span>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">
+                      CAJA LOCAL (Tienda Mostrador)
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-600">Turno de Hoy en Tienda</h4>
+                  </div>
+                </div>
+                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                  treasuryBalances.tienda.isOpen
+                    ? 'bg-amber-100 text-amber-800 animate-pulse'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {treasuryBalances.tienda.isOpen ? '🟡 Turno en Curso' : '🟢 Cerrada ($0)'}
+                </span>
+              </div>
+
+              {/* Total Caja Tienda */}
+              <div className="pt-1">
+                <p className="text-[10px] font-black uppercase text-slate-400">Total en Tienda:</p>
+                <p className="text-2xl font-black font-mono text-emerald-700 tracking-tight">
+                  ${fmt(treasuryBalances.tienda.total)}
+                </p>
+              </div>
+
+              {/* Apartados: Físico y Digital en Tienda */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-white/90 border border-emerald-100 p-2.5 rounded-xl shadow-2xs">
+                  <span className="text-[9px] font-black uppercase text-emerald-600 block leading-tight">💵 Físico en Cajón</span>
+                  <span className="text-sm font-black font-mono text-emerald-800 mt-0.5 block">
+                    ${fmt(treasuryBalances.tienda.fisico)}
+                  </span>
+                </div>
+                <div className="bg-white/90 border border-indigo-100 p-2.5 rounded-xl shadow-2xs">
+                  <span className="text-[9px] font-black uppercase text-indigo-500 block leading-tight">📱 Digital Turno</span>
+                  <span className="text-sm font-black font-mono text-indigo-700 mt-0.5 block">
+                    ${fmt(treasuryBalances.tienda.digital)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-emerald-100/80 text-[10px] text-emerald-800 font-medium flex items-center justify-between">
+              <span>
+                {treasuryBalances.tienda.isOpen
+                  ? '⚡ Al cerrar caja en Terminal, todo pasa a Casa y aquí queda en $0'
+                  : '✓ Caja en ceros. Listo para iniciar nuevo turno'}
+              </span>
+              <span className="text-xs">⚡</span>
+            </div>
+          </div>
+
+          {/* 3. PATRIMONIO TOTAL DISPONIBLE */}
+          <div className="p-4 rounded-2xl border border-slate-800 bg-slate-900 text-white shadow-md flex flex-col justify-between relative overflow-hidden">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">💎</span>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-300 tracking-wider block">
+                      PATRIMONIO TOTAL DISPONIBLE
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-400">Liquidez Total (Casa + Local)</h4>
+                  </div>
+                </div>
+                <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md">
+                  Total
+                </span>
+              </div>
+
+              {/* Total Patrimonio */}
+              <div className="pt-1">
+                <p className="text-[10px] font-black uppercase text-slate-400">Total Patrimonio:</p>
+                <p className="text-2xl font-black font-mono text-emerald-400 tracking-tight">
+                  ${fmt(treasuryBalances.total)}
+                </p>
+              </div>
+
+              {/* Apartados Globales: Físico y Digital */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-slate-800/90 border border-slate-700/80 p-2.5 rounded-xl">
+                  <span className="text-[9px] font-black uppercase text-slate-400 block leading-tight">💵 Físico Total</span>
+                  <span className="text-sm font-black font-mono text-white mt-0.5 block">
+                    ${fmt(treasuryBalances.casa.fisico + treasuryBalances.tienda.fisico)}
+                  </span>
+                </div>
+                <div className="bg-slate-800/90 border border-slate-700/80 p-2.5 rounded-xl">
+                  <span className="text-[9px] font-black uppercase text-indigo-300 block leading-tight">📱 Digital Total</span>
+                  <span className="text-sm font-black font-mono text-indigo-300 mt-0.5 block">
+                    ${fmt(treasuryBalances.casa.digital + treasuryBalances.tienda.digital)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-slate-800 text-[10px] text-slate-400 font-medium flex items-center justify-between">
+              <span>Suma de Casa (${fmt(treasuryBalances.casa.total)}) + Tienda (${fmt(treasuryBalances.tienda.total)})</span>
+              <span className="text-emerald-400 font-bold">100% Cuadrado</span>
+            </div>
+          </div>
+        </div>
+
+        {/* BOLSAS Y CUENTAS ESPECÍFICAS (FILTROS DE TABLA) */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Desglose por Cuentas & Bancos (Clic para filtrar la lista):
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            {FINANCIAL_ACCOUNTS.map(acc => {
+              const bal = treasuryBalances.balances[acc.id] || 0;
+              const isSelected = selectedAccountFilter === acc.id;
+
+              return (
+                <div
+                  key={acc.id}
+                  onClick={() => setSelectedAccountFilter(prev => prev === acc.id ? 'TODAS' : acc.id)}
+                  className={`p-2.5 rounded-xl border transition-all cursor-pointer relative select-none ${
+                    isSelected 
+                      ? 'border-indigo-600 ring-2 ring-indigo-500/20 bg-indigo-50/50 shadow-xs' 
+                      : 'border-slate-200/80 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm">{acc.icon}</span>
+                    {isSelected && (
+                      <span className="text-[8px] font-black uppercase px-1.5 py-0.2 bg-indigo-600 text-white rounded">
+                        Filtro
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-600 truncate leading-tight">
+                    {acc.label}
+                  </p>
+                  <p className={`text-sm font-black font-mono tracking-tight mt-0.5 ${bal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                    ${fmt(bal)}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -925,7 +1090,7 @@ export default function CashFlow() {
               }`}
             >
               <span>🏪</span>
-              <span>Con Turno Hoy (+${fmt(treasuryBalances.openShiftCash)})</span>
+              <span>Con Turno Tienda (+${fmt(treasuryBalances.tienda.total)})</span>
             </button>
           </div>
         </div>
@@ -1010,13 +1175,13 @@ export default function CashFlow() {
       </div>
 
       {/* Alerta de Turno Abierto cuando se ve solo el saldo en casa */}
-      {!includeOpenShift && treasuryBalances.openShiftCash > 0 && (
+      {!includeOpenShift && treasuryBalances.tienda.total > 0 && (
         <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-2xs mb-4">
           <div className="flex items-center gap-2">
             <span className="text-base">🏪</span>
             <div>
               <span className="text-xs font-black text-amber-900 uppercase">
-                Turno de Hoy en Tienda (Caja Menor en curso): +${fmt(treasuryBalances.openShiftCash)}
+                Turno de Hoy en Tienda: +${fmt(treasuryBalances.tienda.total)} (Físico: ${fmt(treasuryBalances.tienda.fisico)} + Nequi: ${fmt(treasuryBalances.tienda.digital)})
               </span>
               <p className="text-[11px] font-medium text-amber-700">
                 Estas ventas están en la gaveta de la tienda y se pasarán a Casa cuando hagas el Cierre de Caja esta noche.
