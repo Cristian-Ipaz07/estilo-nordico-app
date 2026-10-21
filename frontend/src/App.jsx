@@ -1,5 +1,5 @@
 import { forceUnlockBodyScroll } from './hooks/useBodyScrollLock';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Package, Shirt, ShoppingCart, Wallet, 
@@ -10,6 +10,7 @@ import {
 
 // Importación de componentes y páginas
 import TerminalModal from './components/TerminalModal';
+import DeliveryNotificationsDrawer from './components/DeliveryNotificationsDrawer';
 import ScrollToTopButton from './components/ScrollToTopButton'; 
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -72,6 +73,38 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const Layout = ({ children }) => {
   const [selectedBranch, setSelectedBranch] = useState("Sede Principal (Pasto)");
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [pendingDeliveriesCount, setPendingDeliveriesCount] = useState(0);
+
+  const loadPendingDeliveries = useCallback(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_URL}/sales/`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const pending = data.filter(s => {
+            const isDomi = s.sale_channel === 'DOMICILIO' || s.delivery_address || s.status === 'en_domicilio';
+            const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino';
+            return isDomi && isActiveStatus;
+          });
+          setPendingDeliveriesCount(pending.length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadPendingDeliveries();
+    window.addEventListener('refresh-sales', loadPendingDeliveries);
+    const interval = setInterval(loadPendingDeliveries, 30000);
+    return () => {
+      window.removeEventListener('refresh-sales', loadPendingDeliveries);
+      clearInterval(interval);
+    };
+  }, [loadPendingDeliveries]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
@@ -262,9 +295,20 @@ const Layout = ({ children }) => {
               <span className="text-xs font-black hidden sm:inline text-indigo-600">POS</span>
             </button>
             
-            <button className="text-slate-500 hover:text-slate-900 relative p-2 rounded-xl hover:bg-slate-100 transition-colors">
+            <button 
+              type="button"
+              onClick={() => setIsNotificationsOpen(true)}
+              className="text-slate-600 hover:text-slate-900 relative p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Domicilios y Pedidos Pendientes"
+            >
               <Bell size={19} />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border border-white"></span>
+              {pendingDeliveriesCount > 0 ? (
+                <span className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
+                  {pendingDeliveriesCount}
+                </span>
+              ) : (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-slate-300 rounded-full border border-white"></span>
+              )}
             </button>
 
             {/* Perfil del Usuario */}
@@ -293,6 +337,16 @@ const Layout = ({ children }) => {
       {isTerminalOpen && (
         <TerminalModal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
       )}
+
+      {/* Drawer de Notificaciones de Domicilios y Pedidos */}
+      <DeliveryNotificationsDrawer 
+        isOpen={isNotificationsOpen} 
+        onClose={() => setIsNotificationsOpen(false)}
+        onOpenTerminal={() => {
+          setIsNotificationsOpen(false);
+          setIsTerminalOpen(true);
+        }}
+      />
     </div>
   );
 };

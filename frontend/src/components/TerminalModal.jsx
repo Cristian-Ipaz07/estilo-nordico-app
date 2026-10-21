@@ -297,10 +297,40 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
     window.addEventListener('refresh-cash', loadAnticipos);
     return () => window.removeEventListener('refresh-cash', loadAnticipos);
   }, [loadAnticipos]);
-  const [saleDate, setSaleDate] = useState(getTodayCO());
-  const [isDelivery, setIsDelivery] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [deliveryNotes, setDeliveryNotes] = useState('');
+  const [saleDate, setSaleDate] = useStickyState(getTodayCO(), 'en_terminal_sale_date');
+  const [isDelivery, setIsDelivery] = useStickyState(false, 'en_terminal_is_delivery');
+  const [deliveryAddress, setDeliveryAddress] = useStickyState('', 'en_terminal_delivery_address');
+  const [deliveryPhone, setDeliveryPhone] = useStickyState('', 'en_terminal_delivery_phone');
+  const [deliveryNotes, setDeliveryNotes] = useStickyState('', 'en_terminal_delivery_notes');
+  const [deliveryDate, setDeliveryDate] = useStickyState(getTodayCO(), 'en_terminal_delivery_date');
+  const [deliveryTime, setDeliveryTime] = useStickyState('', 'en_terminal_delivery_time');
+
+  // Contador en vivo de domicilios pendientes
+  const [pendingDeliveriesCount, setPendingDeliveriesCount] = useState(0);
+
+  const loadPendingDeliveries = useCallback(() => {
+    fetch(`${API_URL}/sales/`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const pending = data.filter(s => {
+            const isDomi = s.sale_channel === 'DOMICILIO' || s.delivery_address || s.status === 'en_domicilio';
+            const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino';
+            return isDomi && isActiveStatus;
+          });
+          setPendingDeliveriesCount(pending.length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadPendingDeliveries();
+    window.addEventListener('refresh-sales', loadPendingDeliveries);
+    return () => window.removeEventListener('refresh-sales', loadPendingDeliveries);
+  }, [loadPendingDeliveries]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -497,11 +527,15 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
 
   const handleFinalizar = async () => {
     if (cart.length === 0 || hasStockError || isSubmitting) return;
-    setIsSubmitting(true);
-    if (isDelivery && !deliveryAddress.trim()) {
-      alert("Por favor ingresa la dirección de entrega para el domicilio.");
-      return;
+
+    if (isDelivery) {
+      if (!deliveryAddress || !deliveryAddress.trim()) {
+        alert("Por favor ingresa la dirección exacta de entrega.");
+        return;
+      }
     }
+
+    setIsSubmitting(true);
 
     const chosenVendedorId = Number(vendedorId) || user?.id || null;
     const creatorUserId = user?.id || null;
@@ -511,17 +545,37 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       : (!isAdmin ? "por_confirmar" : (Number(amountPaid) < totalVenta ? "separado" : "pagado"));
 
     let effectiveAmountPaid = Number(amountPaid || 0);
-    let effectiveDeliveryNotes = deliveryNotes ? deliveryNotes.trim() : '';
-    let appliedAnticipoVal = 0;
+
+    // Si es contraentrega y no pagó anticipo/abono previo, amount_paid es 0 (no entra a caja hoy)
+    if (isDelivery && !useAnticipo && (!amountPaid || amountPaid === 0)) {
+      effectiveAmountPaid = 0;
+    }
+
+    // Estructurar notas completas para Domicilio
+    let notesParts = [];
+    if (deliveryPhone && deliveryPhone.trim()) {
+      notesParts.push(`TEL: ${deliveryPhone.trim()}`);
+    }
+    if (deliveryDate) {
+      const isTomorrow = deliveryDate === getTomorrowCO();
+      notesParts.push(`ENTREGA: ${deliveryDate}${isTomorrow ? ' (Mañana)' : ''}`);
+    }
+    if (deliveryTime && deliveryTime.trim()) {
+      notesParts.push(`HORA: ${deliveryTime.trim()}`);
+    }
+    if (deliveryNotes && deliveryNotes.trim()) {
+      notesParts.push(`NOTAS: ${deliveryNotes.trim()}`);
+    }
 
     if (useAnticipo && anticipoAmount > 0) {
-      appliedAnticipoVal = Math.min(totalVenta, anticipoAmount);
+      const appliedAnticipoVal = Math.min(totalVenta, anticipoAmount);
       const cashReceivedToday = Number(cobroEfectivoHoy || 0);
       effectiveAmountPaid = appliedAnticipoVal + cashReceivedToday;
-
       const tag = `[ANTICIPO_CRUZADO:${appliedAnticipoVal}${selectedAnticipoId ? '|ID:' + selectedAnticipoId : ''}]`;
-      effectiveDeliveryNotes = effectiveDeliveryNotes ? `${tag} ${effectiveDeliveryNotes}` : tag;
+      notesParts.push(tag);
     }
+
+    const structuredDeliveryNotes = notesParts.join(' | ');
 
     const effectivePayments = isSplitPayment
       ? Object.entries(splitAmounts)
@@ -538,10 +592,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       amount_paid: effectiveAmountPaid,
       payment_method: isSplitPayment ? "DIVIDIDO" : paymentAccount,
       payments: effectivePayments,
-      sale_date: saleDate,
+      sale_date: isDelivery && deliveryDate ? deliveryDate : saleDate,
       status: saleStatus,
       delivery_address: isDelivery ? deliveryAddress.trim() : null,
-      delivery_notes: effectiveDeliveryNotes || null,
+      delivery_notes: isDelivery ? (structuredDeliveryNotes || null) : (deliveryNotes?.trim() || null),
       items: cart.map(i => ({
         product_id: i.id,
         quantity: i.qty,
@@ -612,7 +666,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       setFilteredResults([]);
       setIsDropdownOpen(false);
       setDeliveryAddress('');
+      setDeliveryPhone('');
       setDeliveryNotes('');
+      setDeliveryTime('');
+      setDeliveryDate(getTodayCO());
       setIsDelivery(false);
       setUseAnticipo(false);
       setSelectedAnticipoId('');
@@ -820,7 +877,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
       </div>
 
       {/* Modalidad de Entrega: Local / Tienda vs Envío a Domicilio */}
-      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/90 mb-3 space-y-2 shrink-0">
+      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/90 mb-3 space-y-2.5 shrink-0 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
             <Truck size={14} className="text-indigo-600" /> Modalidad del Pedido:
@@ -840,39 +897,120 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
             <button
               type="button"
               onClick={() => { setIsDelivery(true); setAmountPaid(0); }}
-              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer relative ${
                 isDelivery 
-                  ? 'bg-indigo-600 text-white shadow-xs' 
+                  ? 'bg-purple-600 text-white shadow-xs' 
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              🛵 Envío a Domicilio (Contraentrega)
+              <span>🛵 Envío a Domicilio (Contraentrega)</span>
+              {pendingDeliveriesCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-black rounded-full animate-pulse">
+                  {pendingDeliveriesCount} pend.
+                </span>
+              )}
             </button>
           </div>
         </div>
 
-        {/* Campos obligatorios y adicionales para Domicilio */}
+        {/* Campos detallados y estructurados para Domicilio */}
         {isDelivery && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-200/70 animate-in fade-in duration-150">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-indigo-200 shadow-2xs">
-              <Truck size={15} className="text-indigo-600 shrink-0" />
-              <input
-                type="text"
-                placeholder="Dirección exacta y Barrio (ej: Cra 25 # 14-20 B/ Maridiaz)..."
-                value={deliveryAddress}
-                onChange={e => setDeliveryAddress(e.target.value)}
-                className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
-              />
+          <div className="space-y-2 pt-2 border-t border-slate-200/70 animate-in fade-in duration-150">
+            {/* Fila 1: Dirección y Teléfono */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+              <div className="md:col-span-8 flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-purple-200 shadow-2xs">
+                <Truck size={15} className="text-purple-600 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Dirección exacta y Barrio (ej: Carrera 15a #1-59 Caicedo Alto)..."
+                  value={deliveryAddress}
+                  onChange={e => setDeliveryAddress(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
+                />
+              </div>
+
+              <div className="md:col-span-4 flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-sm">📞</span>
+                <input
+                  type="tel"
+                  placeholder="Teléfono (ej: 3137296423)..."
+                  value={deliveryPhone}
+                  onChange={e => setDeliveryPhone(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400 font-mono"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
-              <AlertCircle size={15} className="text-amber-500 shrink-0" />
-              <input
-                type="text"
-                placeholder="Teléfono y Notas (ej: 315 123 4567 - cobrar contraentrega)..."
-                value={deliveryNotes}
-                onChange={e => setDeliveryNotes(e.target.value)}
-                className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
-              />
+
+            {/* Fila 2: Fecha de entrega, Hora y Notas */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+              {/* Fecha programada de entrega con botones rápidos Hoy / Mañana */}
+              <div className="md:col-span-5 flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-[10px] font-black uppercase text-slate-400 shrink-0">📅 Entrega:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryDate(getTodayCO())}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                      deliveryDate === getTodayCO()
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryDate(getTomorrowCO())}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer ${
+                      deliveryDate === getTomorrowCO()
+                        ? 'bg-purple-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    🚀 Mañana
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={e => setDeliveryDate(e.target.value)}
+                  className="text-[11px] font-bold text-slate-700 bg-transparent outline-none ml-auto"
+                />
+              </div>
+
+              {/* Hora programada */}
+              <div className="md:col-span-3 flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                <Clock size={13} className="text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Hora (ej: 3:00 PM)..."
+                  value={deliveryTime}
+                  onChange={e => setDeliveryTime(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* Notas adicionales */}
+              <div className="md:col-span-4 flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                <AlertCircle size={13} className="text-amber-500 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Notas (cambio de 100k, etc.)..."
+                  value={deliveryNotes}
+                  onChange={e => setDeliveryNotes(e.target.value)}
+                  className="w-full text-xs font-bold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Aviso informativo de Contraentrega */}
+            <div className="bg-purple-50/70 border border-purple-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] text-purple-900">
+              <span className="font-semibold">
+                ℹ️ Al apartar domicilio, <strong>las prendas se apartan del inventario</strong> y el cobro queda <strong>pendiente contraentrega</strong> (no entra a caja hoy).
+              </span>
+              <span className="font-black font-mono text-purple-700 uppercase bg-white px-2 py-0.5 rounded-lg border border-purple-200">
+                Cobro: ${fmt(totalVenta - Number(amountPaid || 0))}
+              </span>
             </div>
           </div>
         )}
@@ -1218,9 +1356,30 @@ function ModuloVentas({ inventory, reloadInventory, refreshing }) {
               <input placeholder="Nombre Cliente" className="bg-transparent font-bold text-xs outline-none w-full uppercase"
                 value={customer} onChange={e => setCustomer(e.target.value)} />
             </div>
-            <button disabled={cart.length === 0 || hasStockError || isSubmitting} onClick={handleFinalizar}
-              className="flex-1 bg-slate-900 text-white rounded-[22px] font-black text-sm hover:bg-black transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tighter">
-              {isSubmitting ? 'Guardando...' : isDelivery ? '🛵 Apartar Domicilio' : !isAdmin ? '🛵 Registrar Pedido (Por Confirmar)' : amountPaid < totalVenta ? 'Registrar Separado' : 'Finalizar Venta'}
+            <button 
+              disabled={cart.length === 0 || hasStockError || isSubmitting} 
+              onClick={handleFinalizar}
+              className={`flex-1 rounded-[22px] font-black text-sm transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tighter cursor-pointer ${
+                isDelivery 
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-md' 
+                  : 'bg-slate-900 hover:bg-black text-white'
+              }`}
+            >
+              {isSubmitting ? (
+                <span className="flex items-center gap-2">
+                  <RefreshCw size={15} className="animate-spin" /> Guardando...
+                </span>
+              ) : isDelivery ? (
+                amountPaid > 0 
+                  ? `🛵 Apartar Domicilio (Abono ${fmt(amountPaid)})` 
+                  : `🛵 Apartar Domicilio (${fmt(totalVenta)} Contraentrega)`
+              ) : !isAdmin ? (
+                '🛵 Registrar Pedido (Por Confirmar)'
+              ) : amountPaid < totalVenta ? (
+                'Registrar Separado'
+              ) : (
+                'Finalizar Venta'
+              )}
             </button>
           </div>
         </div>
