@@ -54,6 +54,19 @@ export const parseDeliveryNotes = (notes) => {
   };
 };
 
+// Helper para fetch con reintentos automáticos (ideal para cold-starts de Render)
+const fetchWithRetry = async (url, options, retries = 2, delayMs = 1200) => {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err) {
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+};
+
 export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTerminal }) {
   const [sales, setSales] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -132,8 +145,10 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
   // Cambiar estado de pedido (Alistado / En Camino)
   const handleUpdateStatus = async (saleId, newStatus) => {
     setActionLoading(saleId);
+    // Actualización optimista inmediata en la UI
+    setSales(prev => prev.map(s => s.id === saleId ? { ...s, status: newStatus } : s));
     try {
-      const res = await fetch(`${API_URL}/sales/${saleId}`, {
+      const res = await fetchWithRetry(`${API_URL}/sales/${saleId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -145,7 +160,8 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
       fetchSales();
       window.dispatchEvent(new CustomEvent('refresh-sales'));
     } catch (e) {
-      alert(e.message);
+      fetchSales(); // revertir si falló
+      alert(`Detalle de conexión:\n${e.message || 'El servidor tardó en responder'}. Si el servidor estaba suspendido, vuelve a intentarlo en un momento.`);
     } finally {
       setActionLoading(null);
     }
@@ -156,7 +172,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
     if (!confirmModalSale) return;
     setIsConfirming(true);
     try {
-      const res = await fetch(`${API_URL}/sales/${confirmModalSale.id}/confirm-delivery?account=${confirmAccount}&register_cash=true`, {
+      const res = await fetchWithRetry(`${API_URL}/sales/${confirmModalSale.id}/confirm-delivery?account=${confirmAccount}&register_cash=true`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -550,8 +566,8 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                         disabled={actionLoading === sale.id}
                         className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       >
-                        <Package size={14} />
-                        <span>Marcar Alistado</span>
+                        {actionLoading === sale.id ? <RefreshCw size={14} className="animate-spin" /> : <Package size={14} />}
+                        <span>{actionLoading === sale.id ? 'Guardando...' : 'Marcar Alistado'}</span>
                       </button>
                     )}
 
@@ -563,8 +579,8 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                         disabled={actionLoading === sale.id}
                         className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       >
-                        <Truck size={14} />
-                        <span>Marcar En Camino</span>
+                        {actionLoading === sale.id ? <RefreshCw size={14} className="animate-spin" /> : <Truck size={14} />}
+                        <span>{actionLoading === sale.id ? 'Guardando...' : 'Marcar En Camino'}</span>
                       </button>
                     )}
 
