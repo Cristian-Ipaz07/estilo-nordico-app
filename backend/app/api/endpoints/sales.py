@@ -6,7 +6,7 @@ from app.models.sale import Sale, SaleItem
 from app.models.product import Product
 from app.models.payment_history import PaymentHistory
 from app.models.cash_movement import CashMovement
-from app.schemas.sale import SaleCreate, SaleUpdate, SaleResponse, PaymentUpdate
+from app.schemas.sale import SaleCreate, SaleUpdate, SaleResponse, PaymentUpdate, ItemExchangeRequest
 from typing import List, Optional
 import asyncio
 from app.api.endpoints.webhooks import emit_webhook
@@ -447,6 +447,100 @@ def cancel_delivery(sale_id: int, db: Session = Depends(get_db)):
             prod.stock += item.quantity
 
     db_sale.status = "cancelado"
+    db.commit()
+    db.refresh(db_sale)
+    return db_sale
+
+
+# ?????? POST /{sale_id}/exchange ??? cambio de prenda (devoluci??n / cambio de talla o producto) ??????
+@router.post("/{sale_id}/exchange", response_model=SaleResponse)
+def exchange_sale_item(sale_id: int, exchange_data: ItemExchangeRequest, db: Session = Depends(get_db)):
+    db_sale = db.query(Sale).options(
+        selectinload(Sale.items).selectinload(SaleItem.product),
+        selectinload(Sale.payment_history)
+    ).filter(Sale.id == sale_id).first()
+
+    if not db_sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    # Buscar el item de venta a cambiar
+    sale_item = next((it for it in db_sale.items if it.id == exchange_data.item_id), None)
+    if not sale_item:
+        raise HTTPException(status_code=404, detail="Prenda no encontrada en esta venta")
+
+    # Producto devuelto y producto nuevo
+    old_product = db.query(Product).filter(Product.id == sale_item.product_id).first()
+    new_product = db.query(Product).filter(Product.id == exchange_data.new_product_id).first()
+    if not new_product:
+        raise HTTPException(status_code=404, detail="El nuevo producto a entregar no existe")
+
+    if new_product.stock < 1:
+        raise HTTPException(status_code=400, detail=f"Stock insuficiente para {new_product.name}. Stock actual en tienda: {new_product.stock}")
+
+    # 1. Movimiento de inventario f??sico
+    # La prenda devuelta regresa al inventario (+1)
+    if old_product:
+        old_product.stock += 1
+
+    # La prenda nueva sale del inventario (-1)
+    new_product.stock -= 1
+
+    # Precios unitarios
+    credited_price = sale_item.price_at_sale
+    new_unit_price = exchange_data.new_price if exchange_data.new_price is not None else (new_product.price_sale or credited_price)
+
+    old_prod_name = f"{old_product.name} ({old_product.ref})" if old_product else f"Prenda ID {sale_item.product_id}"
+    new_prod_name = f"{new_product.name} ({new_product.ref})"
+
+    # 2. Actualizar o desglosar el item en la venta
+    if sale_item.quantity == 1:
+        sale_item.product_id = new_product.id
+        sale_item.price_at_sale = new_unit_price
+        sale_item.total_item = new_unit_price
+        sale_item.original_price = new_product.price_sale or new_unit_price
+    else:
+        sale_item.quantity -= 1
+        sale_item.total_item = sale_item.quantity * sale_item.price_at_sale
+        new_sale_item = SaleItem(
+            sale_id=db_sale.id,
+            product_id=new_product.id,
+            quantity=1,
+            price_at_sale=new_unit_price,
+            total_item=new_unit_price,
+            original_price=new_product.price_sale or new_unit_price
+        )
+        db.add(new_sale_item)
+
+    # 3. Recalcular total de venta
+    db.flush()
+    db_sale.total_sale = sum(it.total_item for it in db_sale.items)
+
+    # 4. Cobro de excedente (si la prenda nueva es m??s cara y el cliente pag?? la diferencia hoy)
+    diff_paid = max(0.0, float(exchange_data.difference_paid or 0.0))
+    if diff_paid > 0:
+        db_sale.amount_paid += diff_paid
+        acc = exchange_data.account or "EFECTIVO_TIENDA"
+        now_col = get_colombia_now()
+        exchange_note = f"Excedente cambio de prenda: {old_prod_name} -> {new_prod_name}"
+        if exchange_data.notes:
+            exchange_note += f" | {exchange_data.notes}"
+
+        db.add(PaymentHistory(
+            sale_id=db_sale.id,
+            amount=diff_paid,
+            account=acc,
+            payment_date=now_col,
+            notes=exchange_note
+        ))
+
+    db_sale.balance_due = max(0.0, db_sale.total_sale - db_sale.amount_paid)
+    if db_sale.balance_due <= 0 and db_sale.status != "cancelado":
+        db_sale.status = "pagado"
+
+    # Registro en delivery_notes / observaciones de la venta
+    log_entry = f"[CAMBIO: {old_prod_name} -> {new_prod_name} (+${diff_paid:,.0f})]"
+    db_sale.delivery_notes = f"{db_sale.delivery_notes} | {log_entry}" if db_sale.delivery_notes else log_entry
+
     db.commit()
     db.refresh(db_sale)
     return db_sale

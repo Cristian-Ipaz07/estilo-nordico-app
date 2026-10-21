@@ -37,6 +37,15 @@ class PaymentHistoryInSale(BaseModel):
         from_attributes = True
 
 
+class ItemExchangeRequest(BaseModel):
+    item_id: int
+    new_product_id: int
+    new_price: Optional[float] = None
+    difference_paid: Optional[float] = 0.0
+    account: Optional[str] = "EFECTIVO_TIENDA"
+    notes: Optional[str] = None
+
+
 class PaymentUpdate(BaseModel):
     amount: Optional[float] = None
     account: Optional[str] = None
