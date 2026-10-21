@@ -6,6 +6,7 @@ import {
   ArrowRightLeft, Save, AlertTriangle, History, ArrowUpRight, RotateCcw
 } from 'lucide-react';
 import { getSales } from '../services/api';
+import { FINANCIAL_ACCOUNTS, getAccountInfo } from '../utils/accounts';
 
 const getColDate = (d = new Date()) => new Date(new Date(d).toLocaleString("en-US", { timeZone: "America/Bogota" }));
 
@@ -63,6 +64,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
   const [editingPayId, setEditingPayId] = useState(null);
   const [payEditAmount, setPayEditAmount] = useState('');
   const [payEditDate, setPayEditDate] = useState('');
+  const [payEditAccount, setPayEditAccount] = useState('EFECTIVO_TIENDA');
 
   // Cargar usuarios activos del sistema para el selector de vendedor
   useEffect(() => {
@@ -112,7 +114,9 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
           },
           body: JSON.stringify({
             amount: Number(payEditAmount),
-            payment_date: payEditDate
+            payment_date: payEditDate,
+            account: payEditAccount,
+            notes: `Abono registrado (${payEditAccount})`
           })
         });
       }
@@ -172,6 +176,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
     setEditingPayId(pay.id);
     setPayEditAmount(pay.amount);
     setPayEditDate((pay.payment_date || '').split('T')[0] || '');
+    setPayEditAccount(pay.account || 'EFECTIVO_TIENDA');
   };
 
   const handleSaveEditPay = async (payId) => {
@@ -401,8 +406,8 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
                       {isEditingThis ? (
                         <div className="flex flex-col gap-2 p-1 bg-amber-50/60 rounded-lg border border-amber-200">
                           <p className="text-[10px] font-black text-amber-700 uppercase">Modificando Abono #{p.id}</p>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
                               <label className="text-[9px] font-bold text-slate-500">Fecha del Abono</label>
                               <input
                                 type="date"
@@ -411,7 +416,7 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
                                 className="w-full px-2 py-1 bg-white border rounded-lg text-xs font-bold text-slate-800"
                               />
                             </div>
-                            <div className="w-28">
+                            <div>
                               <label className="text-[9px] font-bold text-slate-500">Monto</label>
                               <input
                                 type="number"
@@ -419,6 +424,18 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
                                 onChange={e => setPayEditAmount(e.target.value)}
                                 className="w-full px-2 py-1 bg-white border rounded-lg text-xs font-black text-emerald-700"
                               />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500">Cuenta de Cobro</label>
+                              <select
+                                value={payEditAccount}
+                                onChange={e => setPayEditAccount(e.target.value)}
+                                className="w-full px-2 py-1 bg-white border rounded-lg text-xs font-black text-slate-800 outline-none focus:border-amber-400 cursor-pointer"
+                              >
+                                {FINANCIAL_ACCOUNTS.map(a => (
+                                  <option key={a.id} value={a.id}>{a.icon} {a.label}</option>
+                                ))}
+                              </select>
                             </div>
                           </div>
                           <div className="flex justify-end gap-1.5 pt-1">

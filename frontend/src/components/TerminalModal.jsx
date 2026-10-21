@@ -1807,6 +1807,24 @@ function ModuloSeparados() {
           </div>
         )}
       </div>
+
+      {isEditModalOpen && selected && (
+        <EditLayawayModal
+          item={selected}
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          onSaved={() => {
+            setIsEditModalOpen(false);
+            loadSeparados();
+            fetch(`${API_URL}/sales/${selected.id}`, {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            })
+              .then(r => r.json())
+              .then(setSelected)
+              .catch(console.error);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2137,6 +2155,94 @@ function ModuloCaja() {
   const [tempBase, setTempBase] = useState(baseCaja);
   const [expandedShiftSaleId, setExpandedShiftSaleId] = useState(null);
 
+  // Modal correcci??n de cuenta / m??todo de pago
+  const [accountModalTarget, setAccountModalTarget] = useState(null);
+  const [selectedAccount, setSelectedAccount] = useState('EFECTIVO_TIENDA');
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+
+  const handleOpenChangeAccountModal = (item) => {
+    setAccountModalTarget(item);
+    setSelectedAccount(item.account || 'EFECTIVO_TIENDA');
+  };
+
+  const handleSaveAccountChange = async () => {
+    if (!accountModalTarget || !selectedAccount) return;
+    setIsSavingAccount(true);
+    try {
+      if (accountModalTarget.cat === 'ABONO') {
+        const res = await fetch(`${API_URL}/sales/${accountModalTarget.saleId}/payments/${accountModalTarget.paymentId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            account: selectedAccount,
+            notes: `Abono registrado (${selectedAccount})`
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Error al actualizar cuenta del abono');
+        }
+      } else if (accountModalTarget.cat === 'VENTA') {
+        const res = await fetch(`${API_URL}/sales/${accountModalTarget.saleId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            payment_method: selectedAccount
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Error al actualizar cuenta de la venta');
+        }
+        if (accountModalTarget.paymentId) {
+          await fetch(`${API_URL}/sales/${accountModalTarget.saleId}/payments/${accountModalTarget.paymentId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              account: selectedAccount,
+              notes: `Pago venta (${selectedAccount})`
+            })
+          }).catch(console.error);
+        }
+      } else if (accountModalTarget.rawMovementId) {
+        const res = await fetch(`${API_URL}/cash/${accountModalTarget.rawMovementId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            account: selectedAccount
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Error al actualizar cuenta del movimiento');
+        }
+      }
+
+      setMsg('??M??todo de pago / cuenta actualizado con ??xito!');
+      setAccountModalTarget(null);
+      loadData();
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+      setTimeout(() => setMsg(''), 3500);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
   // Formulario manual
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -2213,6 +2319,7 @@ function ModuloCaja() {
         list.push({
           id: "sale-" + s.id + "-init",
           saleId: s.id,
+          paymentId: initialPayments.length > 0 ? initialPayments[0].id : null,
           desc: "VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL') + (antCruzado > 0 ? ' (PARCIAL ANTICIPO)' : ''),
           amount: freshPayment,
           type: 'ENTRADA',
@@ -2230,6 +2337,8 @@ function ModuloCaja() {
         list.push({
           id: "sale-" + s.id + "-pay-" + p.id,
           saleId: s.id,
+          paymentId: p.id,
+          payment: p,
           desc: "ABONO VENTA #" + s.id + " - " + (s.customer_name || 'CLIENTE FINAL'),
           amount: p.amount,
           type: 'ENTRADA',
@@ -2262,6 +2371,7 @@ function ModuloCaja() {
       const mDate = m.payment_date || m.created_at;
       list.push({
         id: "csh-" + m.id,
+        rawMovementId: m.id,
         desc: m.description,
         amount: m.amount,
         type: m.type,
@@ -2751,16 +2861,32 @@ function ModuloCaja() {
                         <span>·</span>
                         <span className="text-slate-600">{f.cat}</span>
                         {f.account && (
-                          <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase border ml-1 ${getAccountInfo(f.account).badgeClass}`}>
-                            {getAccountInfo(f.account).icon} {getAccountInfo(f.account).label}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenChangeAccountModal(f)}
+                            title="Clic para corregir cuenta o m??todo de cobro"
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ml-1 hover:opacity-80 transition-opacity flex items-center gap-1 cursor-pointer ${getAccountInfo(f.account).badgeClass}`}
+                          >
+                            <span>{getAccountInfo(f.account).icon} {getAccountInfo(f.account).label}</span>
+                            <Edit3 size={9} className="opacity-60" />
+                          </button>
                         )}
                       </p>
                     </div>
                   </div>
-                  <span className={"font-black text-sm " + (f.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600')}>
-                    {f.type === 'ENTRADA' ? '+' : '-'}${fmt(f.amount)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={"font-black text-sm " + (f.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600')}>
+                      {f.type === 'ENTRADA' ? '+' : '-'}${fmt(f.amount)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenChangeAccountModal(f)}
+                      title="Cambiar m??todo o cuenta de este movimiento"
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Edit3 size={13} />
+                    </button>
+                  </div>
                 </div>
               ))
             )
@@ -2999,6 +3125,88 @@ function ModuloCaja() {
         context="terminal"
         onTransferSuccess={loadData}
       />
+
+      {/* MODAL DE EDICI??N R??PIDA DE CUENTA / M??TODO DE PAGO */}
+      {accountModalTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-100 flex flex-col gap-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-[10px] font-black tracking-widest uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  Correcci??n de Cuenta
+                </span>
+                <h3 className="text-base font-black text-slate-800 mt-1">Cambiar M??todo de Cobro</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAccountModalTarget(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
+              <p className="font-black text-slate-800 uppercase leading-snug">{accountModalTarget.desc}</p>
+              <p className="text-slate-500 font-bold mt-1">
+                Monto: <span className="font-black text-emerald-600">${fmt(accountModalTarget.amount)}</span>
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1.5">
+                ??En qu?? cuenta ingres?? o sali?? este dinero?
+              </label>
+              <div className="space-y-1.5">
+                {FINANCIAL_ACCOUNTS.map(acc => {
+                  const isSelected = selectedAccount === acc.id;
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setSelectedAccount(acc.id)}
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{acc.icon}</span>
+                        <div>
+                          <p className="text-xs font-black text-slate-800">{acc.fullLabel}</p>
+                          <p className="text-[10px] text-slate-400">{acc.label}</p>
+                        </div>
+                      </div>
+                      {isSelected && <Check size={16} className="text-indigo-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAccountModalTarget(null)}
+                disabled={isSavingAccount}
+                className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-black text-xs hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAccountChange}
+                disabled={isSavingAccount || selectedAccount === accountModalTarget.account}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                {isSavingAccount ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>{isSavingAccount ? 'Guardando...' : 'Confirmar Cambio'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
