@@ -93,6 +93,7 @@ export default function CashFlow() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState(null);
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
 
   // Formulario de nuevo movimiento de caja mayor / contable
   const [newMovement, setNewMovement] = useState({
