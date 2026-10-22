@@ -372,7 +372,23 @@ export default function CashFlow() {
       const isEntrada = m.type === 'ENTRADA';
       const amt = Number(m.amount) || 0;
       const t = new Date(m.payment_date || m.created_at).getTime();
-      const isOpenShiftItem = treasuryBalances.lastCierreTimestamp > 0 && t > treasuryBalances.lastCierreTimestamp;
+
+      // Clasificación Casa vs Turno Tienda
+      const acc = m.account || 'EFECTIVO_TIENDA';
+      const mDesc = (m.description || '').toUpperCase();
+      const isCasa = acc === 'EFECTIVO_CASA' || 
+                     acc === 'NEQUI_CASA' || 
+                     acc === 'BANCOLOMBIA' ||
+                     mDesc.includes('(NEQUI EN CASA)') ||
+                     mDesc.includes('NEQUI CASA') ||
+                     mDesc.includes('(EFECTIVO EN CASA)') ||
+                     mDesc.includes('EFECTIVO CASA') ||
+                     mDesc.includes('(CAJA MAYOR)') ||
+                     mDesc.includes('CAJA MAYOR') ||
+                     mDesc.includes('CORTE ANTERIOR');
+
+      // Un movimiento es del "Turno de tienda abierto" SOLO si es de la tienda y posterior al último corte
+      const isOpenShiftItem = !isCasa && (treasuryBalances.lastCierreTimestamp > 0 && t > treasuryBalances.lastCierreTimestamp);
 
       // Si el usuario quiere ver solo el flujo consolidado a Casa, omitir operaciones de tienda aún no cerradas
       if (!includeOpenShift && isOpenShiftItem) {
