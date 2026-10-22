@@ -312,12 +312,18 @@ def delete_payment(sale_id: int, payment_id: int, db: Session = Depends(get_db))
     if not payment:
         raise HTTPException(status_code=404, detail="Abono no encontrado en esta venta")
 
-    db_sale.amount_paid = max(0.0, db_sale.amount_paid - payment.amount)
+    db.delete(payment)
+    db.flush()
+
+    # Recalcular amount_paid como la suma real de los pagos que quedan
+    remaining_payments = db.query(PaymentHistory).filter(PaymentHistory.sale_id == sale_id).all()
+    db_sale.amount_paid = sum(p.amount for p in remaining_payments)
     db_sale.balance_due = max(0.0, db_sale.total_sale - db_sale.amount_paid)
-    if db_sale.balance_due > 0 and db_sale.status == "pagado":
+    if db_sale.balance_due <= 0:
+        db_sale.status = "pagado"
+    elif db_sale.status == "pagado":
         db_sale.status = "separado"
 
-    db.delete(payment)
     db.commit()
     db.refresh(db_sale)
     return {"message": "Abono eliminado exitosamente", "nuevo_saldo": db_sale.balance_due, "amount_paid": db_sale.amount_paid}

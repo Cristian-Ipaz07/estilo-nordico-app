@@ -2167,6 +2167,29 @@ function ModuloCaja() {
   const [selectedAccount, setSelectedAccount] = useState('EFECTIVO_TIENDA');
   const [isSavingAccount, setIsSavingAccount] = useState(false);
 
+  const handleDeletePaymentFromFlow = async (f) => {
+    if (!f.saleId || !f.paymentId) return;
+    if (!window.confirm(`¿Eliminar este cobro/abono de $${fmt(f.amount)} de la Venta #${f.saleId}? Se restará de la venta y desaparecerá de la caja de hoy.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/sales/${f.saleId}/payments/${f.paymentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer ' + localStorage.getItem('token')
+        }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al eliminar el abono');
+      }
+      alert(`Cobro de $${fmt(f.amount)} eliminado con éxito`);
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+      loadData();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   const handleOpenChangeAccountModal = (item) => {
     setAccountModalTarget(item);
     setSelectedAccount(item.account || 'EFECTIVO_TIENDA');
@@ -2926,9 +2949,10 @@ function ModuloCaja() {
                       <button
                         type="button"
                         onClick={() => {
-                          window.location.href = `/ventas?search=${f.saleId}`;
+                          window.location.hash = `#/sales?search=${f.saleId}`;
+                          if (typeof onClose === 'function') onClose();
                         }}
-                        title={`Ir a modificar Venta #${f.saleId} en Portal Ventas`}
+                        title={`Ir a ver o modificar Venta #${f.saleId} en Portal Ventas`}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                       >
                         <ExternalLink size={13} />
@@ -2942,6 +2966,16 @@ function ModuloCaja() {
                     >
                       <Edit3 size={13} />
                     </button>
+                    {f.saleId && f.paymentId && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePaymentFromFlow(f)}
+                        title="Eliminar este abono o cobro si fue registrado por error"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))

@@ -397,6 +397,7 @@ const AppContent = () => {
               <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/inventory" />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/sales" element={<ProtectedRoute allowedRoles={['Admin']}><Sales /></ProtectedRoute>} />
+              <Route path="/ventas" element={<Navigate to="/sales" replace />} />
               <Route path="/layaway" element={<ProtectedRoute allowedRoles={['Admin']}><LayawayPage /></ProtectedRoute>} />
               <Route path="/cash" element={<ProtectedRoute allowedRoles={['Admin']}><CashFlow /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute allowedRoles={['Admin']}><Reports /></ProtectedRoute>} />

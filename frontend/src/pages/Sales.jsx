@@ -693,14 +693,26 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
                     <label className="text-[10px] font-bold text-slate-600 block mb-0.5">
                       Precio a cobrar por la nueva prenda:
                     </label>
-                    <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 w-36 shadow-2xs">
-                      <span className="text-slate-400 font-black text-xs mr-1">$</span>
-                      <input
-                        type="number"
-                        value={customPrice}
-                        onChange={e => setCustomPrice(e.target.value)}
-                        className="w-full text-xs font-black text-slate-800 outline-none"
-                      />
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 w-32 shadow-2xs">
+                        <span className="text-slate-400 font-black text-xs mr-1">$</span>
+                        <input
+                          type="number"
+                          value={customPrice}
+                          onChange={e => setCustomPrice(e.target.value)}
+                          className="w-full text-xs font-black text-slate-800 outline-none"
+                        />
+                      </div>
+                      {priceDifference > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomPrice(currentItem?.price_at_sale || 0)}
+                          className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                          title="Igualar al precio pagado para que sea cambio 1 a 1 sin costo ($0)"
+                        >
+                          Hacer $0 (1 a 1)
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
@@ -797,10 +809,18 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || !selectedNewProduct}
-            className="flex-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all shadow-md disabled:opacity-30 flex items-center justify-center gap-2 cursor-pointer"
+            className={`flex-2 py-3 text-white rounded-2xl text-xs font-black transition-all shadow-md disabled:opacity-30 flex items-center justify-center gap-2 cursor-pointer ${
+              priceDifference > 0 ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'
+            }`}
           >
             {isSubmitting ? <RefreshCw size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-            <span>{isSubmitting ? 'Procesando Cambio...' : 'Confirmar Cambio de Prenda'}</span>
+            <span>
+              {isSubmitting 
+                ? 'Procesando Cambio...' 
+                : priceDifference > 0 
+                  ? `Confirmar Cambio y Cobrar Excedente de +$${fmt(priceDifference)}`
+                  : 'Confirmar Cambio de Prenda (Sin Costo $0)'}
+            </span>
           </button>
         </div>
       </div>
@@ -808,7 +828,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
   );
 };
 
-const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDelivery, onExchange }) => {
+const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDelivery, onExchange, onDeletePayment }) => {
   const [expanded, setExpanded] = useState(false);
   const isAbono = Boolean(sale.isPayment);
 
@@ -937,7 +957,7 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
               <DollarSign size={15} />
             </button>
           )}
-          {!isAbono && (
+          {!isAbono ? (
             <button
               title="Eliminar venta"
               onClick={() => onDelete(sale)}
@@ -945,6 +965,16 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
             >
               <Trash2 size={15} />
             </button>
+          ) : (
+            isAdmin && sale.paymentId && (
+              <button
+                title="Eliminar este abono/recaudo si fue un error"
+                onClick={() => onDeletePayment(sale.id, sale.paymentId, sale.amount_paid)}
+                className="p-2 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg text-slate-400 hover:text-rose-500 transition-all cursor-pointer"
+              >
+                <Trash2 size={15} />
+              </button>
+            )
           )}
         </td>
       </tr>
@@ -1056,6 +1086,7 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
                       <th className="text-left pb-1">Fecha</th>
                       <th className="text-left pb-1">Nota</th>
                       <th className="text-right pb-1">Monto</th>
+                      {isAdmin && <th className="text-right pb-1 w-10"></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1078,6 +1109,18 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
                           </span>
                         </td>
                         <td className="py-1.5 text-right text-sm font-black text-emerald-600">${fmt(p.amount)}</td>
+                        {isAdmin && (
+                          <td className="py-1.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => onDeletePayment(sale.id, p.id, p.amount)}
+                              title="Eliminar este abono o cobro si fue un error"
+                              className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1163,6 +1206,28 @@ const Sales = () => {
     setDeleteTarget(null);
     fetchSales();
     showToast(`Venta #${sale.id} eliminada y stock restituido`);
+  };
+
+  const handleDeletePayment = async (saleId, paymentId, amount) => {
+    if (!window.confirm(`¿Eliminar este cobro/abono de $${fmt(amount)} de la Venta #${saleId}? Se descontará de la venta y se eliminará del flujo de caja.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/sales/${saleId}/payments/${paymentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al eliminar el abono');
+      }
+      showToast(`Abono de $${fmt(amount)} eliminado correctamente`);
+      fetchSales();
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   // ── Abonar ────────────────────────────────────────────────────────────────
@@ -1612,6 +1677,7 @@ const Sales = () => {
                   onExchange={(targetSale, targetItem) => setExchangeTarget({ sale: targetSale, item: targetItem })}
                   onConfirmDelivery={handleConfirmDelivery}
                   onCancelDelivery={handleCancelDelivery}
+                  onDeletePayment={handleDeletePayment}
                 />
               ))}
 
