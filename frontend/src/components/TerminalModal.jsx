@@ -6,7 +6,7 @@ import { EditLayawayModal } from '../pages/LayawayPage';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
 import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
-  AlertCircle, CheckCircle2, Package, DollarSign, Clock,
+  AlertCircle, CheckCircle2, Check, Package, DollarSign, Clock,
   Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
   History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';

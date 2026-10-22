@@ -266,7 +266,7 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
 
 // ── Fila expandible con items / abonos ─────────────────────────────────────────
 
-// ?????? Modal de Cambio de Prenda (Garant??a / Cambio de Talla o Producto) ???????????????????????????
+// ── Modal de Cambio de Prenda (Garantía / Cambio de Talla o Producto) ──────────
 const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
   const [selectedItemId, setSelectedItemId] = useState(initialItem?.id || sale.items?.[0]?.id);
   const [products, setProducts] = useState([]);
@@ -294,34 +294,74 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
 
   const oldProduct = currentItem?.product;
 
-  // Sugerencias r??pidas: misma referencia o modelo
+  // Sugerencias rápidas: MISMO MODELO Y REFERENCIA (solo variantes reales de la prenda con stock)
   const quickSuggestions = useMemo(() => {
     if (!oldProduct || !products.length) return [];
-    const baseRef = (oldProduct.ref || '').split('-')[0].trim().toLowerCase();
-    const baseName = (oldProduct.name || '').split(' ')[0].trim().toLowerCase();
+    const oldParentId = oldProduct.parent_id;
+    const oldRefRaw = (oldProduct.ref || '').trim();
+    const baseRef = oldRefRaw.includes('-') ? oldRefRaw.split('-')[0].trim().toLowerCase() : oldRefRaw.toLowerCase();
 
     return products.filter(p => {
-      if (p.id === currentItem.product_id) return false;
+      // Excluir la misma prenda exacta que devuelve
+      if (p.id === currentItem.product_id || p.id === oldProduct.id) return false;
+      // Solo mostrar variantes con stock disponible
+      if ((p.stock || 0) <= 0) return false;
+
+      // 1. Mismo modelo padre (si tienen parent_id)
+      if (oldParentId && p.parent_id && p.parent_id === oldParentId) return true;
+      if (oldParentId && p.id === oldParentId) return true;
+      if (oldProduct.id && p.parent_id === oldProduct.id) return true;
+
+      // 2. Misma referencia base (ej: '7647-')
       const pRef = (p.ref || '').toLowerCase();
-      const pName = (p.name || '').toLowerCase();
-      const matchesRef = baseRef && pRef.includes(baseRef);
-      const matchesName = baseName && pName.includes(baseName);
-      return matchesRef || matchesName;
-    }).sort((a, b) => (b.stock > 0 ? 1 : 0) - (a.stock > 0 ? 1 : 0));
+      if (baseRef && baseRef.length >= 3) {
+        if (pRef.startsWith(baseRef + '-') || pRef === baseRef) return true;
+      }
+
+      return false;
+    }).slice(0, 15);
   }, [oldProduct, products, currentItem]);
 
-  // B??squeda general en cat??logo
+  const KNOWN_SIZES = useMemo(() => new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', '3xl', '4xl', '36', '38', '40', '42']), []);
+
+  // Búsqueda inteligente multi-palabra en catálogo (igual al buscador del Terminal POS)
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
+    const raw = searchQuery.trim().toLowerCase();
+    if (!raw) return [];
+
+    const kws = raw.split(/\s+/).filter(Boolean);
+    if (!kws.length) return [];
+
     return products.filter(p => {
-      const name = (p.name || '').toLowerCase();
-      const ref = (p.ref || '').toLowerCase();
-      const cat = (p.category || '').toLowerCase();
-      const sub = (p.subcategory || '').toLowerCase();
-      return name.includes(q) || ref.includes(q) || cat.includes(q) || sub.includes(q);
-    }).slice(0, 20);
-  }, [products, searchQuery]);
+      if (p.id === currentItem?.product_id) return false;
+
+      const pSize = (p.size || '').trim().toLowerCase();
+      const pColor = (p.color || '').trim().toLowerCase();
+      const pRef = (p.ref || '').trim().toLowerCase();
+      const pName = (p.name || '').trim().toLowerCase();
+      const pCat = (p.category || '').trim().toLowerCase();
+      const pSub = (p.subcategory || '').trim().toLowerCase();
+      const pBrand = (p.brand || '').trim().toLowerCase();
+
+      const generalText = `${pRef} ${pName} ${pCat} ${pSub} ${pBrand} ${pColor} ${pSize}`.toLowerCase();
+
+      for (const kw of kws) {
+        if (KNOWN_SIZES.has(kw)) {
+          const matchesSize = pSize === kw || pRef.endsWith(`-${kw}`) || pRef.includes(`-${kw}-`);
+          if (!matchesSize && !generalText.includes(kw)) return false;
+        } else {
+          if (!generalText.includes(kw)) return false;
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      const stockA = (a.stock || 0) > 0 ? 1 : 0;
+      const stockB = (b.stock || 0) > 0 ? 1 : 0;
+      if (stockA !== stockB) return stockB - stockA;
+      return (a.name || '').localeCompare(b.name || '');
+    }).slice(0, 50);
+  }, [products, searchQuery, currentItem, KNOWN_SIZES]);
 
   const handleSelectNew = (prod) => {
     setSelectedNewProduct(prod);
@@ -335,7 +375,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!currentItem || !selectedNewProduct) {
-      alert('Por favor selecciona la nueva prenda que se llevar?? el cliente.');
+      alert('Por favor selecciona la nueva prenda que se llevará el cliente.');
       return;
     }
 
@@ -370,7 +410,10 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
       window.dispatchEvent(new CustomEvent('refresh-sales'));
       window.dispatchEvent(new CustomEvent('refresh-cash'));
       window.dispatchEvent(new CustomEvent('refresh-inventory'));
-      alert(`??Cambio procesado con ??xito!\n\n??? Se devolvi?? a stock: ${oldProduct?.name || 'Prenda'}\n??? Se entreg?? al cliente: ${selectedNewProduct.name}${priceDifference > 0 ? `\n??? Excedente cobrado hoy: $${fmt(priceDifference)} (${getAccountInfo(selectedAccount).label})` : '\n??? Sin costo adicional (Mismo valor)'}`);
+      const extraMsg = priceDifference > 0 
+        ? `\n💵 Excedente cobrado hoy: $${fmt(priceDifference)} (${getAccountInfo(selectedAccount).label})`
+        : '\n✓ Sin costo adicional (Mismo valor)';
+      alert(`¡Cambio procesado con éxito!\n\n🔄 Se devolvió a stock: ${oldProduct?.name || 'Prenda'}\n✓ Se entregó al cliente: ${selectedNewProduct.name}${extraMsg}`);
       onSuccess();
     } catch (err) {
       alert(err.message);
@@ -386,10 +429,10 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
         <div className="flex justify-between items-start pb-3 border-b border-slate-100 shrink-0">
           <div>
             <span className="text-[10px] font-black tracking-widest uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1 w-fit">
-              <ArrowLeftRight size={11} /> Cambio de Prenda / Garant??a
+              <ArrowLeftRight size={11} /> Cambio de Prenda / Garantía
             </span>
             <h3 className="text-lg font-black text-slate-800 mt-1">
-              Cambio de Producto ??? Venta #{sale.id}
+              Cambio de Prenda — Venta #{sale.id}
             </h3>
             <p className="text-xs text-slate-500 font-semibold">Cliente: <strong className="text-slate-800">{sale.customer_name || 'Cliente Final'}</strong></p>
           </div>
@@ -428,11 +471,11 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
               <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-3 flex justify-between items-center">
                 <div>
                   <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
-                    ?????? Prenda Devuelta
+                    🔄 Prenda Devuelta
                   </span>
                   <p className="text-xs font-black text-slate-800 mt-1">{oldProduct?.name || `ID ${currentItem.product_id}`}</p>
                   <p className="text-[10px] text-slate-500 font-semibold uppercase">
-                    Ref: {oldProduct?.ref || '???'} {oldProduct?.size ? `?? Talla ${oldProduct.size}` : ''} {oldProduct?.color ? `?? ${oldProduct.color}` : ''}
+                    Ref: {oldProduct?.ref || 'N/A'} {oldProduct?.size ? `• Talla ${oldProduct.size}` : ''} {oldProduct?.color ? `• ${oldProduct.color}` : ''}
                   </p>
                 </div>
                 <div className="text-right">
@@ -449,7 +492,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
               2. Selecciona la nueva prenda que se entrega:
             </label>
 
-            {/* Atajos de la misma referencia */}
+            {/* Atajos de la misma referencia / modelo */}
             {quickSuggestions.length > 0 && (
               <div className="mb-2.5">
                 <p className="text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
@@ -475,7 +518,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span>{p.size || 'Talla'} {p.color ? `?? ${p.color}` : ''}</span>
+                          <span>{p.size ? `Talla ${p.size}` : 'Talla única'}{p.color ? ` • ${p.color}` : ''}</span>
                           <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${isSelected ? 'bg-indigo-700 text-white' : hasStock ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-500'}`}>
                             {hasStock ? `${p.stock} un.` : 'Agotado'}
                           </span>
@@ -488,22 +531,31 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
               </div>
             )}
 
-            {/* Buscador libre en cat??logo */}
+            {/* Buscador inteligente en catálogo */}
             <div className="relative mb-2">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
                 type="text"
-                placeholder="O busca cualquier otra prenda (nombre, referencia o categor??a)..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                placeholder="Busca por nombre, referencia, talla, color (ej: 'importada cam', '7647 L', 'nike negro')..."
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
             {searchQuery.trim() && (
-              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-2xl bg-white divide-y divide-slate-50 mb-2 shadow-xs">
+              <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-2xl bg-white divide-y divide-slate-100 mb-2 shadow-xs">
                 {filteredProducts.length === 0 ? (
-                  <p className="p-3 text-center text-xs text-slate-400 italic">No se encontraron productos coincidentes.</p>
+                  <p className="p-4 text-center text-xs text-slate-400 italic">No se encontraron productos coincidentes.</p>
                 ) : (
                   filteredProducts.map(p => {
                     const isSelected = selectedNewProduct?.id === p.id;
@@ -519,7 +571,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
                         <div>
                           <p className="text-slate-800">{p.name}</p>
                           <p className="text-[10px] text-slate-400 uppercase font-semibold">
-                            {p.ref} {p.size ? `?? Talla ${p.size}` : ''} {p.color ? `?? ${p.color}` : ''}
+                            {p.ref} {p.size ? `• Talla ${p.size}` : ''} {p.color ? `• ${p.color}` : ''}
                           </p>
                         </div>
                         <div className="text-right">
@@ -541,11 +593,11 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
-                      ??? Nueva Prenda a Entregar
+                      ✓ Nueva Prenda a Entregar
                     </span>
                     <p className="text-xs font-black text-slate-800 mt-1">{selectedNewProduct.name}</p>
                     <p className="text-[10px] text-slate-500 font-semibold uppercase">
-                      Ref: {selectedNewProduct.ref || '???'} {selectedNewProduct.size ? `?? Talla ${selectedNewProduct.size}` : ''} {selectedNewProduct.color ? `?? ${selectedNewProduct.color}` : ''}
+                      Ref: {selectedNewProduct.ref || 'N/A'} {selectedNewProduct.size ? `• Talla ${selectedNewProduct.size}` : ''} {selectedNewProduct.color ? `• ${selectedNewProduct.color}` : ''}
                     </p>
                     <p className="text-[10px] text-emerald-700 font-black mt-0.5">
                       Stock en tienda: {selectedNewProduct.stock} unidades
@@ -584,7 +636,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
             )}
           </div>
 
-          {/* 3. C??lculo de Balance y Excedente */}
+          {/* 3. Cálculo de Balance y Excedente */}
           {selectedNewProduct && (
             <div className="space-y-3 pt-1">
               {priceDifference <= 0 ? (
@@ -614,19 +666,26 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
 
                   <div className="pt-2">
                     <label className="text-[10px] font-black uppercase text-amber-900 block mb-1">
-                      ??En qu?? cuenta recibe hoy la tienda este excedente?
+                      ¿En qué cuenta recibe hoy la tienda este excedente?
                     </label>
                     <select
                       value={selectedAccount}
                       onChange={e => setSelectedAccount(e.target.value)}
                       className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none cursor-pointer"
                     >
-                      {FINANCIAL_ACCOUNTS.map(a => (
-                        <option key={a.id} value={a.id}>{a.icon} {a.fullLabel}</option>
-                      ))}
+                      <optgroup label="🏪 Fondos del Turno de Hoy (Caja Local)">
+                        {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'TIENDA').map(a => (
+                          <option key={a.id} value={a.id}>{a.icon} {a.fullLabel}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="🏠 Cuentas de Casa (Caja Mayor)">
+                        {FINANCIAL_ACCOUNTS.filter(a => a.scope === 'CASA').map(a => (
+                          <option key={a.id} value={a.id}>{a.icon} {a.fullLabel}</option>
+                        ))}
+                      </optgroup>
                     </select>
                     <p className="text-[9px] text-amber-700 mt-1 italic">
-                      ?????? Este dinero entrar?? inmediatamente al flujo y turno de caja de hoy.
+                      💡 Este dinero entrará inmediatamente al flujo y turno de caja de hoy.
                     </p>
                   </div>
                 </div>
@@ -640,7 +699,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
                   type="text"
                   value={exchangeNotes}
                   onChange={e => setExchangeNotes(e.target.value)}
-                  placeholder="Ej: Cambio por talla L o defecto de f??brica"
+                  placeholder="Ej: Cambio por talla L o defecto de fábrica"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500"
                 />
               </div>
@@ -869,7 +928,7 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
                   <th className="text-right pb-1">P. Venta</th>
                   <th className="text-right pb-1">Total Fila</th>
                   {!isAbono && <th className="text-right pb-1">Dcto.</th>}
-                  {!isAbono && <th className="text-right pb-1">Acci??n</th>}
+                  {!isAbono && <th className="text-right pb-1">Acción</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1169,21 +1228,22 @@ const Sales = () => {
       filterStatus === 'en_domicilio' ? (!item.isPayment && item.status === 'en_domicilio') :
       filterStatus === 'por_confirmar' ? (!item.isPayment && (item.status === 'por_confirmar' || item.status === 'en_domicilio')) : true;
 
-    const q = search.toLowerCase();
-    const matchItems = item.items?.some(it =>
-      it.product?.name?.toLowerCase().includes(q) ||
-      it.product?.ref?.toLowerCase().includes(q) ||
-      it.product?.category?.toLowerCase().includes(q) ||
-      it.product?.subcategory?.toLowerCase().includes(q)
-    );
-    const matchSearch = !q ||
-      item.customer_name?.toLowerCase().includes(q) ||
-      String(item.id).includes(q) ||
-      item.user?.full_name?.toLowerCase().includes(q) ||
-      item.sale_channel?.toLowerCase().includes(q) ||
-      item.delivery_address?.toLowerCase().includes(q) ||
-      (item.notes && item.notes.toLowerCase().includes(q)) ||
-      matchItems;
+    const kws = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const matchSearch = kws.length === 0 || kws.every(kw => {
+      const matchItems = item.items?.some(it =>
+        it.product?.name?.toLowerCase().includes(kw) ||
+        it.product?.ref?.toLowerCase().includes(kw) ||
+        it.product?.category?.toLowerCase().includes(kw) ||
+        it.product?.subcategory?.toLowerCase().includes(kw)
+      );
+      return String(item.id).includes(kw) ||
+        item.customer_name?.toLowerCase().includes(kw) ||
+        item.user?.full_name?.toLowerCase().includes(kw) ||
+        item.sale_channel?.toLowerCase().includes(kw) ||
+        item.delivery_address?.toLowerCase().includes(kw) ||
+        (item.notes && item.notes.toLowerCase().includes(kw)) ||
+        matchItems;
+    });
 
     const matchRange = isInRange(isoToDateStr(item.eventDate));
 
@@ -1321,7 +1381,7 @@ const Sales = () => {
           onSuccess={() => {
             setExchangeTarget(null);
             fetchSales();
-            showToast('??Cambio de prenda procesado con ??xito!');
+            showToast('¡Cambio de prenda procesado con éxito!');
           }}
         />
       )}
