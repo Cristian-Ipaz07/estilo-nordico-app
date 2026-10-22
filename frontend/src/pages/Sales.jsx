@@ -8,6 +8,7 @@ import {
   CalendarRange
 } from 'lucide-react';
 import { useDateRange } from '../context/DateRangeContext';
+import { useAuth } from '../context/AuthContext';
 
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -162,6 +163,34 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
     sale_date: isoToDateStr(sale.created_at)
   });
 
+  const [items, setItems] = useState(() => (sale.items || []).map(it => ({
+    id: it.id,
+    product_id: it.product_id,
+    name: it.product?.name || `Producto #${it.product_id}`,
+    ref: it.product?.ref || '',
+    quantity: it.quantity || 1,
+    price_at_sale: it.price_at_sale || 0,
+    total_item: (it.price_at_sale || 0) * (it.quantity || 1)
+  })));
+
+  const currentTotalSale = useMemo(() => {
+    return items.reduce((sum, it) => sum + (Number(it.price_at_sale) || 0) * (it.quantity || 1), 0);
+  }, [items]);
+
+  const handleItemPriceChange = (index, newPrice) => {
+    const updated = [...items];
+    const p = Number(newPrice) || 0;
+    updated[index].price_at_sale = p;
+    updated[index].total_item = p * (updated[index].quantity || 1);
+    setItems(updated);
+
+    // Si la venta estaba pagada completa, sincronizar el abono recibido automáticamente con el nuevo total
+    if (sale.status === 'pagado' || sale.balance_due <= 0) {
+      const newTotal = updated.reduce((sum, it) => sum + (Number(it.price_at_sale) || 0) * (it.quantity || 1), 0);
+      setFormData(prev => ({ ...prev, amount_paid: newTotal }));
+    }
+  };
+
   const [activeUsers, setActiveUsers] = useState([]);
   useEffect(() => {
     fetch(`${API_URL}/users/`, {
@@ -176,26 +205,35 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onUpdate(formData);
+    onUpdate({
+      ...formData,
+      items: items.map(it => ({
+        id: it.id,
+        product_id: it.product_id,
+        quantity: it.quantity,
+        price_at_sale: Number(it.price_at_sale)
+      })),
+      total_sale: currentTotalSale
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-md">
-      <div className="bg-white rounded-[35px] shadow-2xl p-8 w-[450px]">
-        <div className="flex justify-between items-center mb-8">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
+      <div className="bg-white rounded-[35px] shadow-2xl p-6 sm:p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
           <div>
-            <h3 className="text-xl font-black text-slate-900">Corregir Venta #{sale.id}</h3>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Modo Administrador</p>
+            <h3 className="text-xl font-black text-slate-900">Modificar Venta #{sale.id}</h3>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Precios y datos de la venta · Modo Administrador</p>
           </div>
-          <button onClick={onClose} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><X size={20} /></button>
+          <button onClick={onClose} className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><X size={18} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre del Cliente</label>
             <input 
               type="text" 
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 uppercase"
               value={formData.customer_name}
               onChange={e => setFormData({...formData, customer_name: e.target.value})}
             />
@@ -205,7 +243,7 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Vendedor</label>
               <select 
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2.5 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
                 value={formData.seller}
                 onChange={e => setFormData({...formData, seller: e.target.value})}
               >
@@ -224,7 +262,7 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
 
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Fecha Registrada</label>
-              <div className="flex items-center bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2.5">
+              <div className="flex items-center bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
                 <input 
                   type="date"
                   className="bg-transparent outline-none w-full text-xs font-bold text-slate-700"
@@ -235,27 +273,59 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
             </div>
           </div>
 
+          {/* LISTA DE PRENDAS CON EDICIÓN DE VALORES */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex justify-between items-center ml-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase">Prendas y Valores Vendidos</label>
+              <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                Total Venta: ${fmt(currentTotalSale)}
+              </span>
+            </div>
+            <div className="space-y-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80 max-h-48 overflow-y-auto">
+              {items.map((it, idx) => (
+                <div key={it.id || idx} className="bg-white p-2.5 rounded-xl border border-slate-200/60 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-xs text-slate-800 truncate uppercase">{it.name}</p>
+                    <p className="text-[10px] text-slate-400 font-mono font-bold truncate">{it.ref} · Cant: {it.quantity}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 w-32 shrink-0">
+                    <span className="text-xs font-black text-slate-400">$</span>
+                    <input
+                      type="number"
+                      step="500"
+                      value={it.price_at_sale}
+                      onChange={e => handleItemPriceChange(idx, e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-800 font-mono text-right outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Abono Total recibido</label>
-            <div className="flex items-center bg-emerald-50 border-2 border-emerald-100 rounded-2xl px-4 py-4">
-              <span className="text-emerald-500 font-black mr-3">$</span>
+            <div className="flex justify-between items-center ml-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase">Dinero Cobrado / Pagado</label>
+              <span className="text-[9px] font-bold text-slate-400">
+                Saldo: ${fmt(Math.max(0, currentTotalSale - (Number(formData.amount_paid) || 0)))}
+              </span>
+            </div>
+            <div className="flex items-center bg-emerald-50 border-2 border-emerald-100 rounded-2xl px-4 py-2.5">
+              <span className="text-emerald-500 font-black mr-2 text-sm">$</span>
               <input 
                 type="number"
-                className="bg-transparent outline-none w-full font-black text-xl text-emerald-700"
+                className="bg-transparent outline-none w-full font-black text-base text-emerald-700"
                 value={formData.amount_paid}
                 onChange={e => setFormData({...formData, amount_paid: Number(e.target.value)})}
               />
             </div>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter text-center mt-2 italic px-4">
-              Nota: El total de la venta (${fmt(sale.total_sale)}) no se puede editar aquí. Si necesitas cambiar productos, elimina la venta y créala de nuevo en el terminal.
-            </p>
           </div>
 
           <button 
             type="submit"
-            className="w-full bg-slate-900 text-white rounded-[25px] py-4 font-black text-sm hover:bg-black transition-all shadow-xl shadow-slate-200 mt-4 uppercase"
+            className="w-full bg-slate-900 text-white rounded-2xl py-3.5 font-black text-xs uppercase tracking-wider hover:bg-black transition-all shadow-md mt-2 cursor-pointer"
           >
-            Guardar Cambios
+            Guardar Cambios de Venta
           </button>
         </form>
       </div>
@@ -732,7 +802,7 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
   );
 };
 
-const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDelivery, onExchange }) => {
+const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDelivery, onExchange }) => {
   const [expanded, setExpanded] = useState(false);
   const isAbono = Boolean(sale.isPayment);
 
@@ -845,13 +915,15 @@ const SaleRow = ({ sale, onDelete, onPay, onEdit, onConfirmDelivery, onCancelDel
               <ArrowLeftRight size={15} />
             </button>
           )}
-          <button
-            title={isAbono ? "Ver o editar venta origen" : "Corregir venta"}
-            onClick={() => onEdit(sale.parentSale || sale)}
-            className="p-2 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg text-slate-400 hover:text-blue-600 transition-all"
-          >
-            <Edit2 size={15} />
-          </button>
+          {isAdmin && (
+            <button
+              title={isAbono ? "Ver o editar venta origen" : "Modificar precios y prendas de la venta"}
+              onClick={() => onEdit(sale.parentSale || sale)}
+              className="p-2 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg text-slate-400 hover:text-blue-600 transition-all cursor-pointer"
+            >
+              <Edit2 size={15} />
+            </button>
+          )}
           {sale.balance_due > 0 && (
             <button
               title="Registrar nuevo abono"
@@ -1039,8 +1111,10 @@ const Sales = () => {
       return true;
     }
   });
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [syncingCloud, setSyncingCloud] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [filterStatus, setFilterStatus] = useState('todos');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [payTarget, setPayTarget] = useState(null);
@@ -1531,6 +1605,7 @@ const Sales = () => {
                 <SaleRow
                   key={item.uniqueKey}
                   sale={item}
+                  isAdmin={isAdmin}
                   onDelete={setDeleteTarget}
                   onPay={setPayTarget}
                   onEdit={setEditTarget}

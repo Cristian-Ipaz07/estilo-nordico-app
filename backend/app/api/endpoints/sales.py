@@ -199,6 +199,20 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
     if sale_data.customer_name is not None:
         db_sale.customer_name = sale_data.customer_name
 
+    # Actualizar items de la venta si se envían
+    if sale_data.items is not None:
+        for item_data in sale_data.items:
+            for item in db_sale.items:
+                if item_data.id and item.id == item_data.id:
+                    if item_data.price_at_sale is not None:
+                        item.price_at_sale = item_data.price_at_sale
+                    if item_data.quantity is not None:
+                        item.quantity = item_data.quantity
+                    item.total_item = (item.price_at_sale or 0.0) * (item.quantity or 1)
+        db_sale.total_sale = sum(item.total_item for item in db_sale.items)
+    elif sale_data.total_sale is not None:
+        db_sale.total_sale = sale_data.total_sale
+
     # El "vendedor" se guarda en sale_channel para compatibilidad con el modelo actual
     if sale_data.seller is not None:
         db_sale.sale_channel = sale_data.seller
@@ -211,12 +225,15 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
 
     if sale_data.amount_paid is not None:
         db_sale.amount_paid = sale_data.amount_paid
-        db_sale.balance_due = max(0.0, db_sale.total_sale - sale_data.amount_paid)
-        if sale_data.status is None:
-            db_sale.status = "pagado" if db_sale.balance_due <= 0 else "separado"
+    elif sale_data.items is not None and db_sale.status == "pagado":
+        db_sale.amount_paid = db_sale.total_sale
+
+    db_sale.balance_due = max(0.0, db_sale.total_sale - (db_sale.amount_paid or 0.0))
 
     if sale_data.status is not None:
         db_sale.status = sale_data.status
+    else:
+        db_sale.status = "pagado" if db_sale.balance_due <= 0 else "separado"
 
     if sale_data.delivery_address is not None:
         db_sale.delivery_address = sale_data.delivery_address
@@ -229,6 +246,18 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
             db_sale.created_at = parse_sale_date(sale_data.sale_date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+
+    # Sincronizar PaymentHistory y CashMovement si la venta está pagada y cambiaron los montos
+    if (sale_data.items is not None or sale_data.amount_paid is not None) and db_sale.status == "pagado":
+        if db_sale.payment_history and len(db_sale.payment_history) == 1:
+            db_sale.payment_history[0].amount = db_sale.amount_paid
+        
+        cash_mov = db.query(CashMovement).filter(
+            CashMovement.description.like(f"%Venta #{db_sale.id}%"),
+            CashMovement.type == "ENTRADA"
+        ).first()
+        if cash_mov:
+            cash_mov.amount = db_sale.amount_paid
 
     db.commit()
     db.refresh(db_sale)

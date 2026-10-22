@@ -101,6 +101,12 @@ class SaleCreate(SaleBase):
 
 
 # ── Actualización parcial de venta (PUT) ──────────────────────────────────────
+class SaleItemUpdate(BaseModel):
+    id: Optional[int] = None
+    product_id: Optional[int] = None
+    quantity: Optional[int] = None
+    price_at_sale: Optional[float] = None
+
 class SaleUpdate(BaseModel):
     customer_name: Optional[str] = None
     seller: Optional[str] = None      # nombre de vendedor (se guarda en sale_channel)
@@ -112,6 +118,8 @@ class SaleUpdate(BaseModel):
     status: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_notes: Optional[str] = None
+    items: Optional[List[SaleItemUpdate]] = None
+    total_sale: Optional[float] = None
 
 
 class SaleResponse(BaseModel):

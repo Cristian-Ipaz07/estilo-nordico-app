@@ -7,7 +7,7 @@ import { normalizeImageUrl } from '../utils/imageOptimizer';
 import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Check, Package, DollarSign, Clock,
-  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save,
+  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save, ExternalLink,
   History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
@@ -2911,10 +2911,22 @@ function ModuloCaja() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className={"font-black text-sm " + (f.type === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600')}>
                       {f.type === 'ENTRADA' ? '+' : '-'}${fmt(f.amount)}
                     </span>
+                    {f.saleId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = `/ventas?search=${f.saleId}`;
+                        }}
+                        title={`Ir a modificar Venta #${f.saleId} en Portal Ventas`}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <ExternalLink size={13} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleOpenChangeAccountModal(f)}
