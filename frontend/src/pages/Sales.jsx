@@ -435,7 +435,13 @@ const ExchangeModal = ({ sale, initialItem, onClose, onSuccess }) => {
 
   const handleSelectNew = (prod) => {
     setSelectedNewProduct(prod);
-    setCustomPrice(prod.price_sale || currentItem.price_at_sale);
+    const oldListPrice = oldProduct?.price_sale || currentItem?.original_price || currentItem?.price_at_sale;
+    const isSamePriceOrModel = (prod.price_sale === oldListPrice) || (oldProduct?.parent_id && prod.parent_id === oldProduct.parent_id);
+    if (isSamePriceOrModel && currentItem?.price_at_sale) {
+      setCustomPrice(currentItem.price_at_sale);
+    } else {
+      setCustomPrice(prod.price_sale || currentItem?.price_at_sale || 0);
+    }
   };
 
   const creditedPrice = currentItem ? currentItem.price_at_sale : 0;
@@ -906,15 +912,13 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
               </button>
             </>
           )}
-          {!isAbono && (
-            <button
-              title="Cambiar prenda de esta venta"
-              onClick={() => onExchange(sale.parentSale || sale)}
-              className="p-2 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 rounded-lg text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
-            >
-              <ArrowLeftRight size={15} />
-            </button>
-          )}
+          <button
+            title={isAbono ? "Cambiar prenda de este separado" : "Cambiar prenda de esta venta"}
+            onClick={() => onExchange(sale.parentSale || sale)}
+            className="p-2 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 rounded-lg text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
+          >
+            <ArrowLeftRight size={15} />
+          </button>
           {isAdmin && (
             <button
               title={isAbono ? "Ver o editar venta origen" : "Modificar precios y prendas de la venta"}
@@ -999,8 +1003,8 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
                   <th className="text-right pb-1">P. Lista</th>
                   <th className="text-right pb-1">P. Venta</th>
                   <th className="text-right pb-1">Total Fila</th>
-                  {!isAbono && <th className="text-right pb-1">Dcto.</th>}
-                  {!isAbono && <th className="text-right pb-1">Acción</th>}
+                  <th className="text-right pb-1">Dcto.</th>
+                  <th className="text-right pb-1">Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -1020,24 +1024,20 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
                       <td className="py-2 text-right text-xs text-slate-400">${fmt(item.original_price || item.price_at_sale)}</td>
                       <td className="py-2 text-right text-xs font-bold text-slate-700">${fmt(item.price_at_sale)}</td>
                       <td className="py-2 text-right text-sm font-black text-slate-900">${fmt(item.total_item || (item.price_at_sale * item.quantity))}</td>
-                      {!isAbono && (
-                        <td className={`py-2 text-right text-xs font-bold ${disc > 0 ? 'text-rose-500' : 'text-slate-300'}`}>
-                          {disc > 0 ? `-$${fmt(disc)}` : '—'}
-                        </td>
-                      )}
-                                          {!isAbono && (
-                        <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onExchange(sale.parentSale || sale, item)}
-                            title="Cambiar esta prenda por otra talla, color o producto"
-                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-black uppercase tracking-tight inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
-                          >
-                            <ArrowLeftRight size={11} />
-                            <span>Cambiar</span>
-                          </button>
-                        </td>
-                      )}
+                      <td className={`py-2 text-right text-xs font-bold ${disc > 0 ? 'text-rose-500' : 'text-slate-300'}`}>
+                        {disc > 0 ? `-$${fmt(disc)}` : '—'}
+                      </td>
+                      <td className="py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onExchange(sale.parentSale || sale, item)}
+                          title="Cambiar esta prenda por otra talla, color o producto"
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-black uppercase tracking-tight inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
+                        >
+                          <ArrowLeftRight size={11} />
+                          <span>Cambiar</span>
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
