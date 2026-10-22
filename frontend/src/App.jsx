@@ -53,7 +53,7 @@ const SidebarItem = ({ to, icon: Icon, label, hidden = false, isCollapsed = fals
 
       {/* Tooltip flotante en modo colapsado para Desktop */}
       {isCollapsed && (
-        <div className="hidden md:block absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+        <div className="hidden lg:group-hover:block absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg shadow-xl pointer-events-none z-50 whitespace-nowrap">
           {label}
         </div>
       )}
@@ -173,7 +173,7 @@ const Layout = ({ children }) => {
       {/* Sidebar Navegación Lateral (Drawer en móviles, Colapsable en Desktop) */}
       <aside 
         className={`
-          fixed h-full z-40 bg-white border-r border-slate-200 flex flex-col print:hidden transition-all duration-300 ease-in-out shadow-xl md:shadow-xs
+          fixed h-full z-40 bg-white border-r border-slate-200 flex flex-col print:hidden transition-all duration-300 ease-in-out shadow-xl md:shadow-xs overflow-x-hidden
           ${isMobileMenuOpen ? 'translate-x-0 w-72' : '-translate-x-full md:translate-x-0'}
           ${isSidebarCollapsed ? 'md:w-20' : 'md:w-64'}
         `}
@@ -211,7 +211,7 @@ const Layout = ({ children }) => {
         </div>
 
         {/* Links de Navegación */}
-        <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="p-3 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar" style={{ touchAction: 'pan-y' }}>
           <nav className="space-y-1.5">
             <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/inventory" icon={isAdmin ? Package : Shirt} label={isAdmin ? "Inventario" : "Catálogo Asesor"} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
@@ -235,7 +235,7 @@ const Layout = ({ children }) => {
             <LogOut size={20} className="shrink-0" />
             {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="font-bold text-sm">Cerrar Sesión</span>}
             {isSidebarCollapsed && (
-              <div className="hidden md:block absolute left-full ml-3 px-2.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+              <div className="hidden lg:group-hover:block absolute left-full ml-3 px-2.5 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg shadow-xl pointer-events-none z-50 whitespace-nowrap">
                 Cerrar Sesión
               </div>
             )}

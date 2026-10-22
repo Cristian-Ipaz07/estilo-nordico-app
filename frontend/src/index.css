@@ -38,3 +38,8 @@ body.modal-open main,
 body.modal-open [class*="overflow-y-auto"] {
   overscroll-behavior: contain !important;
 }
+
+/* Utilidad para evitar scroll horizontal */
+.no-scrollbar-x {
+  overflow-x: hidden !important;
+}

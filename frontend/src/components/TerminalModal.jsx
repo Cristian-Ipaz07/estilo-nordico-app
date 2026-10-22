@@ -712,20 +712,20 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
   };
 
   return (
-    <div className="flex flex-col h-full p-6 overflow-hidden relative">
+    <div className="flex flex-col h-full p-3 sm:p-4 md:p-6 overflow-hidden relative">
       {refreshing && (
         <div className="absolute top-4 right-4 flex items-center gap-2 bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1.5 rounded-full border border-emerald-200 z-10 animate-pulse">
           <RefreshCw size={11} className="animate-spin" /> Sincronizando stock...
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-3 mb-4">
-        <div className="col-span-7 flex items-center gap-2" ref={searchRef}>
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-2.5 sm:gap-3 mb-3 sm:mb-4 shrink-0">
+        <div className="xl:col-span-6 2xl:col-span-7 flex items-center gap-2" ref={searchRef}>
           <div className="relative flex-1">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+            <Search className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
             <input
               autoFocus
-              className="w-full pl-14 pr-11 py-4 bg-slate-100 rounded-[22px] outline-none font-bold text-slate-700 text-base border-2 border-transparent focus:border-emerald-500 transition-all placeholder:text-slate-400"
+              className="w-full pl-11 sm:pl-14 pr-10 py-3 sm:py-4 bg-slate-100 rounded-2xl sm:rounded-[22px] outline-none font-bold text-slate-700 text-sm sm:text-base border-2 border-transparent focus:border-emerald-500 transition-all placeholder:text-slate-400"
               placeholder="Buscar producto: ref, nombre, color, categoría..."
               value={search}
               onFocus={() => {
@@ -876,17 +876,17 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
             <RefreshCw size={18} className={refreshing ? "animate-spin text-emerald-600" : ""} />
           </button>
         </div>
-        <div className="col-span-5 flex gap-2">
-          <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-4">
-            <Calendar size={16} className="text-slate-400 flex-shrink-0" />
-            <input type="date" className="bg-transparent text-[11px] font-black outline-none w-full text-slate-600"
+        <div className="xl:col-span-6 2xl:col-span-5 flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 sm:py-2.5 shrink-0 shadow-2xs">
+            <Calendar size={15} className="text-slate-400 shrink-0" />
+            <input type="date" className="bg-transparent text-[11px] font-black outline-none text-slate-700 cursor-pointer"
               value={saleDate} onChange={e => setSaleDate(e.target.value)} />
           </div>
-          <div className="flex-1 flex items-center gap-2 bg-slate-50 border rounded-[20px] px-3 py-1">
-            <Tag size={15} className="text-slate-400 flex-shrink-0" />
-            <div className="w-full">
-              <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight">Vendedor (Comisión)</span>
-              <select className="bg-transparent text-[10px] font-black outline-none w-full text-slate-700 uppercase cursor-pointer"
+          <div className="flex-1 min-w-[150px] sm:min-w-[180px] flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5 shadow-2xs">
+            <Tag size={15} className="text-slate-400 shrink-0" />
+            <div className="w-full min-w-0">
+              <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight truncate">Vendedor (Comisión)</span>
+              <select className="bg-transparent text-[11px] font-black outline-none w-full text-slate-800 uppercase cursor-pointer truncate"
                 value={vendedorId} onChange={e => setVendedorId(e.target.value)}>
                 {sellers.length > 0 ? (
                   sellers.map(s => (
@@ -898,8 +898,8 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
               </select>
             </div>
           </div>
-          <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-[20px] font-mono font-black text-xs flex items-center gap-1.5 shrink-0 shadow-2xs" title="Número consecutivo de la venta actual para tu cuaderno">
-            <Receipt size={14} className="text-indigo-600" />
+          <div className="px-3 py-2 sm:py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-2xl font-mono font-black text-xs flex items-center gap-1.5 shrink-0 shadow-2xs whitespace-nowrap" title="Número consecutivo de la venta actual para tu cuaderno">
+            <Receipt size={14} className="text-indigo-600 shrink-0" />
             <span>Venta #{nextSaleNumber}</span>
           </div>
         </div>
@@ -1045,9 +1045,9 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
         )}
       </div>
 
-      {/* Tabla carrito */}
-      <div className="flex-1 overflow-y-auto">
-        <table className="w-full border-separate border-spacing-y-2">
+      {/* Tabla carrito con scroll suave */}
+      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar">
+        <table className="w-full min-w-[520px] border-separate border-spacing-y-2">
           <thead>
             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
               <th className="pb-3 pl-4 text-left w-[35%]">Producto</th>
@@ -1322,21 +1322,21 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
           )}
         </div>
 
-        <div className="grid grid-cols-12 gap-3">
-          <div className="col-span-3 bg-slate-900 p-5 rounded-[30px] text-white flex flex-col justify-center">
-            <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest mb-1 text-center">Total Venta</p>
-            <p className="text-2xl font-black italic text-center">${fmt(totalVenta)}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3">
+          <div className="sm:col-span-4 md:col-span-3 bg-slate-900 p-3 sm:p-5 rounded-2xl sm:rounded-[30px] text-white flex sm:flex-col justify-between sm:justify-center items-center sm:items-stretch shadow-md">
+            <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest sm:text-center">Total Venta</p>
+            <p className="text-xl sm:text-2xl font-black italic sm:text-center">${fmt(totalVenta)}</p>
           </div>
           {useAnticipo && anticipoAmount > 0 ? (
-            <div className="col-span-5 bg-teal-50 border-2 border-teal-200 p-4 rounded-[30px] flex flex-col justify-center">
+            <div className="sm:col-span-4 md:col-span-5 bg-teal-50 border-2 border-teal-200 p-3 sm:p-4 rounded-2xl sm:rounded-[30px] flex flex-col justify-center shadow-xs">
               <div className="flex justify-between items-center mb-1">
                 <p className="text-[9px] font-black text-teal-700 uppercase tracking-widest">Cobro Hoy en Caja</p>
                 <span className="text-[9px] font-bold bg-teal-200/60 text-teal-800 px-2 py-0.5 rounded-md">
                   Anticipo -${fmt(anticipoAmount)}
                 </span>
               </div>
-              <div className="flex items-center justify-center text-3xl font-black text-teal-900">
-                <span className="mr-2 opacity-30 text-xl">$</span>
+              <div className="flex items-center justify-center text-2xl sm:text-3xl font-black text-teal-900">
+                <span className="mr-1.5 opacity-30 text-lg sm:text-xl">$</span>
                 <input 
                   type="number" 
                   className="bg-transparent outline-none w-full text-center font-black"
@@ -1353,10 +1353,10 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
               </p>
             </div>
           ) : (
-            <div className="col-span-5 bg-emerald-50 border-2 border-emerald-100 p-5 rounded-[30px] flex flex-col justify-center">
+            <div className="sm:col-span-4 md:col-span-5 bg-emerald-50 border-2 border-emerald-100 p-3 sm:p-5 rounded-2xl sm:rounded-[30px] flex flex-col justify-center shadow-xs">
               <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-1 text-center">Abono Recibido</p>
-              <div className="flex items-center justify-center text-3xl font-black text-emerald-700">
-                <span className="mr-2 opacity-30 text-xl">$</span>
+              <div className="flex items-center justify-center text-2xl sm:text-3xl font-black text-emerald-700">
+                <span className="mr-1.5 opacity-30 text-lg sm:text-xl">$</span>
                 <input 
                   type="number" 
                   className="bg-transparent outline-none w-full text-center"
@@ -1379,19 +1379,19 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
               </div>
             </div>
           )}
-          <div className="col-span-4 flex flex-col gap-2">
-            <div className="flex items-center gap-3 bg-slate-100 px-5 py-3 rounded-2xl border">
-              <User size={18} className="text-slate-400" />
+          <div className="sm:col-span-4 md:col-span-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2.5 bg-slate-100 px-4 py-2.5 sm:py-3 rounded-2xl border border-slate-200">
+              <User size={16} className="text-slate-400 shrink-0" />
               <input placeholder="Nombre Cliente" className="bg-transparent font-bold text-xs outline-none w-full uppercase"
                 value={customer} onChange={e => setCustomer(e.target.value)} />
             </div>
             <button 
               disabled={cart.length === 0 || hasStockError || isSubmitting} 
               onClick={handleFinalizar}
-              className={`flex-1 rounded-[22px] font-black text-sm transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tighter cursor-pointer ${
+              className={`py-3 sm:py-0 flex-1 rounded-2xl sm:rounded-[22px] font-black text-xs sm:text-sm transition-all disabled:opacity-20 flex items-center justify-center gap-2 uppercase tracking-tight cursor-pointer shadow-md active:scale-98 ${
                 isDelivery 
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-md' 
-                  : 'bg-slate-900 hover:bg-black text-white'
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20' 
+                  : 'bg-slate-900 hover:bg-black text-white shadow-slate-900/20'
               }`}
             >
               {isSubmitting ? (
@@ -3332,23 +3332,65 @@ export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = f
   const effectiveTab = (!isAdmin && (activeTab === 'stock' || activeTab === 'caja')) ? 'ventas' : activeTab;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
-      <div className="bg-white w-[98vw] max-w-7xl h-[95vh] rounded-[40px] shadow-2xl flex overflow-hidden border border-white/20">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-0 sm:p-2 md:p-4">
+      <div className="bg-white w-full h-full sm:w-[98vw] sm:h-[96vh] max-w-7xl rounded-none sm:rounded-[32px] md:rounded-[40px] shadow-2xl flex flex-col lg:flex-row overflow-hidden border border-white/20">
+
+        {/* BARRA SUPERIOR PARA MÓVIL Y TABLET (< lg) */}
+        <div className="lg:hidden bg-slate-900 text-white px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col gap-2 shrink-0 border-b border-slate-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="bg-emerald-500/20 text-emerald-400 p-1.5 rounded-xl">
+                <Store size={18} />
+              </div>
+              <div>
+                <h1 className="font-black italic text-sm tracking-tight leading-tight text-white">ESTILO NÓRDICO</h1>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Terminal v2.0 · Pasto / Samaniego</span>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="p-2 bg-white/10 hover:bg-rose-600 text-white rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+              title="Cerrar Terminal"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Pestañas de navegación horizontal */}
+          <nav className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar no-scrollbar-x py-0.5">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-[11px] uppercase tracking-tight shrink-0 transition-all cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'bg-white text-slate-900 shadow-md ring-2 ring-emerald-500/30'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80 hover:text-white'
+                }`}
+              >
+                <span className={activeTab === tab.id ? (tab.id === 'ventas' ? 'text-emerald-400' : tab.id === 'separados' ? 'text-amber-400' : 'text-indigo-400') : 'text-slate-400'}>
+                  {tab.icon}
+                </span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
 
         {/* CONTENIDO MÓDULO */}
-        <div className="flex-[4] flex flex-col bg-white overflow-hidden">
+        <div className="flex-1 lg:flex-[4] flex flex-col bg-white overflow-hidden min-w-0">
           {effectiveTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} initialDeliveryMode={initialDeliveryMode} />}
           {effectiveTab === 'separados' && <ModuloSeparados />}
           {isAdmin && effectiveTab === 'stock' && <ModuloStock inventory={inventory} reloadInventory={reloadInventory} />}
           {isAdmin && effectiveTab === 'caja' && <ModuloCaja />}
         </div>
 
-        {/* NAVEGACIÓN LATERAL */}
-        <div className="flex-1 bg-slate-50 border-l p-8 flex flex-col min-w-[220px]">
-          <div className="flex justify-between items-center mb-12">
+        {/* NAVEGACIÓN LATERAL EXCLUSIVA PARA DESKTOP (>= lg) */}
+        <div className="hidden lg:flex lg:flex-col lg:w-64 xl:w-72 bg-slate-50 border-l border-slate-200 p-6 xl:p-8 shrink-0">
+          <div className="flex justify-between items-center mb-8 xl:mb-12">
             <h1 className="font-black italic text-base tracking-tighter text-slate-900">ESTILO NÓRDICO</h1>
             <button onClick={onClose}
-              className="p-3 bg-white shadow-sm border rounded-2xl hover:text-rose-500 transition-all">
+              className="p-3 bg-white shadow-sm border border-slate-200 rounded-2xl hover:text-rose-500 hover:border-rose-200 transition-all cursor-pointer">
               <X size={20} />
             </button>
           </div>
@@ -3356,7 +3398,7 @@ export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = f
           <nav className="space-y-3 flex-1">
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-4 p-5 rounded-[25px] font-black text-[11px] uppercase transition-all ${
+                className={`w-full flex items-center gap-4 p-4 xl:p-5 rounded-[25px] font-black text-[11px] uppercase transition-all cursor-pointer ${
                   activeTab === tab.id
                     ? `bg-white shadow-xl border text-slate-900 border-slate-100`
                     : 'text-slate-400 hover:bg-white/50'
