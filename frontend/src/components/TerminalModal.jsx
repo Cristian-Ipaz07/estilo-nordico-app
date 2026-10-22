@@ -7,7 +7,7 @@ import { normalizeImageUrl } from '../utils/imageOptimizer';
 import {
   Search, ShoppingCart, Trash2, X, User, Calendar, Tag, Lock, Wallet, ArrowDownRight, ArrowUpRight,
   AlertCircle, CheckCircle2, Check, Package, DollarSign, Clock,
-  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save, ExternalLink,
+  Plus, ChevronRight, ArrowRight, RefreshCw, Edit2, Edit3, Save, ExternalLink, Store,
   History, Truck, RotateCcw, Image as ImageIcon, ArrowLeftRight, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
@@ -1554,7 +1554,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
 }
 
 // ─── MÓDULO SEPARADOS ─────────────────────────────────────────────────────────
-function ModuloSeparados() {
+function ModuloSeparados({ initialLayawayId = null }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
   const [separados, setSeparados] = useState([]);
@@ -1581,6 +1581,13 @@ function ModuloSeparados() {
   }, []);
 
   useEffect(() => { loadSeparados(); }, [loadSeparados]);
+
+  useEffect(() => {
+    if (initialLayawayId && separados.length > 0) {
+      const target = separados.find(s => s.id === Number(initialLayawayId));
+      if (target) setSelected(target);
+    }
+  }, [initialLayawayId, separados]);
 
   useEffect(() => {
     window.addEventListener('refresh-sales', loadSeparados);
@@ -3292,7 +3299,7 @@ function ModuloCaja() {
 }
 
 // ─── TERMINAL MODAL PRINCIPAL ─────────────────────────────────────────────────
-export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = false }) {
+export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = false, initialTab = null, initialLayawayId = null }) {
   useBodyScrollLock(isOpen);
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
@@ -3328,6 +3335,12 @@ export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = f
 
   // TODOS LOS HOOKS SE HAN LLAMADO. AHORA SÍ EL GUARD DE SALIDA:
   if (!isOpen) return null;
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const effectiveTab = (!isAdmin && (activeTab === 'stock' || activeTab === 'caja')) ? 'ventas' : activeTab;
 
@@ -3380,7 +3393,7 @@ export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = f
         {/* CONTENIDO MÓDULO */}
         <div className="flex-1 lg:flex-[4] flex flex-col bg-white overflow-hidden min-w-0">
           {effectiveTab === 'ventas' && <ModuloVentas inventory={inventory} reloadInventory={reloadInventory} refreshing={refreshing} initialDeliveryMode={initialDeliveryMode} />}
-          {effectiveTab === 'separados' && <ModuloSeparados />}
+          {effectiveTab === 'separados' && <ModuloSeparados initialLayawayId={initialLayawayId} />}
           {isAdmin && effectiveTab === 'stock' && <ModuloStock inventory={inventory} reloadInventory={reloadInventory} />}
           {isAdmin && effectiveTab === 'caja' && <ModuloCaja />}
         </div>

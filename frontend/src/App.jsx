@@ -74,6 +74,8 @@ const Layout = ({ children }) => {
   const [selectedBranch, setSelectedBranch] = useState("Sede Principal (Pasto)");
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isTerminalDeliveryMode, setIsTerminalDeliveryMode] = useState(false);
+  const [terminalInitialTab, setTerminalInitialTab] = useState(null);
+  const [terminalInitialLayawayId, setTerminalInitialLayawayId] = useState(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [pendingDeliveriesCount, setPendingDeliveriesCount] = useState(0);
 
@@ -150,7 +152,14 @@ const Layout = ({ children }) => {
         toggleSidebar();
       }
     };
-    const handleOpenTerminal = () => setIsTerminalOpen(true);
+    const handleOpenTerminal = (e) => {
+      if (e?.detail?.tab) setTerminalInitialTab(e.detail.tab);
+      else setTerminalInitialTab('ventas');
+      if (e?.detail?.layawayId) setTerminalInitialLayawayId(e.detail.layawayId);
+      else setTerminalInitialLayawayId(null);
+      setIsTerminalDeliveryMode(Boolean(e?.detail?.isDelivery));
+      setIsTerminalOpen(true);
+    };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open-terminal', handleOpenTerminal);
@@ -336,7 +345,18 @@ const Layout = ({ children }) => {
 
       {/* Modal del Terminal POS */}
       {isTerminalOpen && (
-        <TerminalModal isOpen={isTerminalOpen} onClose={() => { setIsTerminalOpen(false); setIsTerminalDeliveryMode(false); }} initialDeliveryMode={isTerminalDeliveryMode} />
+        <TerminalModal 
+          isOpen={isTerminalOpen} 
+          onClose={() => { 
+            setIsTerminalOpen(false); 
+            setIsTerminalDeliveryMode(false); 
+            setTerminalInitialTab(null);
+            setTerminalInitialLayawayId(null);
+          }} 
+          initialDeliveryMode={isTerminalDeliveryMode} 
+          initialTab={terminalInitialTab}
+          initialLayawayId={terminalInitialLayawayId}
+        />
       )}
 
       {/* Drawer de Notificaciones de Domicilios y Pedidos */}

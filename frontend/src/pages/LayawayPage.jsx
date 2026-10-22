@@ -3,12 +3,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Wallet, Calendar, Plus, ArrowRight, UserPlus, AlertCircle,
   Search, Truck, Printer, Clock, Edit3, Trash2, X, Check, DollarSign,
-  ArrowRightLeft, Save, AlertTriangle, History, ArrowUpRight, RotateCcw
+  ArrowRightLeft, Save, AlertTriangle, History, ArrowUpRight, RotateCcw,
+  CheckCircle2, RefreshCw
 } from 'lucide-react';
 import { getSales } from '../services/api';
 import { FINANCIAL_ACCOUNTS, getAccountInfo } from '../utils/accounts';
 
 const getColDate = (d = new Date()) => new Date(new Date(d).toLocaleString("en-US", { timeZone: "America/Bogota" }));
+
+const getTodayCO = () => {
+  const d = getColDate();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 
 const isOverdue = (dateString) => {
   if (!dateString) return false;
@@ -536,7 +546,466 @@ export function EditLayawayModal({ item, isOpen, onClose, onSaved }) {
   );
 }
 
-const LayawayCard = ({ item, onEdit }) => {
+
+// ─── MODAL RÁPIDO PARA ABONAR Y GESTIONAR PAGOS/CUENTAS ────────────────────────
+export function QuickAbonoModal({ item, isOpen, onClose, onAbonoSuccess }) {
+  if (!isOpen || !item) return null;
+
+  const [sale, setSale] = useState(item);
+  const [amount, setAmount] = useState('');
+  const [account, setAccount] = useState('EFECTIVO_TIENDA');
+  const [paymentDate, setPaymentDate] = useState(getTodayCO());
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
+
+  // Edición inline de cuenta para un abono previo
+  const [editingPayId, setEditingPayId] = useState(null);
+  const [editingPayAccount, setEditingPayAccount] = useState('EFECTIVO_TIENDA');
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+
+  // Cargar datos frescos de la venta
+  const reloadSale = () => {
+    fetch(`${API_URL}/sales/${item.id}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.id) setSale(data);
+      })
+      .catch(console.error);
+  };
+
+  useEffect(() => {
+    setSale(item);
+    setAmount('');
+    setNotes('');
+    setPaymentDate(getTodayCO());
+    setMsg('');
+    setError('');
+    setEditingPayId(null);
+    reloadSale();
+  }, [item]);
+
+  const currentBalance = Math.max(0, (sale.balance_due !== undefined ? sale.balance_due : (sale.total_sale - sale.amount_paid)) || 0);
+  const parsedAmount = Number(amount) || 0;
+  const isFullyPaid = parsedAmount >= currentBalance && parsedAmount > 0;
+  const isDelivery = sale.status === 'en_domicilio';
+  const overdue = isOverdue(sale.created_at);
+
+  const handleRegisterAbono = async (e) => {
+    if (e) e.preventDefault();
+    if (!parsedAmount || parsedAmount <= 0) return;
+    setIsSubmitting(true);
+    setError('');
+    try {
+      const isToday = paymentDate === getTodayCO();
+      const dateParam = isToday ? '' : `&payment_date=${paymentDate}`;
+      const noteParam = notes.trim() ? `&notes=${encodeURIComponent(notes.trim())}` : '';
+      
+      const res = await fetch(`${API_URL}/sales/${sale.id}/payment?amount=${parsedAmount}&account=${account}${dateParam}${noteParam}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al registrar abono');
+      }
+
+      setMsg('¡Abono registrado con éxito!');
+      setAmount('');
+      setNotes('');
+      reloadSale();
+      if (onAbonoSuccess) onAbonoSuccess();
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+      setTimeout(() => setMsg(''), 3500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdatePaymentAccount = async (paymentId, newAccount) => {
+    setIsSavingAccount(true);
+    try {
+      const res = await fetch(`${API_URL}/sales/${sale.id}/payments/${paymentId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          account: newAccount
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al actualizar cuenta');
+      }
+
+      setEditingPayId(null);
+      reloadSale();
+      if (onAbonoSuccess) onAbonoSuccess();
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
+  const handleDeletePayment = async (payId, payAmount) => {
+    if (!window.confirm(`¿Eliminar este abono de $${fmt(payAmount)}? Se recalculará el saldo de este separado.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/sales/${sale.id}/payments/${payId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al eliminar');
+      }
+      reloadSale();
+      if (onAbonoSuccess) onAbonoSuccess();
+      window.dispatchEvent(new CustomEvent('refresh-sales'));
+      window.dispatchEvent(new CustomEvent('refresh-cash'));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 flex flex-col my-auto max-h-[94vh] animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+        
+        {/* Cabecera */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                REF-#{sale.id}
+              </span>
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                isDelivery ? 'bg-purple-100 text-purple-700' :
+                overdue ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {isDelivery ? '🛵 En Domicilio' : overdue ? 'Vencido (+30d)' : 'Separado Activo'}
+              </span>
+            </div>
+            <h3 className="text-base font-black text-slate-900 mt-0.5 truncate">{sale.customer_name || 'Sin nombre'}</h3>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open-terminal', { detail: { tab: 'separados', layawayId: sale.id } }));
+                onClose();
+              }}
+              className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-black uppercase rounded-xl border border-slate-200 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              title="Abrir en Terminal POS completo"
+            >
+              <span>Terminal POS</span>
+              <ArrowUpRight size={13} className="text-indigo-600" />
+            </button>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200/60 transition-colors cursor-pointer">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Cuerpo del Modal con Scroll Interno */}
+        <div className="p-5 overflow-y-auto space-y-4 custom-scrollbar">
+          
+          {/* Métricas Financieras */}
+          <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase">Total Venta</p>
+              <p className="text-sm font-black text-slate-800 font-mono">${fmt(sale.total_sale)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase">Abonado</p>
+              <p className="text-sm font-black text-emerald-600 font-mono">${fmt(sale.amount_paid)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[9px] font-bold text-amber-600 uppercase">Saldo Pendiente</p>
+              <p className="text-base font-black text-amber-600 font-mono">${fmt(currentBalance)}</p>
+            </div>
+          </div>
+
+          {/* Prendas apartadas */}
+          {sale.items && sale.items.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-3 shadow-2xs">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Prendas Apartadas ({sale.items.length})</p>
+              <div className="divide-y divide-slate-100 max-h-28 overflow-y-auto pr-1">
+                {sale.items.map(it => (
+                  <div key={it.id} className="py-1 flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-700 truncate pr-2">
+                      {it.product?.name || `ID ${it.product_id}`} <span className="text-[10px] text-slate-400 font-normal">x{it.quantity}</span>
+                    </span>
+                    <span className="font-mono font-black text-slate-900 shrink-0">${fmt(it.total_item || it.price_at_sale)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mensajes de Éxito / Error */}
+          {msg && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-xs p-2.5 rounded-xl flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+              <span>{msg}</span>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 font-bold text-xs p-2.5 rounded-xl flex items-center gap-2 animate-in fade-in">
+              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* FORMULARIO DE NUEVO ABONO */}
+          {currentBalance > 0 ? (
+            <form onSubmit={handleRegisterAbono} className="space-y-3.5 bg-slate-50/70 p-4 rounded-2xl border border-slate-200/90">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  Registrar Nuevo Abono
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setAmount(String(currentBalance))}
+                  className="text-[10px] font-black uppercase text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Saldar Todo (${fmt(currentBalance)})
+                </button>
+              </div>
+
+              {/* Botones de montos sugeridos */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[20000, 50000, 100000].filter(m => m <= currentBalance && m !== currentBalance).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setAmount(String(m))}
+                    className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-black text-slate-700 transition-colors cursor-pointer shadow-2xs font-mono"
+                  >
+                    +${fmt(m)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input grande del valor */}
+              <div className="flex items-center bg-white border-2 border-emerald-400 rounded-2xl px-4 py-2.5 shadow-2xs">
+                <span className="text-emerald-600 font-black text-xl mr-2">$</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={currentBalance * 2}
+                  placeholder="0"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="bg-transparent outline-none w-full font-black text-2xl text-emerald-700 font-mono"
+                  autoFocus
+                />
+              </div>
+
+              {/* Selector de Cuenta / Método de Pago */}
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                  Método de Pago / Destino del Dinero:
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'EFECTIVO_TIENDA', label: 'Efectivo', icon: '💵' },
+                    { id: 'NEQUI_CRISTIAN', label: 'Nequi Cristian', icon: '📱' },
+                    { id: 'NEQUI_DAVID', label: 'Nequi David', icon: '📱' },
+                    { id: 'BANCOLOMBIA', label: 'Bancolombia', icon: '🏦' },
+                    { id: 'EFECTIVO_CASA', label: 'Efectivo Casa', icon: '🏠' }
+                  ].map(acc => {
+                    const isSelected = account === acc.id;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => setAccount(acc.id)}
+                        className={`p-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 border cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm ring-2 ring-slate-900/10'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>{acc.icon}</span>
+                        <span className="truncate">{acc.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Fecha y notas */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Fecha del Abono</label>
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={e => setPaymentDate(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Notas (Opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: abono presencial..."
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* Botón de Confirmación de Abono */}
+              <button
+                type="submit"
+                disabled={!parsedAmount || parsedAmount <= 0 || isSubmitting}
+                className={`w-full py-3.5 px-4 rounded-2xl font-black text-sm uppercase tracking-tight transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-98 disabled:opacity-30 ${
+                  isFullyPaid
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                    : 'bg-slate-900 hover:bg-black text-white shadow-slate-900/20'
+                }`}
+              >
+                {isSubmitting ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw size={15} className="animate-spin" /> Registrando Abono...
+                  </span>
+                ) : isFullyPaid ? (
+                  `🎉 Liquidar y Entregar Separado ($${fmt(parsedAmount)})`
+                ) : (
+                  `💵 Registrar Abono de $${fmt(parsedAmount)}`
+                )}
+              </button>
+            </form>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl text-center font-bold text-xs">
+              ✅ Este separado ya está 100% pagado y liquidado.
+            </div>
+          )}
+
+          {/* HISTORIAL DE ABONOS PREVIOS Y CAMBIO DE CUENTAS */}
+          {sale.payment_history && sale.payment_history.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Historial de Abonos Recibidos ({sale.payment_history.length})
+              </p>
+              <div className="space-y-2">
+                {sale.payment_history.map(p => {
+                  const accInfo = getAccountInfo(p.account);
+                  const isEditingThis = editingPayId === p.id;
+
+                  return (
+                    <div key={p.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                            ${fmt(p.amount)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-bold">
+                            {fmtDateTime(p.payment_date)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isEditingThis) setEditingPayId(null);
+                              else {
+                                setEditingPayId(p.id);
+                                setEditingPayAccount(p.account || 'EFECTIVO_TIENDA');
+                              }
+                            }}
+                            className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                            title="Cambiar cuenta de este abono"
+                          >
+                            {isEditingThis ? 'Cancelar' : 'Cambiar Cuenta'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePayment(p.id, p.amount)}
+                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                            title="Eliminar este abono"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Insignia de cuenta actual */}
+                      {!isEditingThis ? (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-slate-400 font-medium truncate">{p.notes || 'Abono registrado'}</span>
+                          <span className={`px-2 py-0.5 rounded-md font-bold shrink-0 ${accInfo.badgeClass}`}>
+                            {accInfo.icon} {accInfo.label}
+                          </span>
+                        </div>
+                      ) : (
+                        /* Selector inline para cambiar cuenta */
+                        <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                          <select
+                            value={editingPayAccount}
+                            onChange={e => setEditingPayAccount(e.target.value)}
+                            className="flex-1 bg-slate-50 border border-indigo-300 rounded-xl px-2.5 py-1 text-xs font-black text-slate-800 outline-none"
+                          >
+                            {FINANCIAL_ACCOUNTS.map(a => (
+                              <option key={a.id} value={a.id}>
+                                {a.icon} {a.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={isSavingAccount}
+                            onClick={() => handleUpdatePaymentAccount(p.id, editingPayAccount)}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingAccount ? 'Guardando...' : 'Guardar'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+          >
+            Cerrar
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+const LayawayCard = ({ item, onEdit, onAbonar }) => {
   const isDelivery = item.status === 'en_domicilio';
   const percentage = item.total_sale > 0 ? (item.amount_paid / item.total_sale) * 100 : 0;
   const overdue = isOverdue(item.created_at);
@@ -602,11 +1071,12 @@ const LayawayCard = ({ item, onEdit }) => {
             <Edit3 size={15} />
           </button>
           <button
-            onClick={openTerminal}
-            className="flex items-center gap-1 text-emerald-600 font-bold hover:text-emerald-500 transition-colors"
+            onClick={() => onAbonar(item)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-xl font-black text-xs transition-all shadow-2xs cursor-pointer active:scale-95"
+            title="Registrar nuevo abono para este cliente"
           >
-            Abonar
-            <ArrowRight size={14} />
+            <span>Abonar</span>
+            <ArrowRight size={13} />
           </button>
         </div>
       </div>
@@ -622,6 +1092,8 @@ export default function LayawayPage() {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'separado', 'en_domicilio', 'vencido'
   const [editingItem, setEditingItem] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [abonoTargetItem, setAbonoTargetItem] = useState(null);
+  const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
 
   const fetchSales = () => {
     getSales().then(res => {
@@ -701,6 +1173,10 @@ export default function LayawayPage() {
   }, [allAbonosList, search]);
 
   const totalPorCobrar = pendingOrders.reduce((sum, s) => sum + (s.balance_due || 0), 0);
+  const filteredPendingTotal = useMemo(() => {
+    return filteredOrders.reduce((sum, s) => sum + (Number(s.balance_due) || 0), 0);
+  }, [filteredOrders]);
+  const isFiltered = Boolean(search.trim() || filterType !== 'todos');
   const clientesActivos = new Set(pendingOrders.map(s => s.customer_name)).size;
   const vencidosCount = sales.filter(s => (s.balance_due > 0 || s.status === 'separado') && s.status !== 'cancelado' && isOverdue(s.created_at)).length;
   const domiciliosCount = sales.filter(s => s.status === 'en_domicilio').length;
@@ -717,6 +1193,11 @@ export default function LayawayPage() {
   const handleOpenEdit = (item) => {
     setEditingItem(item);
     setIsEditModalOpen(true);
+  };
+
+  const handleOpenAbono = (item) => {
+    setAbonoTargetItem(item);
+    setIsAbonoModalOpen(true);
   };
 
   const handleQuickDeletePay = async (abono) => {
@@ -798,12 +1279,28 @@ export default function LayawayPage() {
           </div>
           <p className="text-2xl font-black text-slate-800">{clientesActivos}</p>
         </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 text-amber-500 mb-2">
-            <Wallet size={18} />
-            <span className="text-xs font-bold uppercase tracking-wider">Total por Cobrar</span>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between text-amber-500 mb-2">
+            <div className="flex items-center gap-2">
+              <Wallet size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">
+                {isFiltered ? 'Saldo Filtrado' : 'Total por Cobrar'}
+              </span>
+            </div>
+            {isFiltered && (
+              <span className="text-[10px] font-black uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-mono">
+                {filteredOrders.length} {filteredOrders.length === 1 ? 'pedido' : 'pedidos'}
+              </span>
+            )}
           </div>
-          <p className="text-2xl font-black text-amber-500">${fmt(totalPorCobrar)}</p>
+          <p className="text-2xl font-black text-amber-500 font-mono">
+            ${fmt(isFiltered ? filteredPendingTotal : totalPorCobrar)}
+          </p>
+          {isFiltered && (
+            <p className="text-[10px] text-slate-400 font-bold mt-1">
+              Cartera global: ${fmt(totalPorCobrar)}
+            </p>
+          )}
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-3 text-purple-600 mb-2">
@@ -865,6 +1362,25 @@ export default function LayawayPage() {
             </div>
           </div>
 
+          {/* Barra de Resumen Dinámico al filtrar por búsqueda */}
+          {search.trim() && (
+            <div className="bg-amber-50/90 border border-amber-200 text-amber-900 px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-base">🔍</span>
+                <span>Búsqueda: "<strong>{search}</strong>"</span>
+                <span className="bg-white px-2 py-0.5 rounded-full border border-amber-200 text-[10px] font-bold text-amber-800 font-mono">
+                  {filteredOrders.length} {filteredOrders.length === 1 ? 'cliente encontrado' : 'clientes encontrados'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-bold text-amber-700 tracking-wider">Total Pendiente Filtrado:</span>
+                <span className="text-base font-black text-amber-900 bg-white px-3 py-1 rounded-xl border border-amber-300 font-mono shadow-2xs">
+                  ${fmt(filteredPendingTotal)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Grid de Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredOrders.length === 0 ? (
@@ -874,7 +1390,7 @@ export default function LayawayPage() {
               </div>
             ) : (
               filteredOrders.map(item => (
-                <LayawayCard key={item.id} item={item} onEdit={handleOpenEdit} />
+                <LayawayCard key={item.id} item={item} onEdit={handleOpenEdit} onAbonar={handleOpenAbono} />
               ))
             )}
           </div>
@@ -991,6 +1507,19 @@ export default function LayawayPage() {
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         onSaved={fetchSales}
+      />
+
+      {/* Modal Rápido de Abono con selección de Cuenta y Edición de Pagos */}
+      <QuickAbonoModal
+        item={abonoTargetItem}
+        isOpen={isAbonoModalOpen}
+        onClose={() => {
+          setIsAbonoModalOpen(false);
+          setAbonoTargetItem(null);
+        }}
+        onAbonoSuccess={() => {
+          fetchSales();
+        }}
       />
     </div>
   );
