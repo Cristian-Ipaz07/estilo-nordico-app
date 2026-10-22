@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp,
   ShoppingCart,
@@ -8,7 +8,8 @@ import {
   Wallet,
   Users,
   ArrowUpRight,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import {
   AreaChart,
@@ -72,7 +73,7 @@ const Dashboard = () => {
   const [timeFilter, setTimeFilter] = useState('Hoy');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchDashboardSales = useCallback(() => {
     getSales().then(res => {
       setSales(Array.isArray(res.data) ? res.data : []);
       setLoading(false);
@@ -82,8 +83,17 @@ const Dashboard = () => {
     });
   }, []);
 
+  useEffect(() => {
+    fetchDashboardSales();
+    window.addEventListener('refresh-sales', fetchDashboardSales);
+    return () => window.removeEventListener('refresh-sales', fetchDashboardSales);
+  }, [fetchDashboardSales]);
+
+  // Excluir ventas canceladas o domicilios rechazados de métricas reales
+  const activeSales = sales.filter(s => s.status !== 'cancelado');
+
   // Filter sales based on selected time using created_at
-  const filteredSales = sales.filter(s => {
+  const filteredSales = activeSales.filter(s => {
     if (timeFilter === 'Hoy') return isToday(s.created_at);
     if (timeFilter === 'Esta Semana') return isThisWeek(s.created_at);
     if (timeFilter === 'Este Mes') return isThisMonth(s.created_at);
@@ -153,7 +163,14 @@ const Dashboard = () => {
           <h2 className="text-2xl font-bold text-slate-800">Resumen General</h2>
           <p className="text-slate-500">Bienvenido de nuevo, así van las ventas en tiempo real.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2.5">
+          <button 
+            onClick={fetchDashboardSales}
+            title="Sincronizar métricas en tiempo real"
+            className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer flex items-center justify-center"
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin text-emerald-600" : ""} />
+          </button>
           <button 
             onClick={() => navigate('/reports')}
             className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"

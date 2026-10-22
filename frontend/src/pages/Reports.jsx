@@ -83,8 +83,9 @@ const TabBalance = ({ sales, cashFlow, startDate, endDate, token }) => {
       .catch(() => setCogs(0));
   }, [startDate, endDate, token]);
 
-  // Filtrar ventas por rango
+  // Filtrar ventas por rango (excluir canceladas)
   const ventas = useMemo(() => sales.filter(s => {
+    if (s.status === 'cancelado') return false;
     const d = (s.created_at || '').split('T')[0];
     return d >= startDate && d <= endDate;
   }), [sales, startDate, endDate]);
@@ -546,6 +547,7 @@ const TabDistribucion = ({ sales, cashFlow, startDate, endDate, token }) => {
   // Calcular utilidad neta del período — incluye ingresos externos de caja
   const { utilidadNeta, totalSalarios, totalGastos, costoMercancia, totalRecaudo, ingresoExterno } = useMemo(() => {
     const ventas = sales.filter(s => {
+      if (s.status === 'cancelado') return false;
       const d = (s.created_at || '').split('T')[0];
       return d >= startDate && d <= endDate;
     });

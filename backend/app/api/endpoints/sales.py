@@ -232,6 +232,8 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
 
     if sale_data.status is not None:
         db_sale.status = sale_data.status
+    if db_sale.status == "cancelado":
+        db_sale.balance_due = 0.0
     else:
         db_sale.status = "pagado" if db_sale.balance_due <= 0 else "separado"
 
@@ -482,6 +484,7 @@ def cancel_delivery(sale_id: int, db: Session = Depends(get_db)):
             prod.stock += item.quantity
 
     db_sale.status = "cancelado"
+    db_sale.balance_due = 0.0
     db.commit()
     db.refresh(db_sale)
     return db_sale

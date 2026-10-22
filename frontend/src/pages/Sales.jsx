@@ -1318,13 +1318,15 @@ const Sales = () => {
       const freshInitialCollected = Math.max(0, initialCollected - antCruzado);
 
       // 1. La venta en su created_at (con su recaudo inicial consolidado)
+      const isCancelled = s.status === 'cancelado';
       list.push({
         ...s,
         uniqueKey: `sale-${s.id}`,
         isPayment: false,
         eventDate: s.created_at,
-        collectedInEvent: freshInitialCollected,
-        merchandiseValue: s.total_sale || 0
+        collectedInEvent: isCancelled ? 0 : freshInitialCollected,
+        merchandiseValue: isCancelled ? 0 : (s.total_sale || 0),
+        balance_due: isCancelled ? 0 : (s.balance_due || 0)
       });
 
       // 2. Solo los ABONOS REALES posteriores (a separados o saldos pendientes)
