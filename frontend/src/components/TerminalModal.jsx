@@ -876,13 +876,23 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
             <RefreshCw size={18} className={refreshing ? "animate-spin text-emerald-600" : ""} />
           </button>
         </div>
-        <div className="xl:col-span-6 2xl:col-span-5 flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <div className="xl:col-span-6 2xl:col-span-5 flex items-center gap-2 flex-wrap">
+          {/* Consecutivo prominente AL FRENTE para que NUNCA se desborde ni se corte */}
+          <div 
+            className="px-3.5 py-2 sm:py-2.5 bg-indigo-600 text-white rounded-2xl font-mono font-black text-xs sm:text-sm flex items-center gap-1.5 shrink-0 shadow-sm whitespace-nowrap select-none" 
+            title="Número consecutivo de la venta actual para tu cuaderno físico"
+          >
+            <Receipt size={15} className="text-indigo-200 shrink-0" />
+            <span>Venta #{nextSaleNumber}</span>
+          </div>
+
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 sm:py-2.5 shrink-0 shadow-2xs">
             <Calendar size={15} className="text-slate-400 shrink-0" />
             <input type="date" className="bg-transparent text-[11px] font-black outline-none text-slate-700 cursor-pointer"
               value={saleDate} onChange={e => setSaleDate(e.target.value)} />
           </div>
-          <div className="flex-1 min-w-[150px] sm:min-w-[180px] flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5 shadow-2xs">
+
+          <div className="flex-1 min-w-[130px] sm:min-w-[150px] flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5 shadow-2xs">
             <Tag size={15} className="text-slate-400 shrink-0" />
             <div className="w-full min-w-0">
               <span className="text-[8px] font-black uppercase text-slate-400 block leading-tight truncate">Vendedor (Comisión)</span>
@@ -898,19 +908,20 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
               </select>
             </div>
           </div>
-          <div className="px-3 py-2 sm:py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-2xl font-mono font-black text-xs flex items-center gap-1.5 shrink-0 shadow-2xs whitespace-nowrap" title="Número consecutivo de la venta actual para tu cuaderno">
-            <Receipt size={14} className="text-indigo-600 shrink-0" />
-            <span>Venta #{nextSaleNumber}</span>
-          </div>
         </div>
       </div>
 
       {/* Modalidad de Entrega: Local / Tienda vs Envío a Domicilio */}
       <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/90 mb-3 space-y-2.5 shrink-0 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
-            <Truck size={14} className="text-indigo-600" /> Modalidad del Pedido:
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+              <Truck size={14} className="text-indigo-600" /> Modalidad del Pedido:
+            </span>
+            <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200/80 rounded-lg text-[10px] font-black font-mono">
+              Venta #{nextSaleNumber}
+            </span>
+          </div>
           <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl">
             <button
               type="button"
