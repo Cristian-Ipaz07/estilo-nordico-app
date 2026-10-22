@@ -2417,17 +2417,17 @@ function ModuloCaja() {
         // Filtrar movimientos pertenecientes a CASA (Caja Mayor / Nómina de cortes / Reinversiones)
         const fAcc = f.account || '';
         const fDesc = (f.desc || '').toUpperCase();
-        const fCat = (f.cat || '').toUpperCase();
         if (
           fAcc === 'EFECTIVO_CASA' || 
           fAcc === 'NEQUI_CASA' || 
+          fAcc === 'BANCOLOMBIA' ||
           fDesc.includes('(NEQUI EN CASA)') ||
           fDesc.includes('NEQUI CASA') ||
           fDesc.includes('(EFECTIVO EN CASA)') ||
+          fDesc.includes('EFECTIVO CASA') ||
           fDesc.includes('(CAJA MAYOR)') ||
-          fDesc.includes('CORTE ANTERIOR') ||
-          fCat === 'SALARIO' || 
-          fCat === 'REINVERSION'
+          fDesc.includes('CAJA MAYOR') ||
+          fDesc.includes('CORTE ANTERIOR')
         ) {
           return false;
         }

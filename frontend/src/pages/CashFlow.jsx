@@ -279,16 +279,16 @@ export default function CashFlow() {
 
       // Determinamos si el movimiento pertenece explícitamente a CASA (Caja Mayor / Consolidado)
       const mDesc = (m.description || '').toUpperCase();
-      const mCat = (m.category || '').toUpperCase();
       const isExplicitCasa = acc === 'EFECTIVO_CASA' || 
                              acc === 'NEQUI_CASA' || 
+                             acc === 'BANCOLOMBIA' ||
                              mDesc.includes('(NEQUI EN CASA)') ||
                              mDesc.includes('NEQUI CASA') ||
                              mDesc.includes('(EFECTIVO EN CASA)') ||
+                             mDesc.includes('EFECTIVO CASA') ||
                              mDesc.includes('(CAJA MAYOR)') ||
-                             mDesc.includes('CORTE ANTERIOR') ||
-                             mCat === 'SALARIO' ||
-                             mCat === 'REINVERSION';
+                             mDesc.includes('CAJA MAYOR') ||
+                             mDesc.includes('CORTE ANTERIOR');
 
       // Cuentas virtuales / bancarias
       if (acc === 'NEQUI_CRISTIAN' || acc === 'NEQUI_DAVID' || acc === 'BANCOLOMBIA' || acc === 'NEQUI_CASA') {
