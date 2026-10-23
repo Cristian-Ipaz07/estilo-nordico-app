@@ -1,5 +1,5 @@
 # ESTADO EN VIVO: NODO ERP (ESTILO NÓRDICO)
-> Última actualización: 2026-10-19 | Resiliencia Cold-Start (SWR Instantáneo) + Variantes Avanzadas + Multi-Fotos + Omnicanal Web
+> Última actualización: 2026-10-22 | Blindaje Cambios 1a1 + Borrado Abonos/Pagos + Fix 404 HashRouter + Sync Dashboard Ventas Canceladas + Consecutivo POS
 
 ## 🎯 RESUMEN EJECUTIVO
 * **Rol**: Fuente Única de Verdad en la Nube (Inventario Maestro, POS Terminal, Domicilios, Catálogo Asesores, Flujo de Caja & Arqueos, API Pública, Almacenamiento de Fotos).
@@ -150,6 +150,111 @@
   - Los links generados por el asesor al filtrar por talla o tipo de prenda ahora aterrizan de forma transparente en la tienda web con soporte de parámetros de consulta (`?tipo=conjunto`, `?tipo=buso`, `?genero=mujer`, `?talla=XL`), asegurando que el cliente vea exactamente lo que el asesor le ofreció sin confusiones de inventario.
 * **Separación de Género & Chaquetas Dama (Ref 5081)**:
   - Chaquetas de mujer categorizadas bajo `MUJER` separadas limpiamente de la Ref 5080 de caballero.
+
+### 12. Estabilidad Transaccional en POS, Abonos, Cambios 1 a 1 y Sincronización Analítica (Sesión 22 Octubre)
+* **Gestión Ágil de Abonos y Modal Dinámico (`QuickAbonoModal.jsx` y `Sales.jsx`)**:
+  - **Corrección de Bug en Tablets/Móviles**: Subsanado el error `Store is not defined` provocado por una importación faltante del icono `Store` de `lucide-react` en dispositivos táctiles.
+  - **Cuentas de Tesorería Reales**: Reemplazado el selector genérico de métodos de pago por el catálogo canónico de cuentas del ERP (`Efectivo`, `Bancolombia Cristian`, `Nequi Cristian`, `Daviplata Cristian`, `Bancolombia Negocio`), garantizando que cada abono ingrese a la cuenta bancaria o gaveta exacta.
+  - **Totalizador Reactivo Dinámico**: En la cabecera del modal se muestra en vivo el número de pedidos pendientes filtrados y la suma matemática exacta de saldos pendientes (`Total Pendiente: $X`), adaptándose a búsquedas por cliente, cédula o fecha.
+  - **Apertura Contextual sin Fricción**: Acceso instantáneo al panel de abono desde el botón `[+ Abonar]` de la fila de venta sin perder la vista activa.
+
+* **Habilitación de Cambios de Prenda en Ventas a Crédito / Abonos (`Sales.jsx`)**:
+  - Se eliminó el candado `!isAbono` en la tabla de ventas que deshabilitaba los botones de acción en filas con saldo pendiente.
+  - Los asesores ahora pueden cambiar prendas (`[⇆ CAMBIAR]`) o aplicar descuentos sobre prendas individuales incluso si la venta aún está en estado `pendiente`.
+
+* **Blindaje en Cambios de Prenda 1 a 1 y Prevención de Cobro Accidental (`Sales.jsx`)**:
+  - **Herencia del Precio Cobrado Original**: En `ExchangeModal`, al seleccionar variantes por píldoras rápidas o prendas de la misma referencia/precio base, el sistema hereda automáticamente el precio pagado en la venta original (`currentItem.price_at_sale`), fijando la diferencia en `$0`.
+  - **Botón `[Hacer $0 (1 a 1)]`**: Permite forzar el saldo a cero con 1 solo clic en cambios de talla o color en prendas vendidas bajo precio promocional.
+  - **Alerta Interactiva en Botón de Confirmación**: Si se calcula cualquier excedente mayor a $0, el botón de confirmación cambia visualmente a color ámbar y advierte de forma explícita: `Cobrar Excedente de $X e Ingresar a Caja Hoy`.
+  - **Depuración Transaccional**: Saneamiento directo del abono erróneo #56 ($10.000) en base de datos Supabase y recalibración de la Venta #306 a $210.000 pagados / saldo $0 / pagado.
+
+* **Corrección de Enrutamiento SPA con HashRouter y Redirección 404 (`TerminalModal.jsx` & `App.jsx`)**:
+  - Se eliminó la navegación dura `window.location.href = '/ventas...'` que provocaba páginas de error `404 NOT_FOUND` en Vercel.
+  - Se migró a actualización nativa del hash: `window.location.hash = '#/sales?search=' + f.saleId` cerrando limpiamente el modal (`onClose()`).
+  - Se añadió la ruta de compatibilidad en `App.jsx`: `<Route path="/ventas" element={<Navigate to="/sales" replace />} />`.
+
+* **Borrado Directo de Pagos/Abonos Erróneos y Recalibración Transaccional (`Sales.jsx`, `TerminalModal.jsx`, `sales.py`)**:
+  - Se integraron botones de papelera `[🗑]` para anular pagos puntuales en:
+    1. Las filas moradas de abono en `Sales.jsx`.
+    2. La tabla de desglose `Historial de Abonos / Pagos` dentro del modal de detalle de venta.
+    3. Los movimientos de caja del Terminal POS (`TerminalModal.jsx`).
+  - **Recálculo Atómico en Backend (`sales.py`)**: El endpoint `DELETE /sales/{sale_id}/payments/{payment_id}` recalcula dinámicamente `sale.amount_paid = sum(p.amount for p in remaining_payments)`, ajusta `sale.balance_due = max(0, total - amount_paid)` y sincroniza el estado de la venta (`pendiente` o `pagado`).
+
+* **Visibilidad y Reposicionamiento del Consecutivo de Venta (`TerminalModal.jsx`)**:
+  - Se reubicó el badge `Venta #{nextSaleNumber}` al inicio de los controles en la cabecera del modal para evitar que el contenedor flex lo corte en pantallas pequeñas (`[ 💲 Vent... ]`).
+  - Diseño con fondo oscuro de alto contraste (`bg-slate-900 border-indigo-500/50`) y `flex-wrap`.
+  - Inclusión del badge informativo `#Venta` en la sección "Modalidad del Pedido".
+
+* **Sincronización Reactiva de Domicilios/Ventas Canceladas en Dashboard y Reportes (`Dashboard.jsx`, `Reports.jsx`, `sales.py`)**:
+  - Se blindaron todas las métricas analíticas contra pedidos cancelados mediante el filtro `s.status !== 'cancelado'`:
+    - Total de ventas en pesos ($).
+    - Volumen de pedidos (#).
+    - Ticket promedio.
+    - Ganancia bruta estimada y unidades vendidas.
+    - Gráfico cronológico de ventas.
+    - Ranking de Top Productos más vendidos.
+  - En backend, `cancel_delivery` ahora setea obligatoriamente `sale.balance_due = 0.0`.
+  - Se integró un listener global en tiempo real para el evento `refresh-sales` y un botón interactivo de refresco manual con spinner en el Dashboard.
+
+---
+
+## 🛡️ BITÁCORA DE ERRORES, POST-MORTEM & BLINDAJES ANTI-REGRESIÓN (LECCIONES OPERATIVAS)
+
+Esta bitácora documenta incidentes reales ocurridos en producción, su causa raíz técnica y las reglas estrictas de desarrollo para blindar el ERP contra fallos repetidos.
+
+### 🔴 INCIDENTE 1: Error 404 NOT FOUND en Navegación desde el Terminal POS
+* **Síntoma**: Al pulsar el botón `[↗]` (ver venta) en los movimientos del Flujo de Caja dentro del Terminal, la aplicación se cerraba y Vercel mostraba una pantalla en blanco con error `404 NOT_FOUND`.
+* **Causa Raíz**: La aplicación frontend utiliza `HashRouter` (`https://estilo-nordico-app.vercel.app/#/sales`). El botón ejecutaba `window.location.href = '/ventas?search=' + f.saleId`. Al tratarse de una navegación "dura" fuera del hash, el navegador realizó una petición HTTP directa al servidor web estático pidiendo la ruta `/ventas`, la cual no existe físicamente como archivo HTML.
+* **Solución**:
+  1. Se reemplazó por navegación sobre el hash: `window.location.hash = '#/sales?search=' + f.saleId` junto a `onClose()`.
+  2. Se configuró un redirect preventivo en `App.jsx`: `<Route path="/ventas" element={<Navigate to="/sales" replace />} />`.
+* **Regla Anti-Regresión #1**: **NUNCA usar `window.location.href = '/ruta'` para navegación interna en esta SPA.** Utilizar siempre `window.location.hash = '#/ruta'` o el hook `useNavigate()` de React Router. Mantener siempre rutas fallback/aliases en español e inglés en `App.jsx`.
+
+---
+
+### 🔴 INCIDENTE 2: Cobro Accidental de Excedente (+$10.000) en Caja al Cambiar Talla de Prenda Promocional
+* **Síntoma**: Un cliente solicitó cambio de talla de una chaqueta Beige XXL a Beige XL. Ambas se vendieron en promoción a $80.000. Al usar las píldoras rápidas del modal de cambio y pulsar confirmar, el sistema generó un cobro forzoso de +$10.000, ingresándolo a la caja física de hoy y cambiando la venta original.
+* **Causa Raíz**: En `ExchangeModal`, al seleccionar la nueva prenda, el sistema asignaba `customPrice = newProduct.price_sale` ($90.000 precio catálogo regular). Al compararlo contra el precio vendido de la prenda original ($80.000), calculó una diferencia a pagar de $10.000, generando automáticamente un registro de pago en `PaymentHistory` para el día de hoy.
+* **Solución**:
+  1. Se configuró que al seleccionar variantes por píldoras rápidas o del mismo grupo de referencia, `customPrice` herede por defecto el precio pactado original (`currentItem.price_at_sale`), estableciendo la diferencia en `$0`.
+  2. Se añadió el botón `[Hacer $0 (1 a 1)]` para anular diferencias en promociones con 1 clic.
+  3. El botón de confirmación ahora advierte en color ámbar el texto: `Cobrar Excedente de $X e Ingresar a Caja Hoy` si la diferencia es mayor a $0.
+  4. Se purgó el pago erróneo #56 directamente en la base de datos de producción Supabase y se restauró el balance de la Venta #306.
+* **Regla Anti-Regresión #2**: **En cambios de prenda de la misma referencia, modelo o promociones equivalentes, el precio por defecto de la nueva prenda DEBE heredar el precio de venta de la prenda entregada (`currentItem.price_at_sale`).** Jamás asumir el precio de lista de catálogo sin advertencia explícita y botón de anulación rápida ($0).
+
+---
+
+### 🔴 INCIDENTE 3: Desincronización entre Edición de Venta y Movimientos de Flujo de Caja (`PaymentHistory`)
+* **Síntoma**: Cuando el usuario intentó corregir el cobro de $10.000 editando la venta para dejarla en $210.000, la venta reflejó el cambio pero el movimiento de $10.000 seguía apareciendo en el Flujo de Caja y en el Arqueo del día.
+* **Causa Raíz**: La tabla `sales` almacena `amount_paid` como un valor escalar acumulado, mientras que el Flujo de Caja y los arqueos diarios leen de la tabla transaccional `payment_history`. El endpoint `PUT /sales/{id}` modificaba el campo en `sales`, pero dejaba intacto el registro físico en `payment_history`, creando una discrepancia contable.
+* **Solución**:
+  1. Se habilitó un botón de eliminación `[🗑]` directo en las filas de abono de `Sales.jsx`, en el historial detallado de pagos de la venta y en el Flujo de Caja del Terminal.
+  2. El endpoint `DELETE /sales/{sale_id}/payments/{payment_id}` en `sales.py` recalcula atómicamente la suma de los pagos restantes: `sale.amount_paid = sum(p.amount for p in remaining_payments)` y ajusta `balance_due = max(0, total - amount_paid)`.
+* **Regla Anti-Regresión #3**: **El Flujo de Caja y los saldos de ventas deben estar gobernados por registros atómicos de `PaymentHistory`.** Nunca editar manualmente el acumulado de una venta sin conciliar o eliminar el registro correspondiente en `payment_history`. Toda eliminación de pago debe recalibrar en el backend la sumatoria real de pagos vigentes.
+
+---
+
+### 🔴 INCIDENTE 4: Métricas del Dashboard y Reportes Sumando Ventas / Domicilios Cancelados
+* **Síntoma**: Un domicilio de 2 chaquetas por $160.000 fue cancelado porque al cliente no le quedaron las prendas. El domicilio se borró/canceló y el inventario retornó correctamente, pero el Dashboard seguía mostrando $185.000 en ventas y 2 órdenes ejecutadas, inflando las métricas de ingreso y utilidades.
+* **Causa Raíz**: Los cálculos analíticos en `Dashboard.jsx` y `Reports.jsx` iteraban sobre todo el array de ventas devuelto por la API sin filtrar por estado (`s.status !== 'cancelado'`). Adicionalmente, el endpoint `cancel_delivery` no reseteaba el `balance_due` a cero.
+* **Solución**:
+  1. Se aplicó el filtro estricto `s.status !== 'cancelado'` en todos los acumuladores: total monetario, conteo de órdenes, ticket promedio, margen bruto, gráfica histórica de ventas y ranking de Top Productos.
+  2. En `sales.py`, la cancelación de domicilios ahora setea `sale.balance_due = 0.0`.
+  3. Se conectó el evento de bus `refresh-sales` y se añadió un botón manual de refresco con feedback visual (spinner) en el Dashboard.
+* **Regla Anti-Regresión #4**: **Toda función o componente que agregue métricas financieras o estadísticas de inventario DEBE filtrar obligatoriamente `status !== 'cancelado'` (o `status === 'pagado' || status === 'pendiente'`).** Ninguna venta cancelada o anulada debe sumarse al volumen de negocio, ingreso bruto, costo de mercancía ni ranking de productos.
+
+---
+
+### 🔴 INCIDENTE 5: Ocultamiento del Número Consecutivo de Venta por Recorte / Desbordamiento CSS en el POS
+* **Síntoma**: En el Terminal de Ventas, el cajero no podía visualizar el consecutivo de la venta activa porque el texto aparecía cortado como `[ 💲 Vent... ]`.
+* **Causa Raíz**: El badge del consecutivo estaba ubicado al final de un contenedor flex con `col-span-6` y la clase `sm:flex-nowrap` dentro de un modal con `overflow-hidden`. Al haber múltiples botones y controles a la izquierda, el badge era expulsado fuera del área visible.
+* **Solución**:
+  1. Se reubicó `Venta #{nextSaleNumber}` al primer lugar de la botonera de la cabecera.
+  2. Se configuró `flex-wrap` y fondo oscuro de alto contraste (`bg-slate-900 border-indigo-500/50`).
+  3. Se agregó un badge complementario `#Venta` en la sección "Modalidad del Pedido".
+* **Regla Anti-Regresión #5**: **Los datos operativos críticos para el cajero (número de venta, total a cobrar, saldo pendiente) deben ocupar posiciones prioritarias a la izquierda (inicio visual), con contenedores flexibles (`flex-wrap`) y sin depender de anchos fijos que puedan truncarse en pantallas pequeñas o tablets.**
+
+---
 
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.

@@ -46,6 +46,11 @@
 ---
 
 ## 4. ESTÁNDARES Y BUENAS PRÁCTICAS
+* **Navegación Interna en SPA con HashRouter**: NUNCA usar `window.location.href = '/ruta'`. Usar siempre `window.location.hash = '#/ruta'` o `navigate('/ruta')` de React Router para prevenir errores 404 en Vercel.
+* **Herencia en Cambios de Prenda 1 a 1**: En cambios de variantes de la misma prenda o precio promocional, heredar obligatoriamente `currentItem.price_at_sale` para garantizar diferencia $0. Proveer siempre botón explícito `[Hacer $0]` y advertir en el botón de confirmación si hay excedente a cobrar.
+* **Atomicidad en Pagos y Flujo de Caja**: El dinero de caja lee desde `payment_history`. Al eliminar un abono/pago, recalcular en backend `sale.amount_paid = sum(p.amount for p in remaining_payments)` y ajustar `balance_due`. Nunca editar solo la cabecera escalar de `sales`.
+* **Filtro Estricto de Ventas Canceladas en Analítica**: Todo reporte, métrica, KPI o ranking en `Dashboard.jsx` y `Reports.jsx` DEBE filtrar `sale.status !== 'cancelado'`. Al cancelar una entrega/venta en backend, forzar `sale.balance_due = 0.0`.
+* **Diseño Responsivo en Datos Críticos de Caja**: Identificadores operativos como `Venta #{id}` deben ubicarse siempre a la izquierda (inicio visual) con contenedores flexibles (`flex-wrap`) y nunca truncarse con `overflow-hidden`.
 * **Nunca expongas datos sensibles en `/api/public`**: Costos de compra (`my_cost`), proveedores y márgenes deben quedar estrictamente ocultos del schema `ProductPublic`.
 * **Herencia Obligatoria de `is_published`**: Toda variante creada en `VariantBreakdownModal.jsx` debe heredar `is_published: baseProduct.is_published !== false`.
 * **Auto-Migraciones Idempotentes**: Nunca confiar en `Base.metadata.create_all()` para modificar tablas existentes; registrar siempre `ALTER TABLE ADD COLUMN IF NOT EXISTS` en `run_db_migrations()`.

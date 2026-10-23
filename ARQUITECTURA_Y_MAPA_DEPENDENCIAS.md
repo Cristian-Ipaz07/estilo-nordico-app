@@ -170,6 +170,33 @@ Antes de confirmar cualquier commit o dar por terminada una tarea en el ERP:
 11. [ ] **¿Las variantes nuevas heredan `is_published: true`?** Verificar que las variantes creadas para prendas del e-commerce no queden ocultas con `is_published: false` para la tienda web.
 
 ---
+
+## 9. REGLAS DE ORO DE INTEGRIDAD TRANSACCIONAL & PREVENCIÓN DE REGRESIONES (POS & CAJA)
+
+### 9.1 Cambios de Prenda 1 a 1 sin Excedente Accidental (`ExchangeModal.jsx`)
+* **Principio Comercial**: Cuando un cliente cambia una talla o color de una prenda adquirida en precio promocional (ej. Chaqueta en oferta a $80.000 vs precio de catálogo $90.000):
+  - El sistema **DEBE heredar el precio cobrado en la venta original** (`currentItem.price_at_sale`).
+  - La diferencia calculada por defecto debe ser exactamente `$0 COP`.
+  - El modal debe ofrecer el botón `[Hacer $0 (1 a 1)]`.
+  - Si existe un excedente real a cobrar, el botón de confirmación debe alertar en ámbar: `Cobrar Excedente de $X e Ingresar a Caja Hoy`.
+
+### 9.2 Integridad Contable: `sales.amount_paid` vs `payment_history` (`sales.py`)
+* La tabla `payment_history` es el libro diario que alimenta el Flujo de Caja y el Arqueo del Terminal.
+* **Prohibido**: Modificar `sales.amount_paid` manualmente sin conciliar los registros de `payment_history`.
+* **Eliminación Atómica**: Al borrar un pago (`DELETE /sales/{sale_id}/payments/{payment_id}`):
+  - Se elimina el registro histórico en `payment_history`.
+  - El backend recalcula atómicamente `sale.amount_paid = sum(p.amount for p in remaining_payments)`.
+  - Se actualiza `sale.balance_due = max(0, total - amount_paid)` y el estado (`pendiente` o `pagado`).
+
+### 9.3 Aislamiento Analítico de Ventas Canceladas (`Dashboard.jsx`, `Reports.jsx`)
+* Toda consulta o agregación analítica (total facturado, margen de ganancia bruta, número de órdenes, ranking de productos más vendidos y gráficas temporales) **DEBE filtrar estrictamente `s.status !== 'cancelado'`**.
+* Al cancelar un domicilio o entrega, el backend debe forzar `sale.balance_due = 0.0` además de restituir el stock físico.
+
+### 9.4 Navegación Interna en SPA con HashRouter (`TerminalModal.jsx`)
+* Dado que el frontend está empaquetado bajo `HashRouter`, **NUNCA debe usarse `window.location.href = '/ruta'`**.
+* Toda redirección desde modales o botones debe hacerse mediante `window.location.hash = '#/ruta'` o `useNavigate()`, evitando errores 404 en servidores estáticos como Vercel.
+
+---
 *Este documento es el estándar maestro de ingeniería de Estilo Nórdico. Consúltalo siempre antes de tocar cualquier lógica central.*
 
 ---
