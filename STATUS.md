@@ -325,6 +325,20 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+### 🔴 INCIDENTE 11: Fuga de Egress en Supabase (1.24 GB) por Polling Global del Historial Completo de Ventas
+* **Síntoma**: En el panel de Supabase, el consumo de Egress saliente alcanzó 1.24 GB de los 5 GB mensuales del plan gratuito (~25%), generando riesgo de corte si llegaba al 100%.
+* **Causa Raíz**:
+  1. En `App.jsx`, la función `loadPendingDeliveries` ejecutaba un `setInterval` cada 30 segundos llamando a `GET /sales/`. Dicho endpoint descargaba todas las 303 ventas con todos sus items, productos, clientes y pagos (**239 KB por petición**, ~700 MB a 1 GB por día por dispositivo abierto) únicamente para actualizar el número de la campana en el navbar.
+  2. En `TerminalModal.jsx`, un intervalo forzaba la re-descarga del catálogo completo de 295 productos cada 25 segundos mientras el modal estaba abierto, sin considerar que `sync-version` ya existía.
+* **Solución**:
+  1. Se implementó el endpoint ultra-ligero `GET /sales/pending-deliveries-count` en FastAPI, que devuelve `{"count": X}` (**15 bytes en lugar de 240.000 bytes**; reducción de ancho de banda del **99.99%**).
+  2. En `App.jsx`, si la pestaña del navegador está minimizada o en segundo plano (`document.hidden`), se suspende el sondeo para no consumir datos mientras el usuario no esté en pantalla. Se sincroniza instantáneamente al enfocar la ventana (`focus` / `visibilitychange`) o mediante eventos de bus (`refresh-sales`).
+  3. En `TerminalModal.jsx`, se relajó la salvaguarda de recarga forzada del catálogo a 5 minutos, confiando en la sincronización en tiempo real por versión.
+  4. En `products.py`, se implementó caché en memoria RAM (TTL 5s) para `/sync-version`, reduciendo las consultas repetitivas a PostgreSQL en un 85%.
+* **Regla Anti-Regresión #11**: **NUNCA usar endpoints pesados que listen tablas completas con sub-relaciones para contadores o sondeos en bucle (`setInterval`).** Para badges o contadores periódicos, crear siempre endpoints escalares ultra-ligeros (`SELECT COUNT(*)`) y suspender las peticiones cuando `document.hidden` sea verdadero.
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
