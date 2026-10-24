@@ -10,6 +10,9 @@ class ProductInItem(BaseModel):
     ref: Optional[str] = None
     category: Optional[str] = None
     subcategory: Optional[str] = None
+    brand: Optional[str] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -35,6 +38,12 @@ class PaymentHistoryInSale(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DeliveryMarkRequest(BaseModel):
+    amount_collected: float
+    payment_method: Optional[str] = "EFECTIVO"
+    notes: Optional[str] = None
 
 
 class ItemExchangeRequest(BaseModel):
@@ -118,6 +127,8 @@ class SaleUpdate(BaseModel):
     status: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_notes: Optional[str] = None
+    delivered_by: Optional[int] = None
+    cash_settled: Optional[bool] = None
     items: Optional[List[SaleItemUpdate]] = None
     total_sale: Optional[float] = None
 
@@ -140,6 +151,9 @@ class SaleResponse(BaseModel):
     created_by: Optional[int] = None
     user: Optional[UserInSale] = None
     creator: Optional[UserInSale] = None
+    delivered_by: Optional[int] = None
+    cash_settled: Optional[bool] = False
+    delivery_person: Optional[UserInSale] = None
     payment_history: Optional[List[PaymentHistoryInSale]] = None
 
     class Config:

@@ -24,7 +24,8 @@ const UserManagement = () => {
     role: 'Vendedor', 
     status: 'Activo',
     vendedor_tipo: 'Físico',
-    comision_pct: 0
+    comision_pct: 0,
+    can_deliver: false
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -56,7 +57,8 @@ const UserManagement = () => {
         role: user.role,
         status: user.status,
         vendedor_tipo: user.vendedor_tipo || 'Físico',
-        comision_pct: user.comision_pct || 0
+        comision_pct: user.comision_pct || 0,
+        can_deliver: Boolean(user.can_deliver)
       });
     } else {
       setEditingUser(null);
@@ -99,13 +101,15 @@ const UserManagement = () => {
     const appUrl = window.location.origin;
     const tipoLabel = u.vendedor_tipo === 'Virtual' ? 'Asesor(a) Virtual' : 'Atención Tienda Física';
     
+    const domiLine = u.can_deliver ? `🛵 *Entregas & Domicilios:* Habilitado en /domicilio\n` : '';
     const text = `❄️ *ACCESO AL SISTEMA - ESTILO NÓRDICO* ❄️\n\n` +
       `Hola *${u.full_name}*, aquí tienes tus datos de acceso a la plataforma POS y Catálogo:\n\n` +
       `🔗 *Enlace de Acceso:* ${appUrl}\n` +
       `👤 *Usuario:* \`${u.username}\`\n` +
       `🔑 *Contraseña:* _(la contraseña que te compartió Cristian)_\n` +
       `💼 *Rol:* ${u.role} (${tipoLabel})\n` +
-      (u.comision_pct > 0 ? `💰 *Comisión:* ${u.comision_pct}%\n\n` : `\n`) +
+      (u.comision_pct > 0 ? `💰 *Comisión:* ${u.comision_pct}%\n` : '') +
+      domiLine + `\n` +
       `📲 *¿Cómo instalar la app en tu celular?*\n` +
       `1. Abre el enlace arriba en Google Chrome (Android) o Safari (iPhone).\n` +
       `2. Toca el menú de opciones (los 3 puntos en Android o el botón Compartir en iPhone).\n` +
@@ -330,12 +334,19 @@ const UserManagement = () => {
                           <Shield size={12} className={u.role === 'Admin' ? 'text-indigo-600' : 'text-slate-400'} />
                           <span className="text-xs font-bold text-slate-800">{u.role}</span>
                         </div>
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider w-fit px-2 py-0.5 rounded-md ${
-                          isVirtual ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {isVirtual ? <Globe size={10} /> : <Store size={10} />}
-                          {u.vendedor_tipo || 'Físico'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider w-fit px-2 py-0.5 rounded-md ${
+                            isVirtual ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {isVirtual ? <Globe size={10} /> : <Store size={10} />}
+                            {u.vendedor_tipo || 'Físico'}
+                          </span>
+                          {u.can_deliver && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider w-fit px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                              🛵 Domiciliario
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
 
@@ -470,6 +481,27 @@ const UserManagement = () => {
                       />
                    </div>
                 </div>
+              </div>
+
+              {/* Permiso de Domiciliario */}
+              <div className="bg-purple-50/70 border border-purple-100 rounded-2xl p-3.5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black text-purple-900 flex items-center gap-1.5">
+                    🛵 Habilitar como Domiciliario
+                  </p>
+                  <p className="text-[11px] text-purple-700 font-medium mt-0.5">
+                    Permite acceder a /domicilio, marcar entregas y gestionar cobros en Pasto
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={Boolean(formData.can_deliver)} 
+                    onChange={e => setFormData({ ...formData, can_deliver: e.target.checked })} 
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
               </div>
 
               <div className="grid grid-cols-3 gap-3 pt-2">

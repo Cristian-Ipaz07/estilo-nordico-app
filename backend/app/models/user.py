@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean
 from app.db.database import Base # <--- Importamos el Base real desde donde está definido
 from datetime import datetime, timezone, timedelta
 
@@ -15,5 +15,6 @@ class User(Base):
     role = Column(String, default="Vendedor") # Admin, Vendedor
     status = Column(String, default="Activo") # Activo, Inactivo
     vendedor_tipo = Column(String, default="Físico") # Físico, Virtual
-    comision_pct = Column(Float, default=0.0) 
+    comision_pct = Column(Float, default=0.0)
+    can_deliver = Column(Boolean, default=False) 
     created_at = Column(DateTime, default=get_colombia_time)

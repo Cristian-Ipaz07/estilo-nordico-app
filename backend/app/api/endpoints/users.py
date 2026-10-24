@@ -30,7 +30,8 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db), current_admi
         role=user_in.role,
         status=user_in.status,
         vendedor_tipo=user_in.vendedor_tipo, # Nuevo campo
-        comision_pct=user_in.comision_pct,   # Nuevo campo
+        comision_pct=user_in.comision_pct,
+        can_deliver=user_in.can_deliver,
         hashed_password=get_password_hash(user_in.password)
     )
     db.add(db_user)

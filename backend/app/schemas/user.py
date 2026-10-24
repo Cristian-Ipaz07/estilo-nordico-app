@@ -9,6 +9,7 @@ class UserBase(BaseModel):
     status: str = "Activo"
     vendedor_tipo: str = "Físico" 
     comision_pct: float = 0.0
+    can_deliver: bool = False
 
 class UserCreate(UserBase):
     password: str
@@ -21,6 +22,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     vendedor_tipo: Optional[str] = None
     comision_pct: Optional[float] = None
+    can_deliver: Optional[bool] = None
 
 class UserOut(UserBase):
     id: int

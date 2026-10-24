@@ -6,7 +6,9 @@ from app.models.sale import Sale, SaleItem
 from app.models.product import Product
 from app.models.payment_history import PaymentHistory
 from app.models.cash_movement import CashMovement
-from app.schemas.sale import SaleCreate, SaleUpdate, SaleResponse, PaymentUpdate, ItemExchangeRequest
+from app.schemas.sale import SaleCreate, SaleUpdate, SaleResponse, PaymentUpdate, ItemExchangeRequest, DeliveryMarkRequest
+from app.models.user import User
+from app.api.deps import get_current_user, get_current_active_admin
 from typing import List, Optional
 import asyncio
 from app.api.endpoints.webhooks import emit_webhook
@@ -68,7 +70,8 @@ def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):
             selectinload(Sale.items).selectinload(SaleItem.product),
             selectinload(Sale.payment_history),
             selectinload(Sale.user),
-            selectinload(Sale.creator)
+            selectinload(Sale.creator),
+            selectinload(Sale.delivery_person)
         )
         if status:
             query = query.filter(Sale.status == status)
@@ -237,6 +240,10 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
         db_sale.created_by = sale_data.created_by
     if sale_data.payment_method is not None:
         db_sale.payment_method = sale_data.payment_method
+    if sale_data.delivered_by is not None:
+        db_sale.delivered_by = sale_data.delivered_by
+    if sale_data.cash_settled is not None:
+        db_sale.cash_settled = sale_data.cash_settled
 
     if sale_data.amount_paid is not None:
         db_sale.amount_paid = sale_data.amount_paid
@@ -252,8 +259,8 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
             db_sale.balance_due = 0.0
     elif db_sale.status == "cancelado":
         db_sale.balance_due = 0.0
-    elif db_sale.status in ["en_domicilio", "por_confirmar", "alistado", "en_camino"] or db_sale.sale_channel == "DOMICILIO" or db_sale.delivery_address is not None:
-        if db_sale.status not in ["en_domicilio", "por_confirmar", "alistado", "en_camino"]:
+    elif db_sale.status in ["en_domicilio", "por_confirmar", "alistado", "en_camino", "entregado"] or db_sale.sale_channel == "DOMICILIO" or db_sale.delivery_address is not None:
+        if db_sale.status not in ["en_domicilio", "por_confirmar", "alistado", "en_camino", "entregado"]:
             db_sale.status = "en_domicilio"
     else:
         db_sale.status = "pagado" if db_sale.balance_due <= 0 else "separado"
@@ -464,6 +471,7 @@ def confirm_delivery(sale_id: int, account: Optional[str] = "EFECTIVO_TIENDA", r
     db_sale.amount_paid = db_sale.total_sale
     db_sale.balance_due = 0.0
     db_sale.status = "pagado"
+    db_sale.cash_settled = True
 
     if amount_to_pay > 0:
         acc = account or "EFECTIVO_TIENDA"
@@ -488,6 +496,90 @@ def confirm_delivery(sale_id: int, account: Optional[str] = "EFECTIVO_TIENDA", r
     db.refresh(db_sale)
     return db_sale
 
+
+
+# ── POST /{sale_id}/mark-delivered — Domiciliario entrega y recauda en calle ──
+@router.post("/{sale_id}/mark-delivered", response_model=SaleResponse)
+def mark_delivery_delivered(
+    sale_id: int, 
+    data: DeliveryMarkRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_sale = db.query(Sale).filter(Sale.id == sale_id).first()
+    if not db_sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    
+    # Actualizar estado de entrega
+    db_sale.status = "entregado"
+    db_sale.delivered_by = current_user.id
+    db_sale.cash_settled = False
+    
+    collected = float(data.amount_collected or 0.0)
+    method = data.payment_method or "EFECTIVO"
+    driver_name = current_user.full_name or current_user.username
+    now_col = get_colombia_now()
+    
+    db_sale.amount_paid = collected
+    db_sale.balance_due = max(0.0, db_sale.total_sale - collected)
+    
+    # Registrar en PaymentHistory
+    db.add(PaymentHistory(
+        sale_id=db_sale.id,
+        amount=collected,
+        account=method,
+        notes=f"Recaudado en calle por Domiciliario: {driver_name} ({method}) - PENDIENTE LIQUIDAR EN CAJA",
+        payment_date=now_col
+    ))
+    
+    # Registrar nota en la venta
+    recaudo_note = f"[ENTREGADO POR: {driver_name} | RECAUDADO: ${collected:,.0f} ({method}) | PENDIENTE LIQUIDACIÓN EN CAJA]"
+    if data.notes:
+        recaudo_note += f" | NOTA DOMI: {data.notes}"
+    db_sale.delivery_notes = f"{db_sale.delivery_notes} | {recaudo_note}" if db_sale.delivery_notes else recaudo_note
+
+    db.commit()
+    db.refresh(db_sale)
+    return db_sale
+
+
+# ── POST /{sale_id}/settle-cash — Cristian confirma dinero en mano y liquida en caja ──
+@router.post("/{sale_id}/settle-cash", response_model=SaleResponse)
+def settle_delivery_cash(
+    sale_id: int,
+    account: Optional[str] = "EFECTIVO_TIENDA",
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin)
+):
+    db_sale = db.query(Sale).filter(Sale.id == sale_id).first()
+    if not db_sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    db_sale.status = "pagado"
+    db_sale.cash_settled = True
+    db_sale.amount_paid = db_sale.total_sale
+    db_sale.balance_due = 0.0
+
+    acc = account or "EFECTIVO_TIENDA"
+    amount_to_register = db_sale.total_sale
+    driver_name = db_sale.delivery_person.full_name if db_sale.delivery_person else "Domiciliario"
+
+    # Asentar en caja oficial
+    db.add(CashMovement(
+        description=f"Liquidación Domicilio Venta #{db_sale.id} - {db_sale.customer_name} (Recibido de {driver_name})",
+        amount=amount_to_register,
+        type="ENTRADA",
+        category="VENTA",
+        account=acc
+    ))
+
+    now_col = get_colombia_now()
+    log_entry = f"[LIQUIDADO EN CAJA por {current_admin.full_name or 'Admin'} en cuenta {acc}]"
+    db_sale.delivery_notes = f"{db_sale.delivery_notes} | {log_entry}" if db_sale.delivery_notes else log_entry
+
+    db.commit()
+    db.refresh(db_sale)
+    return db_sale
 
 # ?? POST /{sale_id}/cancel-delivery ? cliente rechaza, devolver stock ??????
 @router.post("/{sale_id}/cancel-delivery", response_model=SaleResponse)

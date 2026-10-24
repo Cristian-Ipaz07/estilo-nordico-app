@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 from datetime import datetime, timezone, timedelta
@@ -21,11 +21,14 @@ class Sale(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     payment_method = Column(String, default="EFECTIVO_TIENDA", nullable=True)
+    delivered_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cash_settled = Column(Boolean, default=False)
     created_at = Column(DateTime, default=get_colombia_time)
 
     # Relaciones
     user = relationship("User", foreign_keys=[user_id])
     creator = relationship("User", foreign_keys=[created_by])
+    delivery_person = relationship("User", foreign_keys=[delivered_by])
     # Relación con los productos de esta venta
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
     payment_history = relationship("PaymentHistory", back_populates="sale", cascade="all, delete-orphan")

@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_deliver BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS delivered_by INTEGER REFERENCES users(id);"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_settled BOOLEAN DEFAULT FALSE;"))
             
             # Blindaje de Seguridad Supabase: Activar Row Level Security (RLS) en tablas publicas
             rls_tables = [
@@ -99,6 +102,9 @@ def run_migrations():
             conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_deliver BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS delivered_by INTEGER REFERENCES users(id);"))
+            conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_settled BOOLEAN DEFAULT FALSE;"))
             
             rls_tables = [
                 "users", "products", "sales", "sale_items", "payment_history",
