@@ -312,6 +312,19 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 * **Regla Anti-Regresión #9**: **Las entregas contraentrega NO deben sumarse al ingreso de ventas realizadas hasta que el mensajero reporte y confirme el cobro.** Deben visualizarse como cuentas por cobrar en calle para no inflar la liquidez contable del día.
 
 ---
+### 🔴 INCIDENTE 10: Discrepancia entre Ventas Facturadas ($165.000) y Dinero Real Recaudado en Caja ($115.000) en el Dashboard
+* **Síntoma**: En el Dashboard, la primera tarjeta mostraba "Ventas Totales: $165.000" con etiqueta "Real", sumando el valor comercial de las dos chaquetas vendidas (#318 por $85.000 y #319 por $80.000). Sin embargo, en caja física real solo habían entrado $115.000, pues la chaqueta LeCoq (#319) fue un separado del cual la clienta solo abonó $30.000, quedando $50.000 de saldo pendiente. Además, la gráfica horaria mostraba un pico inflado de $165.000.
+* **Causa Raíz**: El acumulador del Dashboard tomaba `s.total_sale` para todas las ventas no canceladas, computando el valor de la mercancía comprometida en lugar del dinero líquido efectivamente ingresado a caja (`payment_history`).
+* **Solución**:
+  1. Se separó la liquidez contable en dos métricas claras:
+     - **Tarjeta 1: `Total Recaudado (Caja)`**: Muestra estrictamente el dinero real recaudado en el período (**$115.000**), coincidiendo al 100% con el Flujo de Caja del Terminal y el dinero físico en mostrador. Se incluye subtítulo: `Facturado: $165.000`.
+     - **Tarjeta 2: `Ventas Facturadas`**: Muestra el valor comercial total de prendas vendidas en firme (**$165.000** en 2 pedidos).
+     - **Tarjeta 3: `Separados Pendientes`**: Muestra la deuda pendiente por cobrar (**$50.000**).
+  2. La gráfica de rendimiento (`Rendimiento de Recaudo en Caja`) ahora grafica el flujo real de dinero ingresado por hora ($115.000 a las 17:00), con tooltip que detalla tanto el dinero recaudado como el facturado.
+* **Regla Anti-Regresión #10**: **La tarjeta principal de liquidez del Dashboard debe reflejar el dinero real recaudado en caja (`payment_history`), no el valor nominal de prendas apartadas.** Toda venta a crédito o separada debe sumar a caja únicamente su abono inicial, reflejando el saldo restante en "Separados Pendientes".
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
