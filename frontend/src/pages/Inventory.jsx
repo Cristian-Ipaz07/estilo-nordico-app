@@ -315,19 +315,24 @@ export default function Inventory() {
   const filteredAndSortedProducts = useMemo(() => {
     let result = [...baseProducts];
 
-    // 1. Filtro de Disponibilidad / Stock (Activas vs Agotadas / Histórico)
-    if (availabilityFilter === 'IN_STOCK') {
-      result = result.filter(p => {
-        const v = variantStats[p.id];
-        const stock = v && v.hasVariants ? v.totalStock : (p.stock || 0);
-        return stock > 0;
-      });
-    } else if (availabilityFilter === 'OUT_OF_STOCK') {
-      result = result.filter(p => {
-        const v = variantStats[p.id];
-        const stock = v && v.hasVariants ? v.totalStock : (p.stock || 0);
-        return stock <= 0;
-      });
+    const isSearching = Boolean(searchTerm && searchTerm.trim());
+
+    // 1. Filtro de Disponibilidad / Stock
+    // Si el usuario está buscando activamente un término/referencia (ej. "6539"), buscar en TODO el catálogo sin ocultar por stock 0
+    if (!isSearching) {
+      if (availabilityFilter === 'IN_STOCK') {
+        result = result.filter(p => {
+          const v = variantStats[p.id];
+          const stock = v && v.hasVariants ? v.totalStock : (p.stock || 0);
+          return stock > 0;
+        });
+      } else if (availabilityFilter === 'OUT_OF_STOCK') {
+        result = result.filter(p => {
+          const v = variantStats[p.id];
+          const stock = v && v.hasVariants ? v.totalStock : (p.stock || 0);
+          return stock <= 0;
+        });
+      }
     }
 
     // 2. Filtro por Género
@@ -1293,7 +1298,12 @@ export default function Inventory() {
           product={selectedProduct}
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          onSaved={fetchInventory}
+          onSaved={(savedProd) => {
+            fetchInventory();
+            if (savedProd && (savedProd.stock <= 0 || !savedProd.stock)) {
+              setAvailabilityFilter('ALL');
+            }
+          }}
         />
       )}
 

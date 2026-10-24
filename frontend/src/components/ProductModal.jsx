@@ -201,7 +201,8 @@ export default function ProductModal({ product, isOpen, onClose, onSaved }) {
         throw new Error(err.detail || 'Error al guardar producto');
       }
 
-      onSaved();
+      const savedData = await res.json().catch(() => payload);
+      onSaved(savedData);
       onClose();
     } catch (err) {
       alert(`Error: ${err.message}`);
