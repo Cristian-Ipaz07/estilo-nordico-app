@@ -23,6 +23,7 @@ import {
 import { API_URL } from '../config/api';
 import { normalizeImageUrl } from '../utils/imageOptimizer';
 import { FINANCIAL_ACCOUNTS } from '../utils/accounts';
+import SwapVariantModal from './SwapVariantModal';
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
 
@@ -79,6 +80,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
   const [confirmModalSale, setConfirmModalSale] = useState(null);
   const [confirmAccount, setConfirmAccount] = useState('EFECTIVO_TIENDA');
   const [isConfirming, setIsConfirming] = useState(false);
+  const [swapModalData, setSwapModalData] = useState(null);
 
   const fetchSales = useCallback(() => {
     const token = localStorage.getItem('token');
@@ -285,6 +287,15 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
           </div>
 
           <div className="flex items-center gap-1.5">
+            <a
+              href="#/domicilio"
+              onClick={onClose}
+              className="p-2 hover:bg-purple-100 text-purple-700 rounded-xl transition flex items-center gap-1 text-xs font-black cursor-pointer"
+              title="Abrir vista completa de Domicilios"
+            >
+              <ExternalLink size={16} />
+              <span className="hidden sm:inline">Pantalla Completa</span>
+            </a>
             <button
               onClick={fetchSales}
               disabled={isLoading}
@@ -526,7 +537,18 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                               </div>
                             </div>
 
-                            <div className="text-right shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSwapModalData({ sale, item });
+                                }}
+                                className="px-2 py-0.5 text-[10px] font-black text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition cursor-pointer"
+                                title="Cambiar talla o prenda"
+                              >
+                                🔄 Talla
+                              </button>
                               <span className="font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded-lg text-xs">
                                 {item.quantity} un.
                               </span>
@@ -628,6 +650,17 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
           )}
         </div>
       </div>
+
+      {/* MODAL DE CAMBIO DE TALLA */}
+      {swapModalData && (
+        <SwapVariantModal
+          isOpen={!!swapModalData}
+          onClose={() => setSwapModalData(null)}
+          sale={swapModalData.sale}
+          itemToExchange={swapModalData.item}
+          onSuccess={fetchSales}
+        />
+      )}
 
       {/* MODAL PARA CONFIRMAR COBRO Y ASENTAR EN CAJA */}
       {confirmModalSale && (

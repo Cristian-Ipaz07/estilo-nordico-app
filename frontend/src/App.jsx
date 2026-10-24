@@ -2,7 +2,7 @@ import { forceUnlockBodyScroll } from './hooks/useBodyScrollLock';
 import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
-  LayoutDashboard, Package, Shirt, ShoppingCart, Wallet, 
+  LayoutDashboard, Truck, Package, Shirt, ShoppingCart, Wallet, 
   CircleDollarSign, BarChart3, Users, Settings,
   Bell, Search, ChevronDown, Store, Terminal,
   PanelLeftClose, PanelLeftOpen, LogOut, Menu, X
@@ -19,6 +19,7 @@ import LayawayPage from './pages/LayawayPage';
 import CashFlow from './pages/CashFlow';
 import Reports from './pages/Reports';
 import UserManagement from './pages/UserManagement';
+import DeliveryPage from './pages/DeliveryPage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DateRangeProvider } from './context/DateRangeContext';
@@ -237,6 +238,7 @@ const Layout = ({ children }) => {
           <nav className="space-y-1.5">
             <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/inventory" icon={isAdmin ? Package : Shirt} label={isAdmin ? "Inventario" : "Catálogo Asesor"} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem to="/domicilio" icon={Truck} label="Domicilios" hidden={!isAdmin && !user?.can_deliver} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/sales" icon={ShoppingCart} label="Ventas" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/layaway" icon={Wallet} label="Separados" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
             <SidebarItem to="/cash" icon={CircleDollarSign} label="Caja" hidden={!isAdmin} isCollapsed={isSidebarCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
@@ -407,7 +409,9 @@ const AppContent = () => {
     return (
         <Layout>
             <Routes>
-              <Route path="/" element={isAdmin ? <Dashboard /> : <Navigate to="/inventory" />} />
+              <Route path="/" element={isAdmin ? <Dashboard /> : (user?.can_deliver ? <Navigate to="/domicilio" /> : <Navigate to="/inventory" />)} />
+              <Route path="/domicilio" element={<DeliveryPage />} />
+              <Route path="/domicilios" element={<Navigate to="/domicilio" replace />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/sales" element={<ProtectedRoute allowedRoles={['Admin']}><Sales /></ProtectedRoute>} />
               <Route path="/ventas" element={<Navigate to="/sales" replace />} />
@@ -415,7 +419,7 @@ const AppContent = () => {
               <Route path="/cash" element={<ProtectedRoute allowedRoles={['Admin']}><CashFlow /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute allowedRoles={['Admin']}><Reports /></ProtectedRoute>} />
               <Route path="/users" element={<ProtectedRoute allowedRoles={['Admin']}><UserManagement /></ProtectedRoute>} />
-              <Route path="*" element={<Navigate to={isAdmin ? "/" : "/inventory"} />} />
+              <Route path="*" element={<Navigate to={isAdmin ? "/" : (user?.can_deliver ? "/domicilio" : "/inventory")} />} />
             </Routes>
         </Layout>
     );
