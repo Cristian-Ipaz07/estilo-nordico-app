@@ -15,6 +15,22 @@
 
 ## 🚀 HITOS IMPLEMENTADOS RECIENTEMENTE (SESIÓN 16-18 OCTUBRE)
 
+### 11. Módulo Nativo de Domicilios, Permisos Granulares y Arqueo en 2 Pasos (Sesión 24 Octubre)
+* **Integración Directa en la App (`/domicilio`)**: Vista móvil y desktop completa en `DeliveryPage.jsx` con geolocalización a Google Maps, marcación directa y WhatsApp automatizado.
+* **Sistema de Permisos Multi-Rol (`can_deliver`)**: 
+  - Andrés Bastidas: Vendedor Virtual/Físico + Domiciliario (`can_deliver = True`) con acceso al módulo de mensajería.
+  - Mamá (Tereza Ipaz): Atención en tienda física (alistar y empacar pedidos).
+  - Cristian Ipaz: Super Administrador (control total y liquidación de arqueos en caja).
+* **Arqueo Financiero en 2 Pasos (Caja Fuerte)**:
+  - Andrés cobra contraentrega al cliente en la calle (`POST /sales/{id}/mark-delivered`); el pedido pasa a `entregado` con monto y medio de pago recaudado, pero **no entra a la caja oficial del negocio**.
+  - Cristian verifica la entrega física del dinero en la tienda y pulsa `[ Asentar en Caja ]` (`POST /sales/{id}/settle-cash`) para asentar la entrada oficial en `EFECTIVO_TIENDA` o banco y cerrar la venta como `pagado`.
+* **Cambio de Talla / Prenda en Destino (`SwapVariantModal.jsx`)**:
+  - En pedidos donde el domiciliario lleva varias opciones de talla (ej. Carmen Rosero, Venta #317: llevar XL y XXL), Andrés puede cambiar la prenda elegida con 1 toque en la app.
+  - El backend (`POST /sales/{id}/exchange`) restituye al inventario la talla devuelta (+1) y descuenta la nueva (-1) al instante, recalculando saldos y manteniendo el stock 100% verídico en tiempo real.
+* **Cancelación con Restitución Inmediata de Stock**:
+  - Si el cliente rechaza el pedido en puerta, el domiciliario pulsa `Cliente Canceló`; `POST /sales/{id}/cancel-delivery` devuelve automáticamente todos los ítems al stock disponible.
+
+
 ### 1. Sistema Contable de Anticipos / Preventas y Cruce en POS
 * **Categorías Creadas**: `ANTICIPO PREVENTA` (ingreso inicial de dinero sin salida de stock) y `CRUCE ANTICIPO` (entrega de prenda y cierre de venta).
 * **Acceso Directo en Terminal**: Botón `+ Anticipo` integrado en el Terminal DIARIO para registrar preventas de prendas sobrepedido o apartados con cliente y celular.
