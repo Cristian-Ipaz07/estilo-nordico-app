@@ -9,7 +9,8 @@ import {
   Users,
   ArrowUpRight,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  DollarSign
 } from 'lucide-react';
 import {
   AreaChart,
@@ -51,7 +52,15 @@ const isThisMonth = (dateField) => {
   return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
 };
 
-const StatCard = ({ title, value, change, trend, icon: Icon, color }) => (
+const matchesTimeFilter = (dateField, filter) => {
+  if (!dateField) return false;
+  if (filter === 'Hoy') return isToday(dateField);
+  if (filter === 'Esta Semana') return isThisWeek(dateField);
+  if (filter === 'Este Mes') return isThisMonth(dateField);
+  return true; // Todos
+};
+
+const StatCard = ({ title, value, change, trend, icon: Icon, color, subtitle }) => (
   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
     <div className="flex justify-between items-start mb-4">
       <div className={`p-3 rounded-xl bg-opacity-10 ${color} ${color.replace('bg-', 'text-')}`}>
@@ -64,6 +73,7 @@ const StatCard = ({ title, value, change, trend, icon: Icon, color }) => (
     </div>
     <p className="text-slate-500 text-sm font-medium">{title}</p>
     <h3 className="text-2xl font-bold text-slate-800 mt-1">{value}</h3>
+    {subtitle && <p className="text-xs text-slate-400 mt-1 font-semibold">{subtitle}</p>}
   </div>
 );
 
@@ -105,56 +115,124 @@ const Dashboard = () => {
     return true; // Todos
   });
 
-  // Separar ventas cerradas/cobradas de domicilios activos en calle
-  const confirmedSales = filteredSales.filter(s => !isPendingDelivery(s));
-  const pendingDeliveries = filteredSales.filter(s => isPendingDelivery(s));
+  // Ventas del período (según fecha de creación)
+  const salesInPeriod = activeSales.filter(s => matchesTimeFilter(s.created_at, timeFilter));
+  const confirmedSales = salesInPeriod.filter(s => !isPendingDelivery(s));
+  const pendingDeliveries = salesInPeriod.filter(s => isPendingDelivery(s));
 
-  // Ventas Totales ($): Ventas confirmadas + cualquier abono anticipado recaudado de domicilios
-  const totalVentas = confirmedSales.reduce((sum, s) => sum + s.total_sale, 0) +
-                      pendingDeliveries.reduce((sum, s) => sum + (s.amount_paid || 0), 0);
-  const totalSeparados = confirmedSales.filter(s => s.status === 'separado').reduce((sum, s) => sum + s.balance_due, 0);
+  // 1. Total Recaudado (Caja): Dinero real cobrado durante el período filtrado
+  // Se acumulan todos los pagos (payment_history) cuya fecha cae en el período filtrado
+  let totalRecaudado = 0;
+  activeSales.forEach(s => {
+    const pendingDomi = isPendingDelivery(s);
+    (s.payment_history || []).forEach(p => {
+      const pDate = p.payment_date || s.created_at;
+      if (matchesTimeFilter(pDate, timeFilter)) {
+        if (!pendingDomi || (pendingDomi && p.amount > 0)) {
+          totalRecaudado += (p.amount || 0);
+        }
+      }
+    });
+  });
+
+  // Fallback si no hay payment_history en ventas antiguas
+  if (totalRecaudado === 0 && confirmedSales.length > 0) {
+    totalRecaudado = confirmedSales.reduce((sum, s) => sum + (s.amount_paid || 0), 0) +
+                     pendingDeliveries.reduce((sum, s) => sum + (s.amount_paid || 0), 0);
+  }
+
+  // 2. Ventas Facturadas ($): Valor total de prendas vendidas en firme en el período
+  const totalFacturado = confirmedSales.reduce((sum, s) => sum + (s.total_sale || 0), 0);
+
+  // 3. Separados Pendientes ($): Saldo adeudado por clientes en separados del período
+  const totalSeparados = confirmedSales.filter(s => s.status === 'separado').reduce((sum, s) => sum + (s.balance_due || 0), 0);
+
+  // 4. Pedidos concretados en el período
   const pedidosCount = confirmedSales.length;
 
-  // Clientes únicos de ventas confirmadas
+  // 5. Clientes únicos
   const clientesCount = new Set(confirmedSales.map(s => s.customer_name)).size;
 
-  // Total por cobrar en calle de domicilios activos contraentrega
+  // 6. Domicilios activos en calle (por cobrar contraentrega)
   const totalCobroContraentrega = pendingDeliveries.reduce((sum, s) => sum + (s.balance_due || s.total_sale || 0), 0);
 
-  // Chart Logic (Solo ventas confirmadas o dinero real recaudado)
+  // Chart Logic: Grafica el Dinero Real Recaudado en Caja por intervalo
   const chartData = [];
   if (timeFilter === 'Hoy') {
-    // Generate hours 8 AM to 8 PM
     const hours = Array.from({length: 13}, (_, i) => i + 8);
     hours.forEach(hour => {
-      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getHours() === hour)
-                                   .reduce((sum, s) => sum + s.total_sale, 0) +
-                      pendingDeliveries.filter(s => getColDate(s.created_at).getHours() === hour)
-                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
-      chartData.push({ name: `${hour}:00`, sales: saleSum });
+      let hourRecaudo = 0;
+      let hourFacturado = 0;
+
+      activeSales.forEach(s => {
+        const pendingDomi = isPendingDelivery(s);
+        (s.payment_history || []).forEach(p => {
+          const pDate = p.payment_date || s.created_at;
+          if (isToday(pDate) && getColDate(pDate).getHours() === hour) {
+            if (!pendingDomi || (pendingDomi && p.amount > 0)) {
+              hourRecaudo += (p.amount || 0);
+            }
+          }
+        });
+      });
+
+      confirmedSales.filter(s => getColDate(s.created_at).getHours() === hour).forEach(s => {
+        hourFacturado += (s.total_sale || 0);
+      });
+
+      chartData.push({ name: `${hour}:00`, sales: hourRecaudo, facturado: hourFacturado });
     });
   } else if (timeFilter === 'Esta Semana') {
     const days = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
     days.forEach((dayName, idx) => {
-      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getDay() === idx)
-                                   .reduce((sum, s) => sum + s.total_sale, 0) +
-                      pendingDeliveries.filter(s => getColDate(s.created_at).getDay() === idx)
-                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
-      chartData.push({ name: dayName, sales: saleSum });
+      let dayRecaudo = 0;
+      let dayFacturado = 0;
+
+      activeSales.forEach(s => {
+        const pendingDomi = isPendingDelivery(s);
+        (s.payment_history || []).forEach(p => {
+          const pDate = p.payment_date || s.created_at;
+          if (isThisWeek(pDate) && getColDate(pDate).getDay() === idx) {
+            if (!pendingDomi || (pendingDomi && p.amount > 0)) {
+              dayRecaudo += (p.amount || 0);
+            }
+          }
+        });
+      });
+
+      confirmedSales.filter(s => getColDate(s.created_at).getDay() === idx).forEach(s => {
+        dayFacturado += (s.total_sale || 0);
+      });
+
+      chartData.push({ name: dayName, sales: dayRecaudo, facturado: dayFacturado });
     });
   } else if (timeFilter === 'Este Mes') {
     const now = getColDate();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     for(let i=1; i<=daysInMonth; i++) {
-      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getDate() === i)
-                                   .reduce((sum, s) => sum + s.total_sale, 0) +
-                      pendingDeliveries.filter(s => getColDate(s.created_at).getDate() === i)
-                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
-      chartData.push({ name: `${i}`, sales: saleSum });
+      let dayRecaudo = 0;
+      let dayFacturado = 0;
+
+      activeSales.forEach(s => {
+        const pendingDomi = isPendingDelivery(s);
+        (s.payment_history || []).forEach(p => {
+          const pDate = p.payment_date || s.created_at;
+          if (isThisMonth(pDate) && getColDate(pDate).getDate() === i) {
+            if (!pendingDomi || (pendingDomi && p.amount > 0)) {
+              dayRecaudo += (p.amount || 0);
+            }
+          }
+        });
+      });
+
+      confirmedSales.filter(s => getColDate(s.created_at).getDate() === i).forEach(s => {
+        dayFacturado += (s.total_sale || 0);
+      });
+
+      chartData.push({ name: `${i}`, sales: dayRecaudo, facturado: dayFacturado });
     }
   } else {
-    // Todos (fallback)
-    chartData.push({ name: 'Total', sales: totalVentas});
+    chartData.push({ name: 'Total', sales: totalRecaudado, facturado: totalFacturado });
   }
 
   // Top Products Logic (Solo productos de ventas cerradas / confirmadas)
@@ -237,18 +315,20 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Ventas Totales"
-          value={`$${totalVentas.toLocaleString()}`}
-          change="Real"
+          title="Total Recaudado (Caja)"
+          value={`$${totalRecaudado.toLocaleString()}`}
+          change="Dinero Real"
           trend="up"
-          icon={ShoppingCart}
+          subtitle={`Facturado: $${totalFacturado.toLocaleString()}`}
+          icon={DollarSign}
           color="bg-emerald-500 text-emerald-600"
         />
         <StatCard
-          title="Nuevos Pedidos"
-          value={pedidosCount}
-          change="Facturas"
+          title="Ventas Facturadas"
+          value={`$${totalFacturado.toLocaleString()}`}
+          change={`${pedidosCount} Pedidos`}
           trend="up"
+          subtitle={`${pedidosCount} facturas en período`}
           icon={Package}
           color="bg-blue-500 text-blue-600"
         />
@@ -257,6 +337,7 @@ const Dashboard = () => {
           value={`$${totalSeparados.toLocaleString()}`}
           change="Deuda"
           trend="down"
+          subtitle="Saldo por cobrar clientes"
           icon={Wallet}
           color="bg-amber-500 text-amber-600"
         />
@@ -265,6 +346,7 @@ const Dashboard = () => {
           value={clientesCount}
           change="Únicos"
           trend="up"
+          subtitle="Registrados en período"
           icon={Users}
           color="bg-indigo-500 text-indigo-600"
         />
@@ -273,7 +355,10 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-slate-800">Rendimiento de Ventas ({timeFilter})</h3>
+            <div>
+              <h3 className="font-bold text-slate-800">Rendimiento de Recaudo en Caja ({timeFilter})</h3>
+              <p className="text-[11px] text-slate-400 font-medium">Ingreso de dinero real recaudado por intervalo</p>
+            </div>
             <select 
               className="bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none cursor-pointer"
               value={timeFilter}
@@ -300,7 +385,10 @@ const Dashboard = () => {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#0f172a' }}
                   itemStyle={{ color: '#10b981' }}
-                  formatter={(value) => [`$${value.toLocaleString()}`, 'Ventas']}
+                  formatter={(value, name, item) => [
+                    `$${Number(value).toLocaleString()} (Facturado: $${(item?.payload?.facturado || value).toLocaleString()})`,
+                    'Recaudado en Caja'
+                  ]}
                 />
                 <Area type="monotone" dataKey="sales" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
               </AreaChart>
