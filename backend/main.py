@@ -28,6 +28,15 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            
+            # Blindaje de Seguridad Supabase: Activar Row Level Security (RLS) en tablas publicas
+            rls_tables = [
+                "users", "products", "sales", "sale_items", "payment_history",
+                "cash_movements", "corte_payroll", "corte_config", "stock_entries"
+            ]
+            for tbl in rls_tables:
+                conn.execute(text(f"ALTER TABLE IF EXISTS {tbl} ENABLE ROW LEVEL SECURITY;"))
+            
             conn.commit()
             print("✅ Migración automática de columnas ejecutada exitosamente.")
     except Exception as mig_err:
@@ -90,7 +99,15 @@ def run_migrations():
             conn.execute(text("ALTER TABLE cash_movements ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
             conn.execute(text("ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS account VARCHAR DEFAULT 'EFECTIVO_TIENDA';"))
+            
+            rls_tables = [
+                "users", "products", "sales", "sale_items", "payment_history",
+                "cash_movements", "corte_payroll", "corte_config", "stock_entries"
+            ]
+            for tbl in rls_tables:
+                conn.execute(text(f"ALTER TABLE IF EXISTS {tbl} ENABLE ROW LEVEL SECURITY;"))
+            
             conn.commit()
-        return {"status": "ok", "message": "Columnas migradas exitosamente en la base de datos"}
+        return {"status": "ok", "message": "Columnas y blindaje RLS aplicados exitosamente en la base de datos"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
