@@ -333,9 +333,9 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
       .then(data => {
         if (Array.isArray(data)) {
           const pending = data.filter(s => {
-            const isDomi = s.sale_channel === 'DOMICILIO' || s.delivery_address || s.status === 'en_domicilio';
-            const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino';
-            return isDomi && isActiveStatus;
+            const isDomi = s.sale_channel === 'DOMICILIO' || !!s.delivery_address || s.status === 'en_domicilio';
+            const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino' || (isDomi && s.status === 'separado');
+            return isDomi && isActiveStatus && s.status !== 'cancelado';
           });
           setPendingDeliveriesCount(pending.length);
         }

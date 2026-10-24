@@ -108,17 +108,17 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
     return () => window.removeEventListener('refresh-sales', fetchSales);
   }, [fetchSales]);
 
-  // Filtrar solo domicilios y pedidos activos
+  // Filtrar solo domicilios y pedidos activos (blindado contra descalibracion a 'separado')
   const activeDeliveries = useMemo(() => {
     return sales.filter(s => {
-      const isDomi = s.sale_channel === 'DOMICILIO' || s.delivery_address || s.status === 'en_domicilio';
-      const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino';
-      return isDomi && isActiveStatus;
+      const isDomi = s.sale_channel === 'DOMICILIO' || !!s.delivery_address || s.status === 'en_domicilio';
+      const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino' || (isDomi && s.status === 'separado');
+      return isDomi && isActiveStatus && s.status !== 'cancelado';
     });
   }, [sales]);
 
   const countPorAlistar = useMemo(() => {
-    return activeDeliveries.filter(s => s.status === 'en_domicilio' || s.status === 'por_confirmar').length;
+    return activeDeliveries.filter(s => s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'separado').length;
   }, [activeDeliveries]);
 
   const countAlistados = useMemo(() => {
@@ -131,7 +131,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
 
   const filteredDeliveries = useMemo(() => {
     if (filterTab === 'por_alistar') {
-      return activeDeliveries.filter(s => s.status === 'en_domicilio' || s.status === 'por_confirmar');
+      return activeDeliveries.filter(s => s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'separado');
     }
     if (filterTab === 'alistado') {
       return activeDeliveries.filter(s => s.status === 'alistado');

@@ -207,6 +207,10 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
     e.preventDefault();
     onUpdate({
       ...formData,
+      status: sale.status,
+      seller: sale.sale_channel === 'DOMICILIO' ? 'DOMICILIO' : formData.seller,
+      delivery_address: sale.delivery_address,
+      delivery_notes: sale.delivery_notes,
       items: items.map(it => ({
         id: it.id,
         product_id: it.product_id,
@@ -247,6 +251,9 @@ const EditSaleModal = ({ sale, onUpdate, onClose }) => {
                 value={formData.seller}
                 onChange={e => setFormData({...formData, seller: e.target.value})}
               >
+                {sale.sale_channel === 'DOMICILIO' && (
+                  <option value="DOMICILIO">DOMICILIO (Mensajer?a)</option>
+                )}
                 <option value="LOCAL">LOCAL (General)</option>
                 <option value="CRISTIAN IPAZ">CRISTIAN IPAZ</option>
                 <option value="ANDRES BASTIDAS">ANDRES BASTIDAS</option>

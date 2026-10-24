@@ -215,7 +215,11 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
 
     # El "vendedor" se guarda en sale_channel para compatibilidad con el modelo actual
     if sale_data.seller is not None:
-        db_sale.sale_channel = sale_data.seller
+        # Blindaje: Si es un domicilio, preservar sale_channel='DOMICILIO' para no romper la mensajeria
+        if db_sale.sale_channel == "DOMICILIO" or db_sale.delivery_address is not None:
+            pass
+        else:
+            db_sale.sale_channel = sale_data.seller
     if sale_data.user_id is not None:
         db_sale.user_id = sale_data.user_id
     if sale_data.created_by is not None:
@@ -230,10 +234,16 @@ def update_sale(sale_id: int, sale_data: SaleUpdate, db: Session = Depends(get_d
 
     db_sale.balance_due = max(0.0, db_sale.total_sale - (db_sale.amount_paid or 0.0))
 
+    # Blindaje de Estado: Respetar estados de entrega/domicilio para que no se conviertan accidentalmente en 'separado'
     if sale_data.status is not None:
         db_sale.status = sale_data.status
-    if db_sale.status == "cancelado":
+        if db_sale.status == "cancelado":
+            db_sale.balance_due = 0.0
+    elif db_sale.status == "cancelado":
         db_sale.balance_due = 0.0
+    elif db_sale.status in ["en_domicilio", "por_confirmar", "alistado", "en_camino"] or db_sale.sale_channel == "DOMICILIO" or db_sale.delivery_address is not None:
+        if db_sale.status not in ["en_domicilio", "por_confirmar", "alistado", "en_camino"]:
+            db_sale.status = "en_domicilio"
     else:
         db_sale.status = "pagado" if db_sale.balance_due <= 0 else "separado"
 
