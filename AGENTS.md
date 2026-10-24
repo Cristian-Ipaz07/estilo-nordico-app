@@ -56,3 +56,8 @@
 * **Herencia Obligatoria de `is_published`**: Toda variante creada en `VariantBreakdownModal.jsx` debe heredar `is_published: baseProduct.is_published !== false`.
 * **Auto-Migraciones Idempotentes**: Nunca confiar en `Base.metadata.create_all()` para modificar tablas existentes; registrar siempre `ALTER TABLE ADD COLUMN IF NOT EXISTS` en `run_db_migrations()`.
 * **Zero 404s hacia la Web**: Usar siempre `getProductWebUrl(product, selectedColor)` de `webUrlHelper.js` para generar enlaces a la tienda web.
+
+* **Control de Fecha en Terminal POS (Anti-Congelamiento)**: La fecha operativa del Terminal POS debe calcularse dinámicamente con la fecha actual local (`new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' })`) y NUNCA almacenarse de forma persistente en `localStorage`. Al finalizar la venta o cerrar el modal se restaura a hoy.
+* **Aislamiento de Domicilios vs Separados**: Ninguna venta del canal `DOMICILIO` ni con `delivery_address` debe rotularse ni filtrarse como venta separada común (`SEPARADO`). Deben transitar bajo su propio ciclo de mensajería (`alistado`, `en_camino`, `por_confirmar`) hasta confirmar cobro.
+* **Cuadratura Contable en Dashboard (Recaudo Real vs Facturado)**: La tarjeta principal de liquidez del Dashboard debe reflejar el dinero real recaudado en caja (`payment_history`), coincidiendo con el Flujo del Turno del Terminal. Toda venta a crédito o separada debe sumar a caja únicamente su abono inicial, reflejando el saldo restante en "Separados Pendientes".
+* **Exclusión de Domicilios Contraentrega No Cobrados**: Los pedidos a domicilio por cobrar contraentrega no deben sumarse a las ventas realizadas hasta confirmar su cobro en caja.
