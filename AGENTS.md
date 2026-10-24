@@ -46,6 +46,7 @@
 ---
 
 ## 4. ESTÁNDARES Y BUENAS PRÁCTICAS
+* **Preservación Obligatoria de Domicilios en Edición de Ventas**: Si una venta posee `delivery_address` o `sale_channel == 'DOMICILIO'`, `PUT /sales/{id}` y `EditSaleModal` NUNCA deben cambiar su status a `'separado'` ni su canal a `'LOCAL'`. Todo pedido con dirección física debe permanecer en el ciclo de mensajería (`en_domicilio`, `alistado`, `en_camino`).
 * **Navegación Interna en SPA con HashRouter**: NUNCA usar `window.location.href = '/ruta'`. Usar siempre `window.location.hash = '#/ruta'` o `navigate('/ruta')` de React Router para prevenir errores 404 en Vercel.
 * **Herencia en Cambios de Prenda 1 a 1**: En cambios de variantes de la misma prenda o precio promocional, heredar obligatoriamente `currentItem.price_at_sale` para garantizar diferencia $0. Proveer siempre botón explícito `[Hacer $0]` y advertir en el botón de confirmación si hay excedente a cobrar.
 * **Atomicidad en Pagos y Flujo de Caja**: El dinero de caja lee desde `payment_history`. Al eliminar un abono/pago, recalcular en backend `sale.amount_paid = sum(p.amount for p in remaining_payments)` y ajustar `balance_due`. Nunca editar solo la cabecera escalar de `sales`.

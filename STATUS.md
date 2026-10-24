@@ -256,6 +256,21 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+### 🔴 INCIDENTE 6: Descalibración de Domicilios a Venta 'Separado' al Editar en Ventas
+* **Síntoma**: Al editar una venta para colocar o corregir el nombre del cliente (ej. Venta #317 "Carmen Rosero") desde la pantalla de Ventas, el pedido desapareció por completo del modal 'Domicilios & Entregas' y quedó clasificado como un apartado/separado común de mostrador.
+* **Causa Raíz**:
+  1. En `backend/app/api/endpoints/sales.py` (`update_sale`), un bloque condicional `else:` forzaba cualquier venta con `balance_due > 0` al estado `"separado"`, pisando el estado real del domicilio (`en_domicilio`, `alistado`, `en_camino`).
+  2. En `frontend/src/pages/Sales.jsx` (`EditSaleModal`), el payload no reenviaba ni preservaba el estado de la venta ni sus metadatos de entrega (`delivery_address`, `delivery_notes`).
+  3. `DeliveryNotificationsDrawer.jsx` filtraba estrictamente por estados de delivery específicos, omitiendo pedidos que hubiesen sido descalibrados a `"separado"`.
+* **Solución**:
+  1. En `sales.py`, se implementó blindaje en `update_sale` para que, si una venta es un domicilio (`sale_channel == 'DOMICILIO'` o tiene `delivery_address`), nunca se sobreescriba su estado a `"separado"`, manteniendo su ciclo de mensajería (`en_domicilio`).
+  2. En `Sales.jsx` (`EditSaleModal`), se aseguró que al enviar la edición se preserven `status`, `delivery_address`, `delivery_notes` y la opción `DOMICILIO` en el selector de vendedor.
+  3. En `DeliveryNotificationsDrawer.jsx` y `TerminalModal.jsx`, se flexibilizó el filtro activo para que cualquier venta con dirección de entrega pendiente sea capturada bajo la pestaña 'Por Alistar', garantizando que nunca más desaparezca un domicilio del radar.
+  4. Se restauró en caliente la Venta #317 de Carmen Rosero a `status = 'en_domicilio'`.
+* **Regla Anti-Regresión #6**: **Toda edición de venta (`PUT /sales/{id}`) DEBE respetar la modalidad de entrega.** Si una venta posee `delivery_address` o canal `DOMICILIO`, el backend y el modal de edición tienen estrictamente prohibido degradarla a venta en tienda física o apartado estándar (`separado`).
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
