@@ -355,6 +355,19 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+### 🔴 INCIDENTE 12: Referencia Recién Creada (Ref: 6539) Oculta en Inventario por Filtro por Defecto de Stock
+* **Síntoma**: El usuario registró la referencia `6539` ("TELA FRIA ESTAMPADA"), pero al ir a Inventario o buscarla en la barra de búsqueda no aparecía, generando la impresión de que no se había guardado.
+* **Causa Raíz**:
+  1. La prenda base se creó correctamente en la base de datos (ID #439), pero con `stock = 0` ya que aún no tenía despiece de tallas ni recepción de mercancía física.
+  2. La pantalla de Inventario (`Inventory.jsx`) se inicializa por defecto en la pestaña `En Tienda / Activas` (`availabilityFilter === 'IN_STOCK'`), ocultando cualquier prenda con stock 0.
+  3. El buscador de texto aplicaba su filtro DESPUÉS del filtro de stock, por lo que buscar `6539` descartaba el resultado antes de coincidir el texto.
+* **Solución**:
+  1. Se modificó el filtro de búsqueda (`filteredAndSortedProducts`) para que, cuando el usuario escriba cualquier término o referencia en el buscador, se busque en **todo el catálogo** sin ocultar prendas con stock 0.
+  2. Al guardar una nueva prenda base desde `ProductModal.jsx`, si se guarda con stock 0, la vista conmuta automáticamente a la pestaña `Todas` para que la prenda aparezca inmediatamente visible ante el usuario.
+* **Regla Anti-Regresión #12**: **La barra de búsqueda de inventario NUNCA debe bloquearse por filtros de stock.** Si un usuario escribe una referencia explícita, el sistema debe mostrarla siempre, permitiendo acceder de inmediato a `[Despiece / Variantes]` para cargarle unidades.
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
