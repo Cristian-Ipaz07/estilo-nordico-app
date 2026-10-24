@@ -30,25 +30,11 @@ const isoToDateStr = (iso) => {
   return iso.split('T')[0];
 };
 
-const StatusBadge = ({ status, balance }) => {
+const StatusBadge = ({ status, balance, saleChannel, deliveryAddress }) => {
   if (status === 'abono_separado') {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">
         <DollarSign size={11} /> Abono Recibido
-      </span>
-    );
-  }
-  if (status === 'por_confirmar') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-        <Clock size={11} /> ⏳ Por Confirmar
-      </span>
-    );
-  }
-  if (status === 'en_domicilio') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
-        <Clock size={11} /> 🛵 En Domicilio
       </span>
     );
   }
@@ -59,6 +45,53 @@ const StatusBadge = ({ status, balance }) => {
       </span>
     );
   }
+
+  const isDelivery = saleChannel === 'DOMICILIO' || !!deliveryAddress || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(status);
+
+  if (isDelivery) {
+    if (status === 'pagado' || balance <= 0) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <CheckCircle2 size={11} /> 🛵 Domicilio Pagado
+        </span>
+      );
+    }
+    if (status === 'alistado') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+          <Package size={11} /> 📦 Alistado en Bolsa
+        </span>
+      );
+    }
+    if (status === 'en_camino') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-300 animate-pulse">
+          <Clock size={11} /> 🛵 En Camino
+        </span>
+      );
+    }
+    if (status === 'por_confirmar') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+          <Clock size={11} /> ⏳ Por Confirmar
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
+        <Clock size={11} /> 🛵 Domicilio Activo
+      </span>
+    );
+  }
+
+  if (status === 'por_confirmar') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+        <Clock size={11} /> ⏳ Por Confirmar
+      </span>
+    );
+  }
+
   const paid = status === 'pagado' || balance <= 0;
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -916,10 +949,10 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
           {sale.balance_due > 0 ? `$${fmt(sale.balance_due)}` : '—'}
         </td>
         <td className="px-6 py-4">
-          <StatusBadge status={sale.status} balance={sale.balance_due} />
+          <StatusBadge status={sale.status} balance={sale.balance_due} saleChannel={sale.sale_channel} deliveryAddress={sale.delivery_address} />
         </td>
         <td className="px-6 py-4 text-right space-x-1" onClick={e => e.stopPropagation()}>
-          {(sale.status === 'en_domicilio' || sale.status === 'por_confirmar') && (
+          {((sale.sale_channel === 'DOMICILIO' || !!sale.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(sale.status)) && sale.status !== 'pagado' && sale.status !== 'cancelado') && (
             <>
               <button
                 title="Confirmar Cobro y Liquidar (Entra a Caja)"
@@ -1368,13 +1401,16 @@ const Sales = () => {
   const { startDate, endDate, setStartDate, setEndDate, isInRange } = useDateRange();
 
   const filtered = unifiedTransactions.filter(item => {
+    const isDelivery = item.sale_channel === 'DOMICILIO' || !!item.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(item.status);
+    const isDeliveryActive = isDelivery && item.status !== 'pagado' && item.status !== 'cancelado';
+
     const matchStatus =
       filterStatus === 'todos' ? true :
-      filterStatus === 'pagado' ? (!item.isPayment && (item.status === 'pagado' || (item.balance_due <= 0 && item.status !== 'en_domicilio'))) :
-      filterStatus === 'separado' ? (!item.isPayment && (item.status === 'separado' || item.balance_due > 0)) :
+      filterStatus === 'pagado' ? (!item.isPayment && (item.status === 'pagado' || (item.balance_due <= 0 && !isDeliveryActive))) :
+      filterStatus === 'separado' ? (!item.isPayment && !isDelivery && (item.status === 'separado' || item.balance_due > 0)) :
       filterStatus === 'abonos' ? item.isPayment :
-      filterStatus === 'en_domicilio' ? (!item.isPayment && item.status === 'en_domicilio') :
-      filterStatus === 'por_confirmar' ? (!item.isPayment && (item.status === 'por_confirmar' || item.status === 'en_domicilio')) : true;
+      filterStatus === 'en_domicilio' ? (!item.isPayment && isDelivery && item.status !== 'cancelado') :
+      filterStatus === 'por_confirmar' ? (!item.isPayment && (item.status === 'por_confirmar' || isDeliveryActive)) : true;
 
     const kws = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const matchSearch = kws.length === 0 || kws.every(kw => {

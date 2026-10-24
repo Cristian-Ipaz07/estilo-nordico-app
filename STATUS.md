@@ -1,5 +1,5 @@
 # ESTADO EN VIVO: NODO ERP (ESTILO NÓRDICO)
-> Última actualización: 2026-10-22 | Blindaje Cambios 1a1 + Borrado Abonos/Pagos + Fix 404 HashRouter + Sync Dashboard Ventas Canceladas + Consecutivo POS
+> Última actualización: 2026-10-24 | Fix Fecha Terminal (Reset Diario Hoy) + Filtro Domicilios Sales.jsx + Métricas Dashboard Domicilios No Cobrados + Fechas Ventas 318-319
 
 ## 🎯 RESUMEN EJECUTIVO
 * **Rol**: Fuente Única de Verdad en la Nube (Inventario Maestro, POS Terminal, Domicilios, Catálogo Asesores, Flujo de Caja & Arqueos, API Pública, Almacenamiento de Fotos).
@@ -271,6 +271,47 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+---
+
+### 🔴 INCIDENTE 7: Desfasaje de Fecha en el Terminal POS por Persistencia en LocalStorage
+* **Síntoma**: Al abrir el Terminal de Ventas en diferentes días, el campo de fecha aparecía congelado en días anteriores (ej. 21 o 23 de octubre), provocando que ventas realizadas hoy (como #318 y #319) se guardaran erróneamente con fechas pasadas.
+* **Causa Raíz**: El componente `TerminalModal.jsx` utilizaba `useStickyState(getTodayCO(), 'en_terminal_sale_date')`, almacenando la fecha en `localStorage`. Además, al finalizar una venta no se reseteaba la fecha a hoy. Si un navegador quedaba abierto varios días o se cambiaba la fecha manualmente una vez, quedaba memorizada indefinidamente.
+* **Solución**:
+  1. Se migró `saleDate` y `deliveryDate` a `useState(() => getTodayCO())` usando `Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' })` garantizando hora exacta de Colombia sin desfasajes UTC.
+  2. Se purgó `en_terminal_sale_date` de `localStorage` al montar el componente.
+  3. Al completar una venta (`handleFinalizeSale`) y al reabrir el Terminal, la fecha se restablece automáticamente a la fecha actual (hoy).
+  4. Si el cajero cambia la fecha manualmente para una venta extemporánea, se muestra un indicador visual ámbar con botón de 1 clic `[Hoy]` para retornar instantáneamente.
+  5. Se actualizaron retroactivamente las ventas #318 y #319 y sus respectivos pagos en la API de producción con la fecha correcta de hoy: `2026-10-24`.
+* **Regla Anti-Regresión #7**: **Las fechas operativas de transacción en el POS NUNCA deben persistir indefinidamente en `localStorage`.** Deben recalcularse al día de hoy al abrir el modal y resetearse tras cada venta concretada.
+
+---
+
+### 🔴 INCIDENTE 8: Domicilios Omitidos en Filtro '[ 🛵 DOMICILIO ]' y Etiquetados como 'SEPARADO' en Ventas
+* **Síntoma**: En el Historial de Ventas (`Sales.jsx`), al presionar la pestaña `[ 🛵 DOMICILIO ]` la tabla salía vacía indicando "No hay transacciones en este filtro", a pesar de tener domicilios activos como la Venta #317. En la pestaña general, aparecía erróneamente clasificada con badge amarillo `SEPARADO`.
+* **Causa Raíz**:
+  1. El filtro `filterStatus === 'en_domicilio'` evaluaba con igualdad estricta `item.status === 'en_domicilio'`, omitiendo pedidos en estados de alistamiento o entrega (`alistado`, `en_camino`, `por_confirmar`) o con `sale_channel === 'DOMICILIO'`.
+  2. `filterStatus === 'separado'` incluía cualquier transacción con `balance_due > 0`, absorbiendo los domicilios contraentrega.
+  3. `StatusBadge` solo conocía `status === 'en_domicilio'`, cayendo por defecto en `Separado` para cualquier venta con saldo pendiente.
+* **Solución**:
+  1. Se implementó el helper `isDelivery = sale_channel === 'DOMICILIO' || !!delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(status)`.
+  2. `StatusBadge` ahora renderiza insignias dedicadas de mensajería: `📦 Alistado en Bolsa`, `🛵 En Camino`, `🛵 Domicilio Activo`, `⏳ Por Confirmar` y `🛵 Domicilio Pagado`.
+  3. El filtro `[ 🛵 DOMICILIO ]` ahora captura todos los domicilios vigentes en el período.
+  4. El filtro `[ SEPARADO ]` excluye explícitamente pedidos de canal domicilio (`!isDelivery`).
+  5. Se habilitaron botones de "Confirmar Cobro" y "Anular" directamente en la fila de ventas para cualquier domicilio activo.
+* **Regla Anti-Regresión #8**: **Ninguna venta de canal `DOMICILIO` debe rotularse ni filtrarse como apartado/separado común.** Los domicilios permanecen bajo el radar de mensajería y entrega hasta que se confirme su cobro en caja o entrega exitosa.
+
+---
+
+### 🔴 INCIDENTE 9: Métricas del Dashboard Sumando Domicilios Contraentrega No Cobrados
+* **Síntoma**: En el Resumen General (Dashboard), el total de ventas, la gráfica horaria y el ranking de productos computaban $90.000 y 1 pedido del domicilio de Carmen Rosero (#317), aun cuando el pedido estaba en alistamiento y no se había recibido un solo peso físico.
+* **Causa Raíz**: Las métricas del Dashboard sumaban `s.total_sale` de todas las ventas que no tuvieran `status === 'cancelado'`, sin discriminar si un domicilio contraentrega aún estaba pendiente de pago en calle.
+* **Solución**:
+  1. Se segregaron las ventas cerradas/cobradas (`confirmedSales`) de los domicilios activos en curso (`pendingDeliveries`).
+  2. `totalVentas`, `pedidosCount`, `chartData` y `topProducts` ahora solo computan ventas reales concretadas y abonos anticipados efectivamente ingresados a caja.
+  3. Se incorporó una tarjeta/banner interactivo en el Dashboard que destaca los domicilios en curso: `🛵 X Domicilios en Curso (Contraentrega) · $Y por cobrar`, con botón directo para abrir el cajón de mensajería (`open-deliveries`).
+* **Regla Anti-Regresión #9**: **Las entregas contraentrega NO deben sumarse al ingreso de ventas realizadas hasta que el mensajero reporte y confirme el cobro.** Deben visualizarse como cuentas por cobrar en calle para no inflar la liquidez contable del día.
+
+---
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.

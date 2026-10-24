@@ -102,9 +102,12 @@ const Layout = ({ children }) => {
   useEffect(() => {
     loadPendingDeliveries();
     window.addEventListener('refresh-sales', loadPendingDeliveries);
+    const handleOpenDeliveries = () => setIsNotificationsOpen(true);
+    window.addEventListener('open-deliveries', handleOpenDeliveries);
     const interval = setInterval(loadPendingDeliveries, 30000);
     return () => {
       window.removeEventListener('refresh-sales', loadPendingDeliveries);
+      window.removeEventListener('open-deliveries', handleOpenDeliveries);
       clearInterval(interval);
     };
   }, [loadPendingDeliveries]);

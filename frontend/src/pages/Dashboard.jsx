@@ -89,6 +89,11 @@ const Dashboard = () => {
     return () => window.removeEventListener('refresh-sales', fetchDashboardSales);
   }, [fetchDashboardSales]);
 
+  // Domicilio helper: identifica ventas a domicilio
+  const isDelivery = (s) => s.sale_channel === 'DOMICILIO' || !!s.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(s.status);
+  // Domicilio activo / por cobrar contraentrega (no computar como venta consumada hasta confirmar cobro)
+  const isPendingDelivery = (s) => isDelivery(s) && s.status !== 'pagado' && s.status !== 'cancelado';
+
   // Excluir ventas canceladas o domicilios rechazados de métricas reales
   const activeSales = sales.filter(s => s.status !== 'cancelado');
 
@@ -100,39 +105,51 @@ const Dashboard = () => {
     return true; // Todos
   });
 
-  // Calculate generic stats
-  const totalVentas = filteredSales.reduce((sum, s) => sum + s.total_sale, 0);
-  const totalSeparados = filteredSales.filter(s => s.status === 'separado').reduce((sum, s) => sum + s.balance_due, 0);
-  const pedidosCount = filteredSales.length;
+  // Separar ventas cerradas/cobradas de domicilios activos en calle
+  const confirmedSales = filteredSales.filter(s => !isPendingDelivery(s));
+  const pendingDeliveries = filteredSales.filter(s => isPendingDelivery(s));
 
-  // Since we only track sales and not "users/clients" specifically in an active table, we will use unique names as "Clientes"
-  const clientesCount = new Set(filteredSales.map(s => s.customer_name)).size;
+  // Ventas Totales ($): Ventas confirmadas + cualquier abono anticipado recaudado de domicilios
+  const totalVentas = confirmedSales.reduce((sum, s) => sum + s.total_sale, 0) +
+                      pendingDeliveries.reduce((sum, s) => sum + (s.amount_paid || 0), 0);
+  const totalSeparados = confirmedSales.filter(s => s.status === 'separado').reduce((sum, s) => sum + s.balance_due, 0);
+  const pedidosCount = confirmedSales.length;
 
-  // Chart Logic (Aggregate by interval based on filter)
+  // Clientes únicos de ventas confirmadas
+  const clientesCount = new Set(confirmedSales.map(s => s.customer_name)).size;
+
+  // Total por cobrar en calle de domicilios activos contraentrega
+  const totalCobroContraentrega = pendingDeliveries.reduce((sum, s) => sum + (s.balance_due || s.total_sale || 0), 0);
+
+  // Chart Logic (Solo ventas confirmadas o dinero real recaudado)
   const chartData = [];
   if (timeFilter === 'Hoy') {
     // Generate hours 8 AM to 8 PM
     const hours = Array.from({length: 13}, (_, i) => i + 8);
     hours.forEach(hour => {
-      const saleSum = filteredSales.filter(s => getColDate(s.created_at).getHours() === hour)
-                                   .reduce((sum, s) => sum + s.total_sale, 0);
+      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getHours() === hour)
+                                   .reduce((sum, s) => sum + s.total_sale, 0) +
+                      pendingDeliveries.filter(s => getColDate(s.created_at).getHours() === hour)
+                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
       chartData.push({ name: `${hour}:00`, sales: saleSum });
     });
   } else if (timeFilter === 'Esta Semana') {
     const days = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
     days.forEach((dayName, idx) => {
-      const saleSum = filteredSales.filter(s => getColDate(s.created_at).getDay() === idx)
-                                   .reduce((sum, s) => sum + s.total_sale, 0);
+      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getDay() === idx)
+                                   .reduce((sum, s) => sum + s.total_sale, 0) +
+                      pendingDeliveries.filter(s => getColDate(s.created_at).getDay() === idx)
+                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
       chartData.push({ name: dayName, sales: saleSum });
     });
-    // Reorder from Monday -> Sunday conceptually if needed, but this is simple.
   } else if (timeFilter === 'Este Mes') {
-    // Generate chunks of 5 days or simply every day
     const now = getColDate();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     for(let i=1; i<=daysInMonth; i++) {
-      const saleSum = filteredSales.filter(s => getColDate(s.created_at).getDate() === i)
-                                   .reduce((sum, s) => sum + s.total_sale, 0);
+      const saleSum = confirmedSales.filter(s => getColDate(s.created_at).getDate() === i)
+                                   .reduce((sum, s) => sum + s.total_sale, 0) +
+                      pendingDeliveries.filter(s => getColDate(s.created_at).getDate() === i)
+                                   .reduce((sum, s) => sum + (s.amount_paid || 0), 0);
       chartData.push({ name: `${i}`, sales: saleSum });
     }
   } else {
@@ -140,9 +157,9 @@ const Dashboard = () => {
     chartData.push({ name: 'Total', sales: totalVentas});
   }
 
-  // Top Products Logic
+  // Top Products Logic (Solo productos de ventas cerradas / confirmadas)
   const productCount = {};
-  filteredSales.forEach(sale => {
+  confirmedSales.forEach(sale => {
     sale.items?.forEach(item => {
       const pName = item.product?.name || item.product?.ref || 'Producto Borrado';
       if(!productCount[pName]) productCount[pName] = { units: 0, revenue: 0 };
@@ -186,6 +203,37 @@ const Dashboard = () => {
           </button>
         </div>
       </div>
+
+      {/* Banner de Domicilios en Curso / Contraentrega (por cobrar) */}
+      {pendingDeliveries.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border border-purple-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 bg-purple-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-md">
+              <span className="text-2xl">🛵</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-black text-slate-900 text-sm sm:text-base">
+                  {pendingDeliveries.length} {pendingDeliveries.length === 1 ? 'Domicilio Activo en Curso' : 'Domicilios Activos en Curso'} (Contraentrega)
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-200 text-purple-900">
+                  Por Cobrar
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-1">
+                Total por recaudar en calle: <strong className="text-purple-700 font-black">${totalCobroContraentrega.toLocaleString()}</strong>. No se computa en ventas realizadas hasta confirmar cobro.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-deliveries'))}
+            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+          >
+            <span>Ver Domicilios ({pendingDeliveries.length})</span>
+            <ArrowUpRight size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard

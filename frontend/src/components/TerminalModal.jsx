@@ -60,19 +60,26 @@ const getProductImage = (p, inv) => {
   return null;
 };
 
-// Helper para fecha hoy en Colombia (YYYY-MM-DD) — robusto con toLocaleString
+// Helper para fecha hoy en Colombia (YYYY-MM-DD) — robusto y exacto con Intl
 const getTodayCO = () => {
-  const d = new Date();
-  const co = new Date(d.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
-  return co.toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
 };
 
 // Helper para fecha de mañana en Colombia (YYYY-MM-DD)
 const getTomorrowCO = () => {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  const co = new Date(d.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
-  return co.toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
 };
 
 // Formatting date and time (AM/PM)
@@ -305,7 +312,18 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
     window.addEventListener('refresh-cash', loadAnticipos);
     return () => window.removeEventListener('refresh-cash', loadAnticipos);
   }, [loadAnticipos]);
-  const [saleDate, setSaleDate] = useStickyState(getTodayCO(), 'en_terminal_sale_date');
+  // Limpiar claves obsoletas de fecha en localStorage para que no se peguen fechas viejas
+  useEffect(() => {
+    try {
+      window.localStorage.removeItem('en_terminal_sale_date');
+      window.localStorage.removeItem('en_terminal_delivery_date');
+    } catch (_) {}
+  }, []);
+
+  // La fecha SIEMPRE arranca en la fecha actual (hoy).
+  // Si el usuario la cambia manualmente para una venta en curso, se mantiene durante esa venta,
+  // pero al finalizar la venta o cerrar/abrir el Terminal se restaura a la fecha de hoy.
+  const [saleDate, setSaleDate] = useState(() => getTodayCO());
   const [isDelivery, setIsDelivery] = useStickyState(false, 'en_terminal_is_delivery');
 
   useEffect(() => {
@@ -319,7 +337,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
   const [deliveryAddress, setDeliveryAddress] = useStickyState('', 'en_terminal_delivery_address');
   const [deliveryPhone, setDeliveryPhone] = useStickyState('', 'en_terminal_delivery_phone');
   const [deliveryNotes, setDeliveryNotes] = useStickyState('', 'en_terminal_delivery_notes');
-  const [deliveryDate, setDeliveryDate] = useStickyState(getTodayCO(), 'en_terminal_delivery_date');
+  const [deliveryDate, setDeliveryDate] = useState(() => getTodayCO());
   const [deliveryTime, setDeliveryTime] = useStickyState('', 'en_terminal_delivery_time');
 
   // Contador en vivo de domicilios pendientes
@@ -699,6 +717,7 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
       setDeliveryNotes('');
       setDeliveryTime('');
       setDeliveryDate(getTodayCO());
+      setSaleDate(getTodayCO());
       setIsDelivery(false);
       setUseAnticipo(false);
       setSelectedAnticipoId('');
@@ -887,9 +906,19 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
           </div>
 
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 sm:py-2.5 shrink-0 shadow-2xs">
-            <Calendar size={15} className="text-slate-400 shrink-0" />
+            <Calendar size={15} className={saleDate !== getTodayCO() ? "text-amber-500 shrink-0" : "text-slate-400 shrink-0"} />
             <input type="date" className="bg-transparent text-[11px] font-black outline-none text-slate-700 cursor-pointer"
               value={saleDate} onChange={e => setSaleDate(e.target.value)} />
+            {saleDate !== getTodayCO() && (
+              <button
+                type="button"
+                onClick={() => setSaleDate(getTodayCO())}
+                title="Restablecer a fecha de hoy"
+                className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200 transition-colors"
+              >
+                Hoy
+              </button>
+            )}
           </div>
 
           <div className="flex-1 min-w-[130px] sm:min-w-[150px] flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1.5 shadow-2xs">
