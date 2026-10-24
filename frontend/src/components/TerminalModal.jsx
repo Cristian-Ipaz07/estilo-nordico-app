@@ -176,10 +176,10 @@ function useInventory(isOpen) {
       checkVersionAndSync();
     }, 3500);
 
-    // Salvaguarda periódica completa cada 25 segundos
+    // Salvaguarda periódica relajada a 5 minutos (checkVersionAndSync ya sincroniza en vivo si hay cambios)
     const fullInterval = setInterval(() => {
-      load();
-    }, 25000);
+      if (typeof document !== 'undefined' && !document.hidden) load();
+    }, 300000);
 
     const onFocus = () => {
       checkVersionAndSync();

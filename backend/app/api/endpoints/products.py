@@ -21,17 +21,27 @@ from app.services.excel_service import sync_from_estilo_nordico_excel
 
 router = APIRouter()
 
+# In-memory cache de versión para ahorrar egress y roundtrips a PostgreSQL (TTL 5s)
+import time
+_sync_version_cache = {"version": None, "timestamp": 0.0}
+
 # 1. VERIFICACIÓN ULTRA-RÁPIDA DE VERSIÓN PARA SINCRONIZACIÓN EN TIEMPO REAL ENTRE ASESORES
 @router.get("/sync-version")
 def get_inventory_sync_version(db: Session = Depends(get_db)):
     from sqlalchemy import func
     from app.models.sale import Sale
+    now = time.time()
+    if _sync_version_cache["version"] and (now - _sync_version_cache["timestamp"]) < 5.0:
+        return {"version": _sync_version_cache["version"]}
+
     max_updated = db.query(func.max(ProductModel.updated_at)).scalar()
     total_count = db.query(func.count(ProductModel.id)).scalar()
     max_sale_id = db.query(func.max(Sale.id)).scalar()
-    return {
-        "version": f"{max_updated}_{total_count}_{max_sale_id}"
-    }
+    version_str = f"{max_updated}_{total_count}_{max_sale_id}"
+    
+    _sync_version_cache["version"] = version_str
+    _sync_version_cache["timestamp"] = now
+    return {"version": version_str}
 
 # 2. VER TODOS
 @router.get("/", response_model=List[Product])

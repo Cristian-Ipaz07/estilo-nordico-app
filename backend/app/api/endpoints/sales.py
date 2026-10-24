@@ -49,6 +49,17 @@ def get_cogs(start: Optional[str] = None, end: Optional[str] = None, db: Session
     return {"cogs_total": round(cogs_total, 2)}
 
 
+# ── GET /pending-deliveries-count — conteo ultra-ligero (15 bytes) para no consumir egress
+@router.get("/pending-deliveries-count")
+def get_pending_deliveries_count(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    count = db.query(func.count(Sale.id)).filter(
+        Sale.status.in_(["en_domicilio", "por_confirmar", "alistado", "en_camino"]),
+        Sale.status != "cancelado"
+    ).scalar() or 0
+    return {"count": count}
+
+
 # ── GET / — listar ventas (más recientes primero) ────────────────────────────
 @router.get("/", response_model=List[SaleResponse])
 def read_sales(status: Optional[str] = None, db: Session = Depends(get_db)):

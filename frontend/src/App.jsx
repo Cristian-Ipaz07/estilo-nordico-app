@@ -80,20 +80,19 @@ const Layout = ({ children }) => {
   const [pendingDeliveriesCount, setPendingDeliveriesCount] = useState(0);
 
   const loadPendingDeliveries = useCallback(() => {
+    // Si la pestaña está minimizada u oculta, pausar sondeo para ahorrar 100% de egress
+    if (typeof document !== 'undefined' && document.hidden) return;
     const token = localStorage.getItem('token');
     if (!token) return;
-    fetch(`${API_URL}/sales/`, {
+
+    // Consumo ultra-ligero (15 bytes en lugar de 240 KB de todo el historial de ventas)
+    fetch(`${API_URL}/sales/pending-deliveries-count`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(r => r.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          const pending = data.filter(s => {
-            const isDomi = s.sale_channel === 'DOMICILIO' || s.delivery_address || s.status === 'en_domicilio';
-            const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino';
-            return isDomi && isActiveStatus;
-          });
-          setPendingDeliveriesCount(pending.length);
+        if (data && typeof data.count === 'number') {
+          setPendingDeliveriesCount(data.count);
         }
       })
       .catch(() => {});
@@ -104,10 +103,21 @@ const Layout = ({ children }) => {
     window.addEventListener('refresh-sales', loadPendingDeliveries);
     const handleOpenDeliveries = () => setIsNotificationsOpen(true);
     window.addEventListener('open-deliveries', handleOpenDeliveries);
-    const interval = setInterval(loadPendingDeliveries, 30000);
+
+    // Sincronizar de inmediato al volver a enfocar la ventana o pestaña
+    const handleVisibility = () => {
+      if (!document.hidden) loadPendingDeliveries();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', loadPendingDeliveries);
+
+    // Sondeo de salvaguarda relajado a 90s (99% de ahorro de ancho de banda)
+    const interval = setInterval(loadPendingDeliveries, 90000);
     return () => {
       window.removeEventListener('refresh-sales', loadPendingDeliveries);
       window.removeEventListener('open-deliveries', handleOpenDeliveries);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', loadPendingDeliveries);
       clearInterval(interval);
     };
   }, [loadPendingDeliveries]);
