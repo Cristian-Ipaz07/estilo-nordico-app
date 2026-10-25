@@ -368,6 +368,19 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+### 🔴 INCIDENTE 13: Ingreso Prematuro de Recaudo en Calle a Caja Física en Entrega de Domiciliario (Venta Carmen Rosero #317)
+* **Síntoma**: Al entregar el domiciliario (Andres Bastidas) la venta #317 a Carmen Rosero en calle, el sistema registró automáticamente los $90.000 en el flujo de caja del mostrador. Al hacer el corte de caja nocturno, Cristian tenía $90.000 de más en el sistema que no estaban físicamente en la gaveta, ya que el domiciliario aún no había regresado a liquidar el dinero.
+* **Causa Raíz**:
+  1. El endpoint `POST /{sale_id}/mark-delivered` de la app de domiciliarios insertaba un registro en `PaymentHistory` y actualizaba `amount_paid = 90000`, asumiendo que el dinero ya estaba en el mostrador.
+  2. Como el arqueo y el corte leen de `PaymentHistory`, el corte nocturno sumó esos $90.000 como efectivo presente en la tienda.
+* **Solución**:
+  1. Se eliminó la creación de `PaymentHistory` y la alteración de `amount_paid` en `mark_delivery_delivered`. Al entregar en calle, la venta pasa a `status = 'entregado'` y `cash_settled = False`, registrando en notas informativas cuánto dinero recaudó el domiciliario.
+  2. La venta permanece visible en la pestaña `[ 🛵 DOMICILIO ]` y en el cajón de mensajería con el badge distintivo `🛵 Entregado (Por Liquidar en Caja)`.
+  3. ÚNICAMENTE cuando Cristian recibe físicamente el dinero o el comprobante en mostrador y hace clic en `[Confirmar Cobro]` (`POST /{sale_id}/settle-cash` o `confirm-delivery`), se asienta el pago oficial en `PaymentHistory` y `CashMovement` en la cuenta seleccionada (`EFECTIVO_TIENDA`, `NEQUI_CRISTIAN`, etc.).
+* **Regla Anti-Regresión #13**: **El dinero recaudado en calle por mensajería NUNCA debe ingresar a `PaymentHistory` ni a la caja física de la tienda automáticamente.** Permanece bajo el radar de mensajería como "Por Liquidar en Caja" hasta que el administrador confirme la recepción del dinero en mostrador.
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
