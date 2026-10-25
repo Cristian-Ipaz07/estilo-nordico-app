@@ -100,9 +100,9 @@ const Dashboard = () => {
   }, [fetchDashboardSales]);
 
   // Domicilio helper: identifica ventas a domicilio
-  const isDelivery = (s) => s.sale_channel === 'DOMICILIO' || !!s.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(s.status);
+  const isDelivery = (s) => s.sale_channel === 'DOMICILIO' || !!s.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar', 'entregado'].includes(s.status);
   // Domicilio activo / por cobrar contraentrega (no computar como venta consumada hasta confirmar cobro)
-  const isPendingDelivery = (s) => isDelivery(s) && s.status !== 'pagado' && s.status !== 'cancelado';
+  const isPendingDelivery = (s) => isDelivery(s) && (s.status !== 'pagado' || !s.cash_settled) && s.status !== 'cancelado';
 
   // Excluir ventas canceladas o domicilios rechazados de métricas reales
   const activeSales = sales.filter(s => s.status !== 'cancelado');

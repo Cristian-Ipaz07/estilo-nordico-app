@@ -54,9 +54,12 @@ def get_cogs(start: Optional[str] = None, end: Optional[str] = None, db: Session
 # ── GET /pending-deliveries-count — conteo ultra-ligero (15 bytes) para no consumir egress
 @router.get("/pending-deliveries-count")
 def get_pending_deliveries_count(db: Session = Depends(get_db)):
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
     count = db.query(func.count(Sale.id)).filter(
-        Sale.status.in_(["en_domicilio", "por_confirmar", "alistado", "en_camino"]),
+        or_(
+            Sale.status.in_(["en_domicilio", "por_confirmar", "alistado", "en_camino"]),
+            (Sale.status == "entregado") & (Sale.cash_settled == False)
+        ),
         Sale.status != "cancelado"
     ).scalar() or 0
     return {"count": count}
@@ -510,7 +513,7 @@ def mark_delivery_delivered(
     if not db_sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
     
-    # Actualizar estado de entrega
+    # Actualizar estado de entrega (en calle)
     db_sale.status = "entregado"
     db_sale.delivered_by = current_user.id
     db_sale.cash_settled = False
@@ -518,22 +521,13 @@ def mark_delivery_delivered(
     collected = float(data.amount_collected or 0.0)
     method = data.payment_method or "EFECTIVO"
     driver_name = current_user.full_name or current_user.username
-    now_col = get_colombia_now()
     
-    db_sale.amount_paid = collected
-    db_sale.balance_due = max(0.0, db_sale.total_sale - collected)
+    # REGLA CRÍTICA: NO modificar amount_paid de caja ni registrar PaymentHistory aquí.
+    # El dinero está en manos del domiciliario en la calle; NO ha ingresado a la caja física de la tienda.
+    # Se preserva amount_paid y balance_due intactos para no generar dinero fantasma en el corte de Cristian.
     
-    # Registrar en PaymentHistory
-    db.add(PaymentHistory(
-        sale_id=db_sale.id,
-        amount=collected,
-        account=method,
-        notes=f"Recaudado en calle por Domiciliario: {driver_name} ({method}) - PENDIENTE LIQUIDAR EN CAJA",
-        payment_date=now_col
-    ))
-    
-    # Registrar nota en la venta
-    recaudo_note = f"[ENTREGADO POR: {driver_name} | RECAUDADO: ${collected:,.0f} ({method}) | PENDIENTE LIQUIDACIÓN EN CAJA]"
+    # Registrar nota en la venta con el recaudo pendiente por liquidar
+    recaudo_note = f"[ENTREGADO POR: {driver_name} | RECAUDADO EN CALLE: ${collected:,.0f} ({method}) | PENDIENTE LIQUIDACIÓN EN CAJA]"
     if data.notes:
         recaudo_note += f" | NOTA DOMI: {data.notes}"
     db_sale.delivery_notes = f"{db_sale.delivery_notes} | {recaudo_note}" if db_sale.delivery_notes else recaudo_note
@@ -555,16 +549,28 @@ def settle_delivery_cash(
     if not db_sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
 
+    amount_to_register = db_sale.balance_due if db_sale.balance_due > 0 else (db_sale.total_sale - db_sale.amount_paid)
+    if amount_to_register <= 0:
+        amount_to_register = db_sale.total_sale
+
     db_sale.status = "pagado"
     db_sale.cash_settled = True
     db_sale.amount_paid = db_sale.total_sale
     db_sale.balance_due = 0.0
 
     acc = account or "EFECTIVO_TIENDA"
-    amount_to_register = db_sale.total_sale
     driver_name = db_sale.delivery_person.full_name if db_sale.delivery_person else "Domiciliario"
+    now_col = get_colombia_now()
 
-    # Asentar en caja oficial
+    # AHORA SÍ: el dinero ingresa formalmente a la caja y turno oficial
+    db.add(PaymentHistory(
+        sale_id=db_sale.id,
+        amount=amount_to_register,
+        account=acc,
+        notes=f"Liquidación Domicilio en Caja (Entregado por {driver_name})",
+        payment_date=now_col
+    ))
+
     db.add(CashMovement(
         description=f"Liquidación Domicilio Venta #{db_sale.id} - {db_sale.customer_name} (Recibido de {driver_name})",
         amount=amount_to_register,
@@ -573,7 +579,6 @@ def settle_delivery_cash(
         account=acc
     ))
 
-    now_col = get_colombia_now()
     log_entry = f"[LIQUIDADO EN CAJA por {current_admin.full_name or 'Admin'} en cuenta {acc}]"
     db_sale.delivery_notes = f"{db_sale.delivery_notes} | {log_entry}" if db_sale.delivery_notes else log_entry
 

@@ -114,7 +114,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
   const activeDeliveries = useMemo(() => {
     return sales.filter(s => {
       const isDomi = s.sale_channel === 'DOMICILIO' || !!s.delivery_address || s.status === 'en_domicilio';
-      const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino' || (isDomi && s.status === 'separado');
+      const isActiveStatus = s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'alistado' || s.status === 'en_camino' || (s.status === 'entregado' && !s.cash_settled) || (isDomi && s.status === 'separado');
       return isDomi && isActiveStatus && s.status !== 'cancelado';
     });
   }, [sales]);

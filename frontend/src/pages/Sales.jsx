@@ -46,9 +46,16 @@ const StatusBadge = ({ status, balance, saleChannel, deliveryAddress }) => {
     );
   }
 
-  const isDelivery = saleChannel === 'DOMICILIO' || !!deliveryAddress || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(status);
+  const isDelivery = saleChannel === 'DOMICILIO' || !!deliveryAddress || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar', 'entregado'].includes(status);
 
   if (isDelivery) {
+    if (status === 'entregado') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-950 border border-purple-300 animate-pulse">
+          <Clock size={11} /> 🛵 Entregado (Por Liquidar)
+        </span>
+      );
+    }
     if (status === 'pagado' || balance <= 0) {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -952,7 +959,7 @@ const SaleRow = ({ sale, isAdmin, onDelete, onPay, onEdit, onConfirmDelivery, on
           <StatusBadge status={sale.status} balance={sale.balance_due} saleChannel={sale.sale_channel} deliveryAddress={sale.delivery_address} />
         </td>
         <td className="px-6 py-4 text-right space-x-1" onClick={e => e.stopPropagation()}>
-          {((sale.sale_channel === 'DOMICILIO' || !!sale.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(sale.status)) && sale.status !== 'pagado' && sale.status !== 'cancelado') && (
+          {((sale.sale_channel === 'DOMICILIO' || !!sale.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar', 'entregado'].includes(sale.status)) && sale.status !== 'pagado' && sale.status !== 'cancelado') && (
             <>
               <button
                 title="Confirmar Cobro y Liquidar (Entra a Caja)"
@@ -1401,8 +1408,8 @@ const Sales = () => {
   const { startDate, endDate, setStartDate, setEndDate, isInRange } = useDateRange();
 
   const filtered = unifiedTransactions.filter(item => {
-    const isDelivery = item.sale_channel === 'DOMICILIO' || !!item.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar'].includes(item.status);
-    const isDeliveryActive = isDelivery && item.status !== 'pagado' && item.status !== 'cancelado';
+    const isDelivery = item.sale_channel === 'DOMICILIO' || !!item.delivery_address || ['en_domicilio', 'alistado', 'en_camino', 'por_confirmar', 'entregado'].includes(item.status);
+    const isDeliveryActive = isDelivery && (item.status !== 'pagado' || !item.cash_settled) && item.status !== 'cancelado';
 
     const matchStatus =
       filterStatus === 'todos' ? true :
