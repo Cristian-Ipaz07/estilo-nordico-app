@@ -80,7 +80,8 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         parent = db.query(ProductModel).filter(ProductModel.id == new_product.parent_id).first()
         if parent:
             children = db.query(ProductModel).filter(ProductModel.parent_id == parent.id).all()
-            parent.stock = sum(c.stock or 0 for c in children)
+            children_sum = sum(c.stock or 0 for c in children)
+            parent.stock = max(parent.stock or 0, children_sum)
             db.commit()
 
     # Webhook para notificar a Vercel si el producto se crea como publicado
@@ -121,7 +122,8 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
         parent = db.query(ProductModel).filter(ProductModel.id == db_product.parent_id).first()
         if parent:
             children = db.query(ProductModel).filter(ProductModel.parent_id == parent.id).all()
-            parent.stock = sum(c.stock or 0 for c in children)
+            children_sum = sum(c.stock or 0 for c in children)
+            parent.stock = max(parent.stock or 0, children_sum)
     
     # Si se actualizó price_sale y es un producto padre, propagar a sus variantes
     if "price_sale" in update_data and update_data["price_sale"] is not None:
