@@ -40,8 +40,15 @@ async def lifespan(app: FastAPI):
             for tbl in rls_tables:
                 conn.execute(text(f"ALTER TABLE IF EXISTS {tbl} ENABLE ROW LEVEL SECURITY;"))
             
+            # Sincronizar stock de prendas base con la suma real de sus variantes hijas
+            conn.execute(text("""
+                UPDATE products p 
+                SET stock = (SELECT COALESCE(SUM(c.stock), 0) FROM products c WHERE c.parent_id = p.id) 
+                WHERE EXISTS (SELECT 1 FROM products c WHERE c.parent_id = p.id);
+            """))
+            
             conn.commit()
-            print("✅ Migración automática de columnas ejecutada exitosamente.")
+            print("✅ Migración automática y sincronización de stock de variantes ejecutada exitosamente.")
     except Exception as mig_err:
         print("⚠️ Advertencia en migración automática de columnas:", mig_err)
 
@@ -113,7 +120,14 @@ def run_migrations():
             for tbl in rls_tables:
                 conn.execute(text(f"ALTER TABLE IF EXISTS {tbl} ENABLE ROW LEVEL SECURITY;"))
             
+            # Sincronizar stock de prendas base con la suma real de sus variantes hijas
+            conn.execute(text("""
+                UPDATE products p 
+                SET stock = (SELECT COALESCE(SUM(c.stock), 0) FROM products c WHERE c.parent_id = p.id) 
+                WHERE EXISTS (SELECT 1 FROM products c WHERE c.parent_id = p.id);
+            """))
+            
             conn.commit()
-        return {"status": "ok", "message": "Columnas y blindaje RLS aplicados exitosamente en la base de datos"}
+        return {"status": "ok", "message": "Columnas, RLS y sincronización de stock de variantes aplicados exitosamente"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}

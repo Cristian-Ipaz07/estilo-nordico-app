@@ -75,6 +75,14 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_product)
 
+    # Si es una variante con parent_id, sincronizar stock del producto base
+    if new_product.parent_id:
+        parent = db.query(ProductModel).filter(ProductModel.id == new_product.parent_id).first()
+        if parent:
+            children = db.query(ProductModel).filter(ProductModel.parent_id == parent.id).all()
+            parent.stock = sum(c.stock or 0 for c in children)
+            db.commit()
+
     # Webhook para notificar a Vercel si el producto se crea como publicado
     if getattr(new_product, "is_published", False):
         try:
@@ -107,6 +115,13 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
 
     for key, value in update_data.items():
         setattr(db_product, key, value)
+
+    # Si es una variante con parent_id y cambió su stock, sincronizar el stock del producto base
+    if db_product.parent_id and "stock" in update_data:
+        parent = db.query(ProductModel).filter(ProductModel.id == db_product.parent_id).first()
+        if parent:
+            children = db.query(ProductModel).filter(ProductModel.parent_id == parent.id).all()
+            parent.stock = sum(c.stock or 0 for c in children)
     
     # Si se actualizó price_sale y es un producto padre, propagar a sus variantes
     if "price_sale" in update_data and update_data["price_sale"] is not None:

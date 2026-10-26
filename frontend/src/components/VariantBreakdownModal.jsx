@@ -46,6 +46,16 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
   }, [isNonSizedProduct]);
 
   const [quantity, setQuantity] = useState(1);
+  const [variantPriceSale, setVariantPriceSale] = useState(() => baseProduct?.price_sale || '');
+  const [variantCost, setVariantCost] = useState(() => baseProduct?.my_cost || '');
+
+  useEffect(() => {
+    if (baseProduct) {
+      setVariantPriceSale(baseProduct.price_sale || '');
+      setVariantCost(baseProduct.my_cost || '');
+    }
+  }, [baseProduct]);
+
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [tempQty, setTempQty] = useState('');
@@ -658,8 +668,8 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
         color: finalColorName,
         size: cleanSize || null,
         parent_id: baseProduct.id,
-        price_sale: baseProduct.price_sale || 0,
-        my_cost: baseProduct.my_cost || 0,
+        price_sale: variantPriceSale !== '' ? Number(variantPriceSale) : (baseProduct.price_sale || 0),
+        my_cost: variantCost !== '' ? Number(variantCost) : (baseProduct.my_cost || 0),
         stock: Number(quantity) || 0,
         product_type: baseProduct.product_type || 'ROPA',
         is_published: baseProduct.is_published !== false,
@@ -1200,6 +1210,41 @@ export default function VariantBreakdownModal({ baseProduct, allProducts, isOpen
                   {submitting ? <RefreshCw className="animate-spin" size={13} /> : <Plus size={15} />}
                   <span className="truncate">Crear Variante</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Fila 3: Precio de Venta y Costo Personalizado para la Nueva Variante */}
+            <div className="grid grid-cols-12 gap-3 items-center pt-2 pb-1 border-t border-slate-100">
+              <div className="col-span-12 sm:col-span-3 space-y-1">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  P. Venta Variante ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={`Base: $${Number(baseProduct?.price_sale || 0).toLocaleString('es-CO')}`}
+                  value={variantPriceSale}
+                  onChange={e => setVariantPriceSale(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-emerald-700 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-3 space-y-1">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Costo Unitario ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={`Base: $${Number(baseProduct?.my_cost || 0).toLocaleString('es-CO')}`}
+                  value={variantCost}
+                  onChange={e => setVariantCost(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-6 text-[10px] text-slate-500 font-medium">
+                💡 <strong>Precios específicos:</strong> Permite ingresar prendas que llegaron a un costo o precio diferente al original de la referencia base.
               </div>
             </div>
           </form>

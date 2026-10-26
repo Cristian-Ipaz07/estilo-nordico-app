@@ -169,6 +169,10 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
             )
 
         product.stock -= item.quantity
+        if product.parent_id:
+            parent = db.query(Product).filter(Product.id == product.parent_id).first()
+            if parent:
+                parent.stock = max(0, (parent.stock or 0) - item.quantity)
 
         sale_item = SaleItem(
             sale_id=new_sale.id,
