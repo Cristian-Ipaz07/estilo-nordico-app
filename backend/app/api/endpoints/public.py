@@ -20,7 +20,7 @@ def list_public_products(
     brand: Optional[str] = Query(None, description="Filtrar por marca: Yanbal, Avon, etc."),
     in_stock: Optional[bool] = Query(None, description="Solo productos con stock > 0"),
     search: Optional[str] = Query(None, description="Búsqueda por nombre o referencia"),
-    limit: int = Query(100, le=200),
+    limit: int = Query(100, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):

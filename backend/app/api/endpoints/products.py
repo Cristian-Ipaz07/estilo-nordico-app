@@ -74,6 +74,21 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
+
+    # Webhook para notificar a Vercel si el producto se crea como publicado
+    if getattr(new_product, "is_published", False):
+        try:
+            from app.api.endpoints.webhooks import emit_webhook
+            import asyncio
+            asyncio.create_task(emit_webhook("product_published", {
+                "product_id": new_product.id,
+                "ref": new_product.ref,
+                "name": new_product.name,
+                "is_published": True,
+            }))
+        except Exception:
+            pass
+
     return new_product
 
 # 3. ACTUALIZAR (Edici?n completa o parcial)
@@ -110,6 +125,22 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
 
     db.commit()
     db.refresh(db_product)
+
+    # Webhook para notificar a Vercel si se publica o se modifican imágenes / stock
+    if any(k in update_data for k in ["is_published", "images", "image_url", "stock", "price_sale"]):
+        try:
+            from app.api.endpoints.webhooks import emit_webhook
+            import asyncio
+            evt = "product_published" if update_data.get("is_published") else "stock_updated"
+            asyncio.create_task(emit_webhook(evt, {
+                "product_id": db_product.id,
+                "ref": db_product.ref,
+                "name": db_product.name,
+                "is_published": getattr(db_product, "is_published", False),
+            }))
+        except Exception:
+            pass
+
     return db_product
 
 # 4. ELIMINAR

@@ -35,8 +35,16 @@ class WebhookPayload(BaseModel):
 
 async def emit_webhook(event: str, data: dict):
     """Envía el payload del webhook a las URLs configuradas de forma asíncrona."""
-    url = WEBHOOK_URLS.get(event, "")
-    if not url:
+    raw_url = WEBHOOK_URLS.get(event, "") or os.getenv(f"WEBHOOK_{event.upper()}", "")
+    target_urls = [u.strip() for u in raw_url.split(",") if u.strip()]
+    
+    # Soporte unificado para Vercel Deploy Hook (si está configurado VERCEL_DEPLOY_HOOK o WEBHOOK_SALE_COMPLETED con vercel.com)
+    deploy_hook = os.getenv("VERCEL_DEPLOY_HOOK", "").strip() or os.getenv("WEBHOOK_SALE_COMPLETED", "").strip()
+    if deploy_hook and "vercel.com" in deploy_hook:
+        if deploy_hook not in target_urls:
+            target_urls.append(deploy_hook)
+
+    if not target_urls:
         return  # Sin URL configurada, no hacer nada
 
     payload = WebhookPayload(
@@ -45,12 +53,13 @@ async def emit_webhook(event: str, data: dict):
         data=data,
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=payload.model_dump())
-    except Exception as e:
-        # Log pero no bloquear la operación principal
-        print(f"[Webhook] Error enviando {event}: {e}")
+    for url in target_urls:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                await client.post(url, json=payload.model_dump())
+        except Exception as e:
+            # Log pero no bloquear la operación principal
+            print(f"[Webhook] Error enviando {event} a {url}: {e}")
 
 
 @router.get("/config")
