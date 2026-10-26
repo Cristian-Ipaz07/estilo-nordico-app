@@ -131,6 +131,10 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
     return activeDeliveries.filter(s => s.status === 'en_camino').length;
   }, [activeDeliveries]);
 
+  const countPorLiquidar = useMemo(() => {
+    return activeDeliveries.filter(s => s.status === 'entregado' && !s.cash_settled).length;
+  }, [activeDeliveries]);
+
   const filteredDeliveries = useMemo(() => {
     if (filterTab === 'por_alistar') {
       return activeDeliveries.filter(s => s.status === 'en_domicilio' || s.status === 'por_confirmar' || s.status === 'separado');
@@ -140,6 +144,9 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
     }
     if (filterTab === 'en_camino') {
       return activeDeliveries.filter(s => s.status === 'en_camino');
+    }
+    if (filterTab === 'por_liquidar') {
+      return activeDeliveries.filter(s => s.status === 'entregado' && !s.cash_settled);
     }
     return activeDeliveries;
   }, [activeDeliveries, filterTab]);
@@ -364,6 +371,19 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
               {countEnCamino}
             </span>
           </button>
+          <button
+            onClick={() => setFilterTab('por_liquidar')}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              filterTab === 'por_liquidar'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200/60'
+            }`}
+          >
+            <span>💵 Por Liquidar</span>
+            <span className="bg-white/20 px-1.5 py-0.2 rounded-md text-[10px]">
+              {countPorLiquidar}
+            </span>
+          </button>
         </div>
 
         {/* Lista de Domicilios */}
@@ -402,6 +422,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
               const isPorAlistar = sale.status === 'en_domicilio' || sale.status === 'por_confirmar';
               const isAlistado = sale.status === 'alistado';
               const isEnCamino = sale.status === 'en_camino';
+              const isPorLiquidar = sale.status === 'entregado' && !sale.cash_settled;
 
               const phoneClean = (parsed.phone || '').replace(/\D+/g, '');
               const whatsappUrl = phoneClean ? `https://wa.me/57${phoneClean}` : null;
@@ -430,6 +451,11 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                       {isEnCamino && (
                         <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1">
                           <Truck size={11} /> 🛵 En Camino (Mensajero)
+                        </span>
+                      )}
+                      {isPorLiquidar && (
+                        <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase bg-purple-100 text-purple-950 border border-purple-300 animate-pulse flex items-center gap-1">
+                          <Clock size={11} /> 🛵 Entregado en Calle (Por Liquidar en Caja)
                         </span>
                       )}
                     </div>
@@ -613,7 +639,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                       className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <CheckCircle2 size={14} />
-                      <span>Confirmar Cobro</span>
+                      <span>{isPorLiquidar ? 'Confirmar y Liquidar en Caja' : 'Confirmar Cobro'}</span>
                     </button>
 
                     {/* Botón de Copiar Guía para Telegram / Notion */}
