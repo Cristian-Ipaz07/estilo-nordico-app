@@ -381,6 +381,22 @@ Esta bitácora documenta incidentes reales ocurridos en producción, su causa ra
 
 ---
 
+### 🔴 INCIDENTE 14: Desfase de Stock entre Prenda Base y Variantes Hijas (Ref 7650: 10 vs 5 uds) y Falta de Precios Específicos al Crear Variantes
+* **Síntoma**:
+  1. La referencia `7650` ("MULTIMARCA") mostraba `5 un.` en la tabla de Inventario, pero en la pantalla de Entradas de Mercancía y en el Terminal POS mostraba `10 uds`.
+  2. Al llegar nueva mercancía con un precio/costo diferente para una referencia multimarca, no era posible usar "Entrada en Bloque" porque este módulo fuerza una sola marca para todo el lote, y el modal de "Despiece de Variantes" no permitía ingresar precio ni costo diferente al base.
+* **Causa Raíz**:
+  1. La fila padre en la base de datos tenía `stock = 10` guardado estáticamente desde su creación inicial. La pantalla de Inventario calculaba la suma real de las 5 variantes hijas en tiempo real (1+1+1+1+1 = 5), pero el Terminal y el módulo de Entradas leían directamente la columna estática `stock` del padre.
+  2. Las ventas POS y la creación de variantes hijas no recalculaban el stock de la fila padre en la base de datos.
+  3. `VariantBreakdownModal.jsx` forzaba a que toda nueva variante heredara el precio y costo del padre sin permitir personalización al crear.
+* **Solución**:
+  1. Se implementó sincronización automática en base de datos (`UPDATE products p SET stock = (SELECT COALESCE(SUM(c.stock), 0) FROM products c WHERE c.parent_id = p.id) WHERE EXISTS (...)`).
+  2. Se blindaron `products.py` y `sales.py` para que, ante cualquier creación, edición o venta POS de una variante, el stock de la prenda base se recalcule automáticamente.
+  3. En `VariantBreakdownModal.jsx`, se agregaron los campos **`P. Venta Variante ($)`** y **`Costo Unitario ($)`** en el formulario de creación para registrar prendas multimarca con precios independientes.
+* **Regla Anti-Regresión #14**: **El stock de una prenda base NUNCA debe disociarse de la suma de sus variantes hijas.** Toda pantalla del ERP debe reflejar exactamente el stock físico real.
+
+---
+
 ## 📌 PRÓXIMOS PASOS
 1. **Verificación Operativa en Tienda**: Pruebas continuas de venta en Terminal y recepción de variantes por parte del equipo.
 2. **Liquidación Automática de Comisiones y Salarios**: Módulo de corte de comisiones por vendedor para Adriana, Andrés y Tereza.
