@@ -33,6 +33,36 @@ class WebhookPayload(BaseModel):
     data: dict
 
 
+def trigger_webhook_sync(event: str, data: dict):
+    """Envía el webhook de forma síncrona en un hilo en segundo plano (FastAPI BackgroundTasks)."""
+    raw_url = WEBHOOK_URLS.get(event, "") or os.getenv(f"WEBHOOK_{event.upper()}", "")
+    target_urls = [u.strip() for u in raw_url.split(",") if u.strip()]
+    
+    # Soporte unificado para Vercel Deploy Hook
+    deploy_hook = os.getenv("VERCEL_DEPLOY_HOOK", "").strip() or os.getenv("WEBHOOK_SALE_COMPLETED", "").strip()
+    if deploy_hook and "vercel.com" in deploy_hook:
+        if deploy_hook not in target_urls:
+            target_urls.append(deploy_hook)
+
+    if not target_urls:
+        print(f"[Webhook] No hay URLs configuradas para '{event}'")
+        return
+
+    payload = WebhookPayload(
+        event=event,
+        timestamp=get_colombia_time().isoformat(),
+        data=data,
+    )
+
+    for url in target_urls:
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(url, json=payload.model_dump())
+                print(f"[Webhook] Enviado {event} a {url} -> HTTP {res.status_code}")
+        except Exception as e:
+            print(f"[Webhook] Error enviando {event} a {url}: {e}")
+
+
 async def emit_webhook(event: str, data: dict):
     """Envía el payload del webhook a las URLs configuradas de forma asíncrona."""
     raw_url = WEBHOOK_URLS.get(event, "") or os.getenv(f"WEBHOOK_{event.upper()}", "")

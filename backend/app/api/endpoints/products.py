@@ -14,7 +14,8 @@ from app.models.cash_movement import CashMovement as CashMovementModel
 from app.schemas.product import Product, ProductCreate, ProductUpdate, RestockRequest, RestockResponse
 import re
 from app.schemas.stock_entry import StockEntryCreate, StockEntryResponse, CancelEntryRequest, BatchStockEntryRequest, BatchStockEntryResponse
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, BackgroundTasks
+from app.api.endpoints.webhooks import trigger_webhook_sync
 import pandas as pd
 import io
 from app.services.excel_service import sync_from_estilo_nordico_excel
@@ -61,7 +62,7 @@ def generate_product_slug(ref: str, name: str, db: Session, current_id: int = No
 
 # 2. CREAR
 @router.post("/", response_model=Product)
-def create_product(product: ProductCreate, db: Session = Depends(get_db)):
+def create_product(product: ProductCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     existing = db.query(ProductModel).filter(ProductModel.ref == product.ref).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"La referencia '{product.ref}' ya existe en el inventario")
@@ -86,23 +87,18 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
 
     # Webhook para notificar a Vercel si el producto se crea como publicado
     if getattr(new_product, "is_published", False):
-        try:
-            from app.api.endpoints.webhooks import emit_webhook
-            import asyncio
-            asyncio.create_task(emit_webhook("product_published", {
-                "product_id": new_product.id,
-                "ref": new_product.ref,
-                "name": new_product.name,
-                "is_published": True,
-            }))
-        except Exception:
-            pass
+        background_tasks.add_task(trigger_webhook_sync, "product_published", {
+            "product_id": new_product.id,
+            "ref": new_product.ref,
+            "name": new_product.name,
+            "is_published": True,
+        })
 
     return new_product
 
 # 3. ACTUALIZAR (Edici?n completa o parcial)
 @router.put("/{product_id}", response_model=Product)
-def update_product(product_id: int, product_data: ProductUpdate, db: Session = Depends(get_db)):
+def update_product(product_id: int, product_data: ProductUpdate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -145,24 +141,19 @@ def update_product(product_id: int, product_data: ProductUpdate, db: Session = D
 
     # Webhook para notificar a Vercel si se publica o se modifican imágenes / stock
     if any(k in update_data for k in ["is_published", "images", "image_url", "stock", "price_sale"]):
-        try:
-            from app.api.endpoints.webhooks import emit_webhook
-            import asyncio
-            evt = "product_published" if update_data.get("is_published") else "stock_updated"
-            asyncio.create_task(emit_webhook(evt, {
-                "product_id": db_product.id,
-                "ref": db_product.ref,
-                "name": db_product.name,
-                "is_published": getattr(db_product, "is_published", False),
-            }))
-        except Exception:
-            pass
+        evt = "product_published" if update_data.get("is_published") else "stock_updated"
+        background_tasks.add_task(trigger_webhook_sync, evt, {
+            "product_id": db_product.id,
+            "ref": db_product.ref,
+            "name": db_product.name,
+            "is_published": getattr(db_product, "is_published", False),
+        })
 
     return db_product
 
 # 4. ELIMINAR
 @router.delete("/{product_id}")
-async def delete_product(product_id: int, db: Session = Depends(get_db)):
+async def delete_product(product_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_product = db.query(ProductModel).filter(ProductModel.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -191,6 +182,10 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     for img in images_to_delete:
         await delete_supabase_storage_file(img)
 
+    background_tasks.add_task(trigger_webhook_sync, "product_deleted", {
+        "product_id": product_id,
+        "ref": db_product.ref
+    })
     return {"message": "Producto eliminado correctamente"}
 
 # 5. importar excel
@@ -433,7 +428,7 @@ def read_stock_entries(
 
 # 9. HISTORIAL DE ENTRADAS - REGISTRAR NUEVA
 @router.post("/entries", response_model=StockEntryResponse)
-def create_stock_entry(data: StockEntryCreate, db: Session = Depends(get_db)):
+def create_stock_entry(data: StockEntryCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     product = db.query(ProductModel).filter(ProductModel.id == data.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -499,6 +494,11 @@ def create_stock_entry(data: StockEntryCreate, db: Session = Depends(get_db)):
     new_entry.my_cost = product.my_cost
     new_entry.price_sale = product.price_sale
     new_entry.weighted_cost = weighted_cost
+    background_tasks.add_task(trigger_webhook_sync, "stock_updated", {
+        "product_id": data.product_id,
+        "quantity": qty_in,
+        "ref": product.ref
+    })
     return new_entry
 
 # 10. HISTORIAL DE ENTRADAS - ANULAR

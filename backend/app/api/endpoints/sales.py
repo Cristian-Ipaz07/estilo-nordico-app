@@ -11,7 +11,7 @@ from app.models.user import User
 from app.api.deps import get_current_user, get_current_active_admin
 from typing import List, Optional
 import asyncio
-from app.api.endpoints.webhooks import emit_webhook
+from app.api.endpoints.webhooks import trigger_webhook_sync
 from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
@@ -203,7 +203,7 @@ def create_sale(sale_data: SaleCreate, db: Session = Depends(get_db)):
                 for item in new_sale.items
             ],
         }
-        asyncio.create_task(emit_webhook("sale_completed", sale_data_webhook))
+        background_tasks.add_task(trigger_webhook_sync, "sale_completed", sale_data_webhook)
     except Exception:
         pass  # No bloquear la venta por un webhook fallido
 
