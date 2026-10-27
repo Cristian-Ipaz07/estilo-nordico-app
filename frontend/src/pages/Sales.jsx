@@ -1436,7 +1436,9 @@ const Sales = () => {
         matchItems;
     });
 
-    const matchRange = isInRange(isoToDateStr(item.eventDate));
+    const matchRange = (filterStatus === 'en_domicilio' && isDeliveryActive)
+      ? true 
+      : isInRange(isoToDateStr(item.eventDate));
 
     return matchStatus && matchSearch && matchRange;
   });

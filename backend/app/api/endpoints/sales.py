@@ -469,14 +469,32 @@ def get_sale(sale_id: int, db: Session = Depends(get_db)):
 
 # ?? POST /{sale_id}/confirm-delivery ? asentar cobro y entrega ??????????????
 @router.post("/{sale_id}/confirm-delivery", response_model=SaleResponse)
-def confirm_delivery(sale_id: int, account: Optional[str] = "EFECTIVO_TIENDA", register_cash: bool = True, db: Session = Depends(get_db)):
+def confirm_delivery(
+    sale_id: int, 
+    account: Optional[str] = "EFECTIVO_TIENDA", 
+    amount: Optional[float] = None,
+    register_cash: bool = True, 
+    db: Session = Depends(get_db)
+):
     db_sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not db_sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
     
-    amount_to_pay = db_sale.balance_due if db_sale.balance_due > 0 else (db_sale.total_sale - db_sale.amount_paid)
-    db_sale.amount_paid = db_sale.total_sale
-    db_sale.balance_due = 0.0
+    # Soporte para modificación de monto real recibido (ej. negociación de 80.000 vs 90.000)
+    if amount is not None and float(amount) > 0:
+        real_amount = float(amount)
+        db_sale.total_sale = real_amount
+        db_sale.amount_paid = real_amount
+        db_sale.balance_due = 0.0
+        amount_to_pay = real_amount
+        if db_sale.items and len(db_sale.items) == 1:
+            db_sale.items[0].price_at_sale = real_amount
+            db_sale.items[0].total_item = real_amount
+    else:
+        amount_to_pay = db_sale.balance_due if db_sale.balance_due > 0 else (db_sale.total_sale - db_sale.amount_paid)
+        db_sale.amount_paid = db_sale.total_sale
+        db_sale.balance_due = 0.0
+
     db_sale.status = "pagado"
     db_sale.cash_settled = True
 
@@ -498,6 +516,9 @@ def confirm_delivery(sale_id: int, account: Optional[str] = "EFECTIVO_TIENDA", r
                 category="VENTA",
                 account=acc
             ))
+
+    log_entry = f"[COBRO CONFIRMADO: ${amount_to_pay:,.0f} en {acc} | LIQUIDADO EN CAJA]"
+    db_sale.delivery_notes = f"{db_sale.delivery_notes} | {log_entry}" if db_sale.delivery_notes else log_entry
 
     db.commit()
     db.refresh(db_sale)
@@ -546,6 +567,7 @@ def mark_delivery_delivered(
 def settle_delivery_cash(
     sale_id: int,
     account: Optional[str] = "EFECTIVO_TIENDA",
+    amount: Optional[float] = None,
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_active_admin)
 ):
@@ -553,14 +575,25 @@ def settle_delivery_cash(
     if not db_sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
 
-    amount_to_register = db_sale.balance_due if db_sale.balance_due > 0 else (db_sale.total_sale - db_sale.amount_paid)
-    if amount_to_register <= 0:
-        amount_to_register = db_sale.total_sale
+    # Soporte para modificación de monto real recaudado en liquidación
+    if amount is not None and float(amount) > 0:
+        real_amount = float(amount)
+        db_sale.total_sale = real_amount
+        db_sale.amount_paid = real_amount
+        db_sale.balance_due = 0.0
+        amount_to_register = real_amount
+        if db_sale.items and len(db_sale.items) == 1:
+            db_sale.items[0].price_at_sale = real_amount
+            db_sale.items[0].total_item = real_amount
+    else:
+        amount_to_register = db_sale.balance_due if db_sale.balance_due > 0 else (db_sale.total_sale - db_sale.amount_paid)
+        if amount_to_register <= 0:
+            amount_to_register = db_sale.total_sale
+        db_sale.amount_paid = db_sale.total_sale
+        db_sale.balance_due = 0.0
 
     db_sale.status = "pagado"
     db_sale.cash_settled = True
-    db_sale.amount_paid = db_sale.total_sale
-    db_sale.balance_due = 0.0
 
     acc = account or "EFECTIVO_TIENDA"
     driver_name = db_sale.delivery_person.full_name if db_sale.delivery_person else "Domiciliario"
@@ -571,7 +604,7 @@ def settle_delivery_cash(
         sale_id=db_sale.id,
         amount=amount_to_register,
         account=acc,
-        notes=f"Liquidación Domicilio en Caja (Entregado por {driver_name})",
+        notes=f"Liquidación Domicilio en Caja ({acc} - Entregado por {driver_name})",
         payment_date=now_col
     ))
 
@@ -583,7 +616,7 @@ def settle_delivery_cash(
         account=acc
     ))
 
-    log_entry = f"[LIQUIDADO EN CAJA por {current_admin.full_name or 'Admin'} en cuenta {acc}]"
+    log_entry = f"[LIQUIDADO EN CAJA por {current_admin.full_name or 'Admin'}: ${amount_to_register:,.0f} en cuenta {acc}]"
     db_sale.delivery_notes = f"{db_sale.delivery_notes} | {log_entry}" if db_sale.delivery_notes else log_entry
 
     db.commit()

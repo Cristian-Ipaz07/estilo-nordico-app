@@ -326,6 +326,14 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
   const [saleDate, setSaleDate] = useState(() => getTodayCO());
   const [isDelivery, setIsDelivery] = useStickyState(false, 'en_terminal_is_delivery');
 
+  // Cada vez que se abre el modal, garantizar que la fecha arranque SIEMPRE en HOY (Bogotá)
+  useEffect(() => {
+    if (isOpen) {
+      setSaleDate(getTodayCO());
+      setDeliveryDate(getTodayCO());
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (initialDeliveryMode) {
       setIsDelivery(true);

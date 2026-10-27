@@ -78,7 +78,8 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
 
   // Modal para confirmar cobro
   const [confirmModalSale, setConfirmModalSale] = useState(null);
-  const [confirmAccount, setConfirmAccount] = useState('EFECTIVO_TIENDA');
+  const [confirmAccount, setConfirmAccount] = useState('NEQUI_CRISTIAN');
+  const [confirmAmount, setConfirmAmount] = useState('');
   const [isConfirming, setIsConfirming] = useState(false);
   const [swapModalData, setSwapModalData] = useState(null);
 
@@ -181,7 +182,9 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
     if (!confirmModalSale) return;
     setIsConfirming(true);
     try {
-      const res = await fetchWithRetry(`${API_URL}/sales/${confirmModalSale.id}/confirm-delivery?account=${confirmAccount}&register_cash=true`, {
+      const finalAmount = confirmAmount !== '' ? Number(confirmAmount) : '';
+      const amountParam = finalAmount !== '' ? `&amount=${finalAmount}` : '';
+      const res = await fetchWithRetry(`${API_URL}/sales/${confirmModalSale.id}/confirm-delivery?account=${confirmAccount}${amountParam}&register_cash=true`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -635,7 +638,12 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                     {/* Botón 3: Confirmar Cobro & Entrega (finalizar) */}
                     <button
                       type="button"
-                      onClick={() => setConfirmModalSale(sale)}
+                      onClick={() => {
+                        setConfirmModalSale(sale);
+                        const saldo = Math.max(0, sale.total_sale - (sale.amount_paid || 0));
+                        setConfirmAmount(saldo > 0 ? saldo : sale.total_sale);
+                        setConfirmAccount('NEQUI_CRISTIAN');
+                      }}
                       className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <CheckCircle2 size={14} />
@@ -710,16 +718,34 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
               </button>
             </div>
 
-            <div className="bg-emerald-50 border border-emerald-200/80 p-3.5 rounded-2xl text-center">
-              <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider block">
-                Monto Recibido
-              </span>
-              <p className="text-2xl font-black font-mono text-emerald-700 mt-0.5">
-                ${fmt(Math.max(0, confirmModalSale.total_sale - (confirmModalSale.amount_paid || 0)))}
-              </p>
-              <span className="text-[10px] text-emerald-600 font-medium block mt-0.5">
-                Cliente: {confirmModalSale.customer_name}
-              </span>
+            {/* Monto Recibido - Editable libremente */}
+            <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">
+                  Monto Cobrado / Recibido ($)
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  Total original: ${fmt(confirmModalSale.total_sale)}
+                </span>
+              </div>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-700 font-black text-xl">$</span>
+                <input
+                  type="number"
+                  value={confirmAmount}
+                  onChange={(e) => setConfirmAmount(e.target.value)}
+                  placeholder="0"
+                  className="w-full pl-8 pr-4 py-2 bg-white rounded-xl border-2 border-emerald-300 focus:border-emerald-600 font-mono font-black text-2xl text-emerald-800 outline-none transition"
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-emerald-700 font-semibold pt-1">
+                <span>Cliente: <strong className="uppercase">{confirmModalSale.customer_name}</strong></span>
+                {confirmAmount !== '' && Number(confirmAmount) !== confirmModalSale.total_sale && (
+                  <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                    Ajustado: ${fmt(Number(confirmAmount))}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -728,9 +754,11 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: 'EFECTIVO_TIENDA', label: 'Efectivo Tienda', icon: '💵' },
                   { id: 'NEQUI_CRISTIAN', label: 'Nequi Cristian', icon: '📱' },
                   { id: 'NEQUI_DAVID', label: 'Nequi David', icon: '📱' },
+                  { id: 'BANCOLOMBIA', label: 'Bancolombia', icon: '🏦' },
+                  { id: 'DAVIPLATA', label: 'Daviplata', icon: '📲' },
+                  { id: 'EFECTIVO_TIENDA', label: 'Efectivo Tienda', icon: '💵' },
                   { id: 'EFECTIVO_CASA', label: 'Efectivo Casa', icon: '🏠' }
                 ].map(acc => (
                   <button
@@ -739,7 +767,7 @@ export default function DeliveryNotificationsDrawer({ isOpen, onClose, onOpenTer
                     onClick={() => setConfirmAccount(acc.id)}
                     className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                       confirmAccount === acc.id
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-emerald-500/50'
                         : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
                     }`}
                   >

@@ -53,7 +53,8 @@ export default function DeliveryPage() {
 
   // Modal para Cristian (Liquidar dinero en caja)
   const [showSettleModal, setShowSettleModal] = useState(false);
-  const [settleAccount, setSettleAccount] = useState('EFECTIVO_TIENDA');
+  const [settleAccount, setSettleAccount] = useState('NEQUI_CRISTIAN');
+  const [settleAmount, setSettleAmount] = useState('');
   const [isSettling, setIsSettling] = useState(false);
 
   // Modal para cambiar talla / prenda
@@ -256,7 +257,8 @@ export default function DeliveryPage() {
     setIsSettling(true);
 
     try {
-      const res = await fetch(`${API_URL}/sales/${selectedDelivery.id}/settle-cash?account=${settleAccount}`, {
+      const amtParam = settleAmount !== '' ? `&amount=${Number(settleAmount)}` : '';
+      const res = await fetch(`${API_URL}/sales/${selectedDelivery.id}/settle-cash?account=${settleAccount}${amtParam}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -1032,15 +1034,33 @@ export default function DeliveryPage() {
 
             <div className="bg-[#222] p-4 rounded-2xl border border-white/5 text-xs font-bold space-y-1">
               <p className="text-gray-400">Venta #{selectedDelivery.id} — {selectedDelivery.customer_name}</p>
-              <p className="text-white text-lg font-black">
-                Monto Recibido: <span className="text-[#A3FF00]">${fmt(selectedDelivery.amount_paid || selectedDelivery.total_price)}</span>
-              </p>
               <p className="text-gray-400">
                 Entregado físicamente por: <span className="text-white">{selectedDelivery.delivery_person?.full_name || 'Andrés'}</span>
               </p>
             </div>
 
-            <form onSubmit={handleSettleCash} className="space-y-6">
+            <form onSubmit={handleSettleCash} className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    Monto Real Cobrado / Liquidado ($)
+                  </label>
+                  <span className="text-[10px] text-gray-500 font-bold">
+                    Original: ${fmt(selectedDelivery.total_sale || selectedDelivery.total_price)}
+                  </span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#A3FF00] font-black text-xl">$</span>
+                  <input
+                    type="number"
+                    value={settleAmount}
+                    onChange={(e) => setSettleAmount(e.target.value)}
+                    placeholder="80000"
+                    className="w-full bg-[#121212] border-2 border-white/15 focus:border-[#A3FF00] rounded-2xl h-14 pl-9 pr-4 text-[#A3FF00] font-mono text-xl font-black outline-none transition"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
                   Cuenta donde Ingresa el Dinero
@@ -1050,10 +1070,12 @@ export default function DeliveryPage() {
                   onChange={(e) => setSettleAccount(e.target.value)}
                   className="w-full bg-[#121212] border border-white/10 rounded-2xl h-14 px-4 text-white text-sm font-bold focus:border-[#A3FF00] outline-none cursor-pointer"
                 >
-                  <option value="EFECTIVO_TIENDA">Efectivo Tienda (Gaveta Local)</option>
-                  <option value="NEQUI_CRISTIAN">Nequi Cristian</option>
-                  <option value="BANCOLOMBIA">Bancolombia</option>
-                  <option value="EFECTIVO_CASA">Efectivo Casa (Caja Mayor)</option>
+                  <option value="NEQUI_CRISTIAN">📱 Nequi Cristian</option>
+                  <option value="NEQUI_DAVID">📱 Nequi David</option>
+                  <option value="BANCOLOMBIA">🏦 Bancolombia</option>
+                  <option value="DAVIPLATA">📲 Daviplata</option>
+                  <option value="EFECTIVO_TIENDA">💵 Efectivo Tienda (Gaveta Local)</option>
+                  <option value="EFECTIVO_CASA">🏠 Efectivo Casa (Caja Mayor)</option>
                 </select>
               </div>
 
