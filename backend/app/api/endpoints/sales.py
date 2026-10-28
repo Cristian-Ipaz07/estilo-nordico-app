@@ -26,7 +26,7 @@ def parse_sale_date(date_str: str) -> datetime:
     return datetime(d.year, d.month, d.day, 12, 0, 0, tzinfo=TZ_CO)
 
 def get_colombia_now() -> datetime:
-    return datetime.now(TZ_CO)
+    return datetime.now(TZ_CO).replace(tzinfo=None)
 
 
 @router.get("/cogs")

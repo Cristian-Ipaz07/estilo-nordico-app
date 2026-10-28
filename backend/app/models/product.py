@@ -4,7 +4,7 @@ from app.db.database import Base
 from datetime import datetime, timezone, timedelta
 
 def get_colombia_time():
-    return datetime.now(timezone(timedelta(hours=-5)))
+    return datetime.now(timezone(timedelta(hours=-5))).replace(tzinfo=None)
 
 class Product(Base):
     __tablename__ = "products"

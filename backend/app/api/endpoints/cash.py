@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 def get_colombia_time():
-    return datetime.now(timezone(timedelta(hours=-5)))
+    return datetime.now(timezone(timedelta(hours=-5))).replace(tzinfo=None)
 
 # ── Normalización de categorías ───────────────────────────────────────────────
 # Garantiza que variantes históricas ('Otro', 'Otros', 'otro', 'otros')

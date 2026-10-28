@@ -2569,18 +2569,9 @@ function ModuloCaja() {
     return 0;
   };
 
-  // Abrir modal de cierre
+  // Abrir modal de cierre - SIEMPRE arrancar con la fecha real de hoy en Colombia
   const handleOpenCierreModal = () => {
-    if (activeShiftFlow.length > 0) {
-      const latestDateStr = activeShiftFlow[0].date;
-      if (latestDateStr) {
-        setCierreDate(String(latestDateStr).split('T')[0].split(' ')[0]);
-      } else {
-        setCierreDate(getTodayCO());
-      }
-    } else {
-      setCierreDate(getTodayCO());
-    }
+    setCierreDate(getTodayCO());
     setCierreBaseSiguiente(baseCaja);
     setCierreModalOpen(true);
   };

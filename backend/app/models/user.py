@@ -3,7 +3,7 @@ from app.db.database import Base # <--- Importamos el Base real desde donde estÃ
 from datetime import datetime, timezone, timedelta
 
 def get_colombia_time():
-    return datetime.now(timezone(timedelta(hours=-5)))
+    return datetime.now(timezone(timedelta(hours=-5))).replace(tzinfo=None)
 
 class User(Base):
     __tablename__ = "users"
