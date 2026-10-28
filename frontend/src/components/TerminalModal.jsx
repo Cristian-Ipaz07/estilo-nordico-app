@@ -326,13 +326,11 @@ function ModuloVentas({ inventory, reloadInventory, refreshing, initialDeliveryM
   const [saleDate, setSaleDate] = useState(() => getTodayCO());
   const [isDelivery, setIsDelivery] = useStickyState(false, 'en_terminal_is_delivery');
 
-  // Cada vez que se abre el modal, garantizar que la fecha arranque SIEMPRE en HOY (Bogotá)
+  // Cada vez que se monta ModuloVentas, garantizar que la fecha arranque SIEMPRE en HOY (Bogotá)
   useEffect(() => {
-    if (isOpen) {
-      setSaleDate(getTodayCO());
-      setDeliveryDate(getTodayCO());
-    }
-  }, [isOpen]);
+    setSaleDate(getTodayCO());
+    setDeliveryDate(getTodayCO());
+  }, []);
 
   useEffect(() => {
     if (initialDeliveryMode) {
@@ -3415,14 +3413,14 @@ export default function TerminalModal({ isOpen, onClose, initialDeliveryMode = f
     return () => window.removeEventListener('keydown', fn);
   }, [isOpen, onClose]);
 
-  // TODOS LOS HOOKS SE HAN LLAMADO. AHORA SÍ EL GUARD DE SALIDA:
-  if (!isOpen) return null;
-
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  // TODOS LOS HOOKS SE HAN LLAMADO. AHORA SÍ EL GUARD DE SALIDA:
+  if (!isOpen) return null;
 
   const effectiveTab = (!isAdmin && (activeTab === 'stock' || activeTab === 'caja')) ? 'ventas' : activeTab;
 
