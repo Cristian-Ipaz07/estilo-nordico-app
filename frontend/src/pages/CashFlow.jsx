@@ -21,7 +21,8 @@ import {
   CheckCircle2,
   Tag,
   ArrowLeftRight,
-  Landmark
+  Landmark,
+  AlertCircle
 } from 'lucide-react';
 import { FINANCIAL_ACCOUNTS, getAccountInfo, inferAccountFromDesc } from '../utils/accounts';
 import TransferModal from '../components/TransferModal';
